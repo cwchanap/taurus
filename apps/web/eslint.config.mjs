@@ -1,7 +1,11 @@
-import { config } from "@repo/eslint-config/base";
+import js from "@eslint/js";
+import eslintConfigPrettier from "eslint-config-prettier";
+import tseslint from "typescript-eslint";
 
 export default [
-  ...config,
+  js.configs.recommended,
+  eslintConfigPrettier,
+  ...tseslint.configs.recommended,
   {
     ignores: [".svelte-kit/**"],
   },
