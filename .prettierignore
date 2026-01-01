@@ -1,0 +1,9 @@
+dist
+dist-ssr
+*.local
+.next
+out
+build
+.svelte-kit
+wrangler
+.env*.local
