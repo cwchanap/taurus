@@ -21,9 +21,11 @@
     return twMerge(clsx(inputs))
   }
 
-  $: cardClass = cn(
-    'rounded-lg border bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent/50',
-    className
+  const cardClass = $derived(
+    cn(
+      'rounded-lg border bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent/50',
+      className
+    )
   )
 </script>
 

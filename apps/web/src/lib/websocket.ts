@@ -1,0 +1,113 @@
+import type { MessageType, Player, Stroke } from './types'
+
+export type GameEventHandler = {
+  onInit?: (playerId: string, player: Player, players: Player[], strokes: Stroke[]) => void
+  onPlayerJoined?: (player: Player) => void
+  onPlayerLeft?: (playerId: string) => void
+  onStroke?: (stroke: Stroke) => void
+  onStrokeUpdate?: (strokeId: string, point: { x: number; y: number }) => void
+  onClear?: () => void
+  onConnectionChange?: (connected: boolean) => void
+}
+
+export class GameWebSocket {
+  private ws: WebSocket | null = null
+  private handlers: GameEventHandler = {}
+  private reconnectAttempts = 0
+  private maxReconnectAttempts = 5
+  private roomId: string
+  private playerName: string
+  private apiUrl: string
+
+  constructor(apiUrl: string, roomId: string, playerName: string) {
+    this.apiUrl = apiUrl
+    this.roomId = roomId
+    this.playerName = playerName
+  }
+
+  connect() {
+    const wsUrl = this.apiUrl.replace(/^http/, 'ws')
+    this.ws = new WebSocket(`${wsUrl}/api/rooms/${this.roomId}/ws`)
+
+    this.ws.onopen = () => {
+      this.reconnectAttempts = 0
+      this.handlers.onConnectionChange?.(true)
+      this.send({ type: 'join', name: this.playerName })
+    }
+
+    this.ws.onmessage = (event) => {
+      try {
+        const data: MessageType = JSON.parse(event.data)
+        this.handleMessage(data)
+      } catch (e) {
+        console.error('Failed to parse message:', e)
+      }
+    }
+
+    this.ws.onclose = () => {
+      this.handlers.onConnectionChange?.(false)
+      this.attemptReconnect()
+    }
+
+    this.ws.onerror = () => {
+      this.handlers.onConnectionChange?.(false)
+    }
+  }
+
+  private handleMessage(data: MessageType) {
+    switch (data.type) {
+      case 'init':
+        this.handlers.onInit?.(data.playerId, data.player, data.players, data.strokes)
+        break
+      case 'player-joined':
+        this.handlers.onPlayerJoined?.(data.player)
+        break
+      case 'player-left':
+        this.handlers.onPlayerLeft?.(data.playerId)
+        break
+      case 'stroke':
+        this.handlers.onStroke?.(data.stroke)
+        break
+      case 'stroke-update':
+        this.handlers.onStrokeUpdate?.(data.strokeId, data.point)
+        break
+      case 'clear':
+        this.handlers.onClear?.()
+        break
+    }
+  }
+
+  private attemptReconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++
+      setTimeout(() => this.connect(), 1000 * this.reconnectAttempts)
+    }
+  }
+
+  on(handlers: GameEventHandler) {
+    this.handlers = { ...this.handlers, ...handlers }
+  }
+
+  send(message: object) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message))
+    }
+  }
+
+  sendStroke(stroke: Stroke) {
+    this.send({ type: 'stroke', stroke })
+  }
+
+  sendStrokeUpdate(strokeId: string, point: { x: number; y: number }) {
+    this.send({ type: 'stroke-update', strokeId, point })
+  }
+
+  sendClear() {
+    this.send({ type: 'clear' })
+  }
+
+  disconnect() {
+    this.maxReconnectAttempts = 0
+    this.ws?.close()
+  }
+}

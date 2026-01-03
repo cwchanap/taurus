@@ -1,0 +1,152 @@
+<script lang="ts">
+  import { Application, Graphics } from 'pixi.js'
+  import { onMount, onDestroy } from 'svelte'
+  import type { Point, Stroke } from '$lib/types'
+
+  interface Props {
+    color: string
+    brushSize: number
+    strokes: Stroke[]
+    onStrokeStart: (stroke: Stroke) => void
+    onStrokeUpdate: (strokeId: string, point: Point) => void
+  }
+
+  let { color, brushSize, strokes, onStrokeStart, onStrokeUpdate }: Props = $props()
+
+  let container: HTMLDivElement
+  let app: Application
+  let currentGraphics: Graphics | null = null
+  let currentStrokeId: string | null = null
+  let isDrawing = false
+  let lastPoint: Point | null = null
+  let strokeGraphics: Map<string, Graphics> = new Map()
+
+  onMount(async () => {
+    app = new Application()
+    await app.init({
+      background: '#1a1a2e',
+      resizeTo: container,
+      antialias: true,
+    })
+    container.appendChild(app.canvas)
+
+    app.stage.eventMode = 'static'
+    app.stage.hitArea = app.screen
+
+    app.stage.on('pointerdown', onPointerDown)
+    app.stage.on('pointermove', onPointerMove)
+    app.stage.on('pointerup', onPointerUp)
+    app.stage.on('pointerupoutside', onPointerUp)
+
+    // Draw existing strokes
+    for (const stroke of strokes) {
+      drawStroke(stroke)
+    }
+  })
+
+  onDestroy(() => {
+    app?.destroy(true)
+  })
+
+  function onPointerDown(event: { global: { x: number; y: number } }) {
+    isDrawing = true
+    currentStrokeId = crypto.randomUUID()
+
+    const point = { x: event.global.x, y: event.global.y }
+    lastPoint = point
+
+    currentGraphics = new Graphics()
+    app.stage.addChild(currentGraphics)
+    strokeGraphics.set(currentStrokeId, currentGraphics)
+
+    const stroke: Stroke = {
+      id: currentStrokeId,
+      playerId: '',
+      points: [point],
+      color: color,
+      size: brushSize,
+    }
+
+    onStrokeStart(stroke)
+  }
+
+  function onPointerMove(event: { global: { x: number; y: number } }) {
+    if (!isDrawing || !currentGraphics || !currentStrokeId || !lastPoint) return
+
+    const point = { x: event.global.x, y: event.global.y }
+
+    currentGraphics
+      .moveTo(lastPoint.x, lastPoint.y)
+      .lineTo(point.x, point.y)
+      .stroke({ width: brushSize, color: color, cap: 'round' })
+
+    lastPoint = point
+    onStrokeUpdate(currentStrokeId, point)
+  }
+
+  function onPointerUp() {
+    isDrawing = false
+    currentGraphics = null
+    currentStrokeId = null
+    lastPoint = null
+  }
+
+  function drawStroke(stroke: Stroke) {
+    if (stroke.points.length < 1) return
+
+    let graphics = strokeGraphics.get(stroke.id)
+    if (!graphics) {
+      graphics = new Graphics()
+      app.stage.addChild(graphics)
+      strokeGraphics.set(stroke.id, graphics)
+    }
+
+    graphics.clear()
+    for (let i = 1; i < stroke.points.length; i++) {
+      graphics
+        .moveTo(stroke.points[i - 1].x, stroke.points[i - 1].y)
+        .lineTo(stroke.points[i].x, stroke.points[i].y)
+        .stroke({ width: stroke.size, color: stroke.color, cap: 'round' })
+    }
+  }
+
+  export function addRemoteStroke(stroke: Stroke) {
+    drawStroke(stroke)
+  }
+
+  export function updateRemoteStroke(strokeId: string, point: Point) {
+    const graphics = strokeGraphics.get(strokeId)
+    if (!graphics) return
+
+    const existingStroke = strokes.find((s) => s.id === strokeId)
+    if (existingStroke && existingStroke.points.length > 0) {
+      const lastPt = existingStroke.points[existingStroke.points.length - 1]
+      graphics
+        .moveTo(lastPt.x, lastPt.y)
+        .lineTo(point.x, point.y)
+        .stroke({ width: existingStroke.size, color: existingStroke.color, cap: 'round' })
+      existingStroke.points.push(point)
+    }
+  }
+
+  export function clearCanvas() {
+    for (const graphics of strokeGraphics.values()) {
+      graphics.destroy()
+    }
+    strokeGraphics.clear()
+  }
+</script>
+
+<div bind:this={container} class="canvas-container"></div>
+
+<style>
+  .canvas-container {
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow:
+      0 25px 50px -12px rgb(0 0 0 / 0.5),
+      inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  }
+</style>
