@@ -232,6 +232,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     if (!playerId) return
 
     await this.ctx.storage.delete('strokes')
+    this.strokes = []
 
     this.broadcast({
       type: 'clear',
