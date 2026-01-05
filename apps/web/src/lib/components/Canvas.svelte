@@ -14,34 +14,43 @@
   let { color, brushSize, strokes, onStrokeStart, onStrokeUpdate }: Props = $props()
 
   let container: HTMLDivElement
-  let app: Application
+  let app = $state.raw<Application | null>(null)
   let currentGraphics: Graphics | null = null
   let currentStrokeId: string | null = null
   let isDrawing = false
   let lastPoint: Point | null = null
   let strokeGraphics: Map<string, Graphics> = new Map()
 
+  $effect(() => {
+    if (!app) return
+    // Draw initial strokes and stay reactive to new ones
+    for (const stroke of strokes) {
+      if (!strokeGraphics.has(stroke.id)) {
+        drawStroke(stroke)
+      }
+    }
+  })
+
   onMount(async () => {
-    app = new Application()
-    await app.init({
+    const pixiApp = new Application()
+    await pixiApp.init({
       background: '#1a1a2e',
       resizeTo: container,
       antialias: true,
     })
-    container.appendChild(app.canvas)
+    container.appendChild(pixiApp.canvas)
 
-    app.stage.eventMode = 'static'
-    app.stage.hitArea = app.screen
+    pixiApp.stage.eventMode = 'static'
+    pixiApp.stage.hitArea = pixiApp.screen
 
-    app.stage.on('pointerdown', onPointerDown)
-    app.stage.on('pointermove', onPointerMove)
-    app.stage.on('pointerup', onPointerUp)
-    app.stage.on('pointerupoutside', onPointerUp)
+    pixiApp.stage.on('pointerdown', onPointerDown)
+    pixiApp.stage.on('pointermove', onPointerMove)
+    pixiApp.stage.on('pointerup', onPointerUp)
+    pixiApp.stage.on('pointerupoutside', onPointerUp)
 
-    // Draw existing strokes
-    for (const stroke of strokes) {
-      drawStroke(stroke)
-    }
+    // Assign to app state only after full initialization
+    // This will trigger any effects that depend on app being ready
+    app = pixiApp
   })
 
   onDestroy(() => {
