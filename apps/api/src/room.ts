@@ -42,8 +42,17 @@ const COLORS = [
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
+  private initialized = false
+
+  private async ensureInitialized() {
+    if (!this.initialized) {
+      this.strokes = (await this.ctx.storage.get<Stroke[]>('strokes')) || []
+      this.initialized = true
+    }
+  }
 
   async fetch(request: Request): Promise<Response> {
+    await this.ensureInitialized()
     const url = new URL(request.url)
 
     if (url.pathname === '/ws') {
@@ -93,16 +102,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
       switch (data.type) {
         case 'join':
-          this.handleJoin(ws, data as Message & { name: string })
+          await this.handleJoin(ws, data as Message & { name: string })
           break
         case 'stroke':
-          this.handleStroke(ws, data as Message & { stroke: Stroke })
+          await this.handleStroke(ws, data as Message & { stroke: Stroke })
           break
         case 'stroke-update':
-          this.handleStrokeUpdate(ws, data as Message & { strokeId: string; point: Point })
+          await this.handleStrokeUpdate(ws, data as Message & { strokeId: string; point: Point })
           break
         case 'clear':
-          this.handleClear(ws)
+          await this.handleClear(ws)
           break
       }
     } catch (e) {
@@ -118,7 +127,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     this.handleLeave(ws)
   }
 
-  private handleJoin(ws: WebSocket, data: Message & { name: string }) {
+  private async handleJoin(ws: WebSocket, data: Message & { name: string }) {
     const playerId = crypto.randomUUID()
     const existingPlayers = this.getPlayers()
     const color = COLORS[existingPlayers.length % COLORS.length]
@@ -134,6 +143,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     ws.serializeAttachment(attachment)
 
     // Send current state to the new player (include existing players)
+    await this.ensureInitialized()
+
     ws.send(
       JSON.stringify({
         type: 'init',
@@ -164,9 +175,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     }
   }
 
-  private handleStroke(ws: WebSocket, data: Message & { stroke: Stroke }) {
+  private async handleStroke(ws: WebSocket, data: Message & { stroke: Stroke }) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
+
+    await this.ensureInitialized()
 
     const stroke: Stroke = {
       ...data.stroke,
@@ -174,6 +187,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     }
 
     this.strokes.push(stroke)
+    // Debounced or background save would be better, but let's at least keep memory in sync
+    this.ctx.storage.put('strokes', this.strokes).catch((e) => console.error('Storage error:', e))
 
     this.broadcast(
       {
@@ -184,13 +199,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     )
   }
 
-  private handleStrokeUpdate(ws: WebSocket, data: Message & { strokeId: string; point: Point }) {
+  private async handleStrokeUpdate(
+    ws: WebSocket,
+    data: Message & { strokeId: string; point: Point }
+  ) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
+
+    await this.ensureInitialized()
 
     const stroke = this.strokes.find((s) => s.id === data.strokeId && s.playerId === playerId)
     if (stroke) {
       stroke.points.push(data.point)
+
+      // Update storage periodically or in background
+      // For now, we broadcast immediately and save in background
+      this.ctx.storage.put('strokes', this.strokes).catch((e) => console.error('Storage error:', e))
 
       this.broadcast(
         {
@@ -203,11 +227,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     }
   }
 
-  private handleClear(ws: WebSocket) {
+  private async handleClear(ws: WebSocket) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    this.strokes = []
+    await this.ctx.storage.delete('strokes')
 
     this.broadcast({
       type: 'clear',
