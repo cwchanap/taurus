@@ -23,6 +23,16 @@
 
   $effect(() => {
     if (!app) return
+
+    // Remove graphics for strokes that no longer exist
+    const currentStrokeIds = new Set(strokes.map((s) => s.id))
+    for (const [id, graphics] of strokeGraphics) {
+      if (!currentStrokeIds.has(id)) {
+        graphics.destroy()
+        strokeGraphics.delete(id)
+      }
+    }
+
     // Draw initial strokes and stay reactive to new ones
     for (const stroke of strokes) {
       if (!strokeGraphics.has(stroke.id)) {
