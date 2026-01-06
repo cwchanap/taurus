@@ -7,8 +7,10 @@
   import { GameWebSocket } from '$lib/websocket'
   import type { Player, Stroke, Point } from '$lib/types'
 
-  // API URL - update this for production
-  const API_URL = browser ? 'http://localhost:8787' : ''
+  // API URL - configurable via VITE_API_URL environment variable
+  const API_URL =
+    import.meta.env.VITE_API_URL ||
+    (browser ? (import.meta.env.DEV ? 'http://localhost:8787' : window.location.origin) : '')
 
   let gameState = $state<'lobby' | 'game'>('lobby')
   let roomId = $state('')
@@ -57,6 +59,8 @@
       onInit: (id, player, playerList, strokeList) => {
         playerId = id
         players = playerList
+        // Clear canvas before applying new state to avoid desync
+        canvasComponent?.clearCanvas()
         strokes = strokeList
         gameState = 'game'
         isLoading = false
