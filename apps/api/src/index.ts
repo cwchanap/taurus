@@ -28,7 +28,7 @@ app.get('/api/rooms/:id', async (c) => {
   const room = c.env.DRAWING_ROOM.get(id)
 
   const response = await room.fetch(new Request('http://internal/info'))
-  const info = await response.json()
+  const info = (await response.json()) as Record<string, unknown>
 
   return c.json({ roomId, ...info })
 })

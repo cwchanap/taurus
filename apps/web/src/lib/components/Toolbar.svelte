@@ -33,6 +33,7 @@
           class:active={color === c}
           style="background-color: {c}"
           onclick={() => onColorChange(c)}
+          aria-label="Select color {c}"
         ></button>
       {/each}
     </div>
@@ -46,6 +47,8 @@
           class="size-btn"
           class:active={brushSize === size}
           onclick={() => onBrushSizeChange(size)}
+          aria-label="Brush size {size}px"
+          aria-pressed={brushSize === size}
         >
           <span class="size-dot" style="width: {size}px; height: {size}px;"></span>
         </button>

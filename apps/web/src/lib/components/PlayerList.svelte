@@ -7,6 +7,10 @@
   }
 
   let { players, currentPlayerId }: Props = $props()
+
+  function isValidColor(color: string) {
+    return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)
+  }
 </script>
 
 <div class="player-list">
@@ -14,8 +18,11 @@
   <div class="players">
     {#each players as player}
       <div class="player" class:current={player.id === currentPlayerId}>
-        <div class="avatar" style="background-color: {player.color}">
-          {player.name.charAt(0).toUpperCase()}
+        <div
+          class="avatar"
+          style="background-color: {isValidColor(player.color) ? player.color : '#4ECDC4'}"
+        >
+          {(player.name?.trim() || '?').charAt(0).toUpperCase()}
         </div>
         <span class="name">
           {player.name}
