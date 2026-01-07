@@ -14,6 +14,7 @@
   let { color, brushSize, strokes, onStrokeStart, onStrokeUpdate }: Props = $props()
 
   let container: HTMLDivElement
+  let mounted = false
   let app = $state.raw<Application | null>(null)
   let currentGraphics: Graphics | null = null
   let currentStrokeId: string | null = null
@@ -42,6 +43,7 @@
   })
 
   onMount(async () => {
+    mounted = true
     const pixiApp = new Application()
     await pixiApp.init({
       background: '#1a1a2e',
@@ -60,10 +62,15 @@
 
     // Assign to app state only after full initialization
     // This will trigger any effects that depend on app being ready
+    if (!mounted) {
+      pixiApp.destroy(true)
+      return
+    }
     app = pixiApp
   })
 
   onDestroy(() => {
+    mounted = false
     app?.destroy(true)
   })
 
@@ -136,16 +143,43 @@
 
   export function updateRemoteStroke(strokeId: string, point: Point) {
     const graphics = strokeGraphics.get(strokeId)
-    if (!graphics) return
+    if (!graphics) {
+      console.warn(`Graphics not found for stroke ${strokeId}`)
+      return false
+    }
 
     const existingStroke = strokes.find((s) => s.id === strokeId)
-    if (existingStroke && existingStroke.points.length > 0) {
-      const lastPt = existingStroke.points[existingStroke.points.length - 1]
-      graphics
-        .moveTo(lastPt.x, lastPt.y)
-        .lineTo(point.x, point.y)
-        .stroke({ width: existingStroke.size, color: existingStroke.color, cap: 'round' })
+    if (!existingStroke) {
+      console.warn(`Stroke not found needed for update ${strokeId}`)
+      return false
     }
+
+    // Ensure points array exists
+    if (!existingStroke.points) existingStroke.points = []
+
+    // Append point if it's new (check against last point to avoid dupes/re-adding)
+    const points = existingStroke.points
+    const lastStored = points[points.length - 1]
+
+    if (!lastStored || lastStored.x !== point.x || lastStored.y !== point.y) {
+      points.push(point)
+    }
+
+    // Need at least 2 points to draw a line
+    if (points.length < 2) return true
+
+    const lastPt = points[points.length - 2]
+    const newPt = points[points.length - 1]
+
+    // Skip if no movement (redundant check but safe)
+    if (lastPt.x === newPt.x && lastPt.y === newPt.y) return true
+
+    graphics
+      .moveTo(lastPt.x, lastPt.y)
+      .lineTo(newPt.x, newPt.y)
+      .stroke({ width: existingStroke.size, color: existingStroke.color, cap: 'round' })
+
+    return true
   }
 
   export function clearCanvas() {
