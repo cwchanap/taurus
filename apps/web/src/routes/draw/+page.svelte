@@ -5,6 +5,7 @@
   import PlayerList from '$lib/components/PlayerList.svelte'
   import Lobby from '$lib/components/Lobby.svelte'
   import { GameWebSocket } from '$lib/websocket'
+  import { onDestroy } from 'svelte'
   import type { Player, Stroke, Point } from '$lib/types'
 
   // API URL - configurable via VITE_API_URL environment variable
@@ -25,12 +26,13 @@
   let brushSize = $state(8)
 
   let ws: GameWebSocket | null = null
-  let canvasComponent: Canvas
+  let canvasComponent = $state<Canvas>()
 
   async function createRoom() {
     isLoading = true
     try {
       const res = await fetch(`${API_URL}/api/rooms`, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
       const data = await res.json()
       roomId = data.roomId
       connectToRoom()
@@ -47,6 +49,7 @@
   }
 
   function connectToRoom() {
+    if (ws) ws.disconnect()
     ws = new GameWebSocket(API_URL, roomId, playerName)
 
     ws.on({
@@ -76,6 +79,10 @@
         canvasComponent?.addRemoteStroke(stroke)
       },
       onStrokeUpdate: (strokeId, point) => {
+        const stroke = strokes.find((s) => s.id === strokeId)
+        if (stroke) {
+          stroke.points.push(point)
+        }
         canvasComponent?.updateRemoteStroke(strokeId, point)
       },
       onClear: () => {
@@ -86,6 +93,10 @@
 
     ws.connect()
   }
+
+  onDestroy(() => {
+    ws?.disconnect()
+  })
 
   function handleStrokeStart(stroke: Stroke) {
     strokes = [...strokes, stroke]

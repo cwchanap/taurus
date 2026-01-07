@@ -98,7 +98,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     try {
-      const data: Message = JSON.parse(message as string)
+      let messageStr: string
+      if (typeof message === 'string') {
+        messageStr = message
+      } else {
+        messageStr = new TextDecoder().decode(message)
+      }
+
+      const data: Message = JSON.parse(messageStr)
 
       switch (data.type) {
         case 'join':
@@ -246,7 +253,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         try {
           ws.send(data)
         } catch {
-          // Connection closed
+          // Ignore connection closed errors
         }
       }
     }

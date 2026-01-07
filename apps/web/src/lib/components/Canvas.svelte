@@ -68,6 +68,7 @@
   })
 
   function onPointerDown(event: { global: { x: number; y: number } }) {
+    if (!app) return
     isDrawing = true
     currentStrokeId = crypto.randomUUID()
 
@@ -111,7 +112,7 @@
   }
 
   function drawStroke(stroke: Stroke) {
-    if (stroke.points.length < 1) return
+    if (stroke.points.length < 1 || !app) return
 
     let graphics = strokeGraphics.get(stroke.id)
     if (!graphics) {
@@ -144,7 +145,6 @@
         .moveTo(lastPt.x, lastPt.y)
         .lineTo(point.x, point.y)
         .stroke({ width: existingStroke.size, color: existingStroke.color, cap: 'round' })
-      existingStroke.points.push(point)
     }
   }
 

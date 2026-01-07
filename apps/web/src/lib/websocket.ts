@@ -15,6 +15,7 @@ export class GameWebSocket {
   private handlers: GameEventHandler = {}
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
+  private intentionalDisconnect = false
   private roomId: string
   private playerName: string
   private apiUrl: string
@@ -26,6 +27,14 @@ export class GameWebSocket {
   }
 
   connect() {
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return
+    }
+
+    this.intentionalDisconnect = false
     const wsUrl = this.apiUrl.replace(/^http/, 'ws')
     this.ws = new WebSocket(`${wsUrl}/api/rooms/${this.roomId}/ws`)
 
@@ -46,7 +55,9 @@ export class GameWebSocket {
 
     this.ws.onclose = () => {
       this.handlers.onConnectionChange?.(false)
-      this.attemptReconnect()
+      if (!this.intentionalDisconnect) {
+        this.attemptReconnect()
+      }
     }
 
     this.ws.onerror = () => {
@@ -107,7 +118,8 @@ export class GameWebSocket {
   }
 
   disconnect() {
-    this.maxReconnectAttempts = 0
+    this.intentionalDisconnect = true
     this.ws?.close()
+    this.ws = null
   }
 }

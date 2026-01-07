@@ -64,6 +64,7 @@
             bind:value={roomCode}
             maxlength="8"
             class="room-code-input"
+            aria-label="Room Code"
           />
           <button
             class="btn btn-secondary"
