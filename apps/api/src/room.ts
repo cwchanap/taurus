@@ -97,16 +97,23 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    // Parse message - client error if this fails
+    let data: Message
     try {
       let messageStr: string
       if (typeof message === 'string') {
         messageStr = message
       } else {
-        messageStr = new TextDecoder().decode(message)
+        messageStr = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(message)
       }
+      data = JSON.parse(messageStr)
+    } catch (e) {
+      console.warn('Invalid message format from client:', e)
+      return
+    }
 
-      const data: Message = JSON.parse(messageStr)
-
+    // Handle message - server error if this fails
+    try {
       switch (data.type) {
         case 'join':
           await this.handleJoin(ws, data as Message & { name: string })
@@ -122,7 +129,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
           break
       }
     } catch (e) {
-      console.error('WebSocket message error:', e)
+      console.error('Handler error for message type:', data.type, e)
     }
   }
 
@@ -252,8 +259,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       if (ws !== exclude) {
         try {
           ws.send(data)
-        } catch {
-          // Ignore connection closed errors
+        } catch (error) {
+          // Only ignore InvalidStateError (connection closed between getting socket and sending)
+          if (error instanceof DOMException && error.name === 'InvalidStateError') {
+            continue
+          }
+          console.error('Unexpected broadcast error:', error)
         }
       }
     }

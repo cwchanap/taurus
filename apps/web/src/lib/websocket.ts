@@ -8,6 +8,7 @@ export type GameEventHandler = {
   onStrokeUpdate?: (strokeId: string, point: { x: number; y: number }) => void
   onClear?: () => void
   onConnectionChange?: (connected: boolean) => void
+  onConnectionFailed?: (reason: string) => void
 }
 
 export class GameWebSocket {
@@ -92,6 +93,10 @@ export class GameWebSocket {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
       setTimeout(() => this.connect(), 1000 * this.reconnectAttempts)
+    } else {
+      this.handlers.onConnectionFailed?.(
+        `Failed to reconnect after ${this.maxReconnectAttempts} attempts. Please refresh the page.`
+      )
     }
   }
 
@@ -99,10 +104,17 @@ export class GameWebSocket {
     this.handlers = { ...this.handlers, ...handlers }
   }
 
-  send(message: object) {
+  send(message: object): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message))
+      try {
+        this.ws.send(JSON.stringify(message))
+        return true
+      } catch (e) {
+        console.error('Failed to send message:', e)
+        return false
+      }
     }
+    return false
   }
 
   sendStroke(stroke: Stroke) {

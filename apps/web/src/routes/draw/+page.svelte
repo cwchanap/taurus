@@ -21,6 +21,7 @@
   let strokes = $state<Stroke[]>([])
   let isLoading = $state(false)
   let isConnected = $state(false)
+  let errorMessage = $state('')
 
   let color = $state('#4ECDC4')
   let brushSize = $state(8)
@@ -30,14 +31,32 @@
 
   async function createRoom() {
     isLoading = true
+    errorMessage = ''
+
     try {
       const res = await fetch(`${API_URL}/api/rooms`, { method: 'POST' })
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
-      const data = await res.json()
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => 'Unknown error')
+        throw new Error(`Server error (${res.status}): ${errorText}`)
+      }
+
+      let data
+      try {
+        data = await res.json()
+      } catch {
+        throw new Error('Invalid response from server')
+      }
+
+      if (!data.roomId) {
+        throw new Error('Server did not return a room ID')
+      }
+
       roomId = data.roomId
       connectToRoom()
     } catch (e) {
       console.error('Failed to create room:', e)
+      errorMessage = e instanceof Error ? e.message : 'Failed to create room. Please try again.'
       isLoading = false
     }
   }
@@ -45,6 +64,7 @@
   function joinRoom(code: string) {
     roomId = code
     isLoading = true
+    errorMessage = ''
     connectToRoom()
   }
 
@@ -55,9 +75,9 @@
     ws.on({
       onConnectionChange: (connected) => {
         isConnected = connected
-        if (!connected && gameState === 'game') {
-          // Handle disconnection
-        }
+      },
+      onConnectionFailed: (reason) => {
+        errorMessage = reason
       },
       onInit: (id, player, playerList, strokeList) => {
         playerId = id
@@ -133,6 +153,7 @@
     onCreateRoom={createRoom}
     onJoinRoom={joinRoom}
     {isLoading}
+    {errorMessage}
   />
 {:else}
   <div class="game-container">
@@ -142,6 +163,9 @@
         <span class="room-label">Room:</span>
         <span class="room-code">{roomId}</span>
         <span class="connection-status" class:connected={isConnected}></span>
+        {#if errorMessage}
+          <span class="error-badge">{errorMessage}</span>
+        {/if}
       </div>
     </header>
 
@@ -245,6 +269,16 @@
   .connection-status.connected {
     background: #4ecdc4;
     box-shadow: 0 0 10px #4ecdc4;
+  }
+
+  .error-badge {
+    padding: 4px 12px;
+    background: rgb(255 107 107 / 0.15);
+    border: 1px solid rgb(255 107 107 / 0.3);
+    border-radius: 8px;
+    color: #ff6b6b;
+    font-size: 12px;
+    margin-left: 8px;
   }
 
   .game-layout {
