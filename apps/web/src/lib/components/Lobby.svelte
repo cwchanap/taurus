@@ -5,9 +5,11 @@
     playerName: string
     onPlayerNameChange: (name: string) => void
     isLoading: boolean
+    errorMessage?: string
   }
 
-  let { onCreateRoom, onJoinRoom, playerName, onPlayerNameChange, isLoading }: Props = $props()
+  let { onCreateRoom, onJoinRoom, playerName, onPlayerNameChange, isLoading, errorMessage }: Props =
+    $props()
 
   let roomCode = $state('')
 
@@ -30,6 +32,12 @@
       <h1 class="title">🎨 Draw Together</h1>
       <p class="subtitle">Create or join a room to start drawing with friends</p>
     </div>
+
+    {#if errorMessage}
+      <div class="error-message" role="alert">
+        {errorMessage}
+      </div>
+    {/if}
 
     <div class="form">
       <div class="input-group">
@@ -122,6 +130,17 @@
     color: rgb(255 255 255 / 0.6);
     margin: 0;
     font-size: 15px;
+  }
+
+  .error-message {
+    padding: 12px 16px;
+    background: rgb(255 107 107 / 0.15);
+    border: 1px solid rgb(255 107 107 / 0.3);
+    border-radius: 12px;
+    color: #ff6b6b;
+    font-size: 14px;
+    text-align: center;
+    margin-bottom: 8px;
   }
 
   .form {

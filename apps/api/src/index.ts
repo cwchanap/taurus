@@ -33,20 +33,42 @@ app.get('/', (c) => {
 
 // Create a new room
 app.post('/api/rooms', async (c) => {
-  const roomId = crypto.randomUUID().slice(0, 8).toUpperCase()
-  return c.json({ roomId })
+  try {
+    // Generate a 12-character ID to reduce collision risk (~281 trillion combinations)
+    const roomId = crypto.randomUUID().slice(0, 12).toUpperCase()
+    return c.json({ roomId })
+  } catch (e) {
+    console.error('Error creating room:', e)
+    return c.text('Internal Server Error', 500)
+  }
 })
 
 // Get room info
 app.get('/api/rooms/:id', async (c) => {
-  const roomId = c.req.param('id')
-  const id = c.env.DRAWING_ROOM.idFromName(roomId)
-  const room = c.env.DRAWING_ROOM.get(id)
+  try {
+    const roomId = c.req.param('id')
 
-  const response = await room.fetch(new Request('http://internal/info'))
-  const info = (await response.json()) as Record<string, unknown>
+    // Validate room ID format
+    if (!/^[A-Z0-9]{12}$/i.test(roomId)) {
+      return c.json({ error: 'Invalid room ID format' }, 400)
+    }
 
-  return c.json({ roomId, ...info })
+    const id = c.env.DRAWING_ROOM.idFromName(roomId)
+    const room = c.env.DRAWING_ROOM.get(id)
+
+    const response = await room.fetch(new Request('http://internal/info'))
+
+    if (!response.ok) {
+      return c.json({ error: 'Room not found' }, 404)
+    }
+
+    const info = (await response.json()) as Record<string, unknown>
+
+    return c.json({ roomId, ...info })
+  } catch (error) {
+    console.error('Failed to fetch room:', error)
+    return c.json({ error: 'Failed to fetch room' }, 500)
+  }
 })
 
 // WebSocket upgrade for room
@@ -54,14 +76,9 @@ app.get('/api/rooms/:id/ws', async (c) => {
   try {
     const roomId = c.req.param('id')
 
-    // Validate roomId format (8 characters, uppercase alphanumeric)
-    if (!/^[A-Z0-9]{8}$/.test(roomId)) {
+    // Validate roomId format (12 characters, uppercase alphanumeric)
+    if (!/^[A-Z0-9]{12}$/.test(roomId)) {
       return c.text('Invalid Room ID', 400)
-    }
-
-    // Enforce auth (Simple check for Authorization header as placeholder)
-    if (!c.req.header('Authorization')) {
-      return c.text('Unauthorized', 401)
     }
 
     const id = c.env.DRAWING_ROOM.idFromName(roomId)
