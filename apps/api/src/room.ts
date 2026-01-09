@@ -53,9 +53,24 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       // Migration: If we have strokes but no created flag, assume it's a legacy room
       if (!this.created && this.strokes.length > 0) {
         this.created = true
-        await this.ctx.storage.put('created', true)
+        await this.storagePutWithRetry('created', true)
       }
       this.initialized = true
+    }
+  }
+
+  private async storagePutWithRetry<T>(key: string, value: T, retries = 3): Promise<void> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await this.ctx.storage.put(key, value)
+        return
+      } catch (e) {
+        if (i === retries - 1) {
+          console.error(`Failed to store ${key} after ${retries} attempts:`, e)
+          throw e
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.pow(2, i) * 100))
+      }
     }
   }
 
@@ -65,7 +80,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     if (url.pathname === '/create' && request.method === 'POST') {
       this.created = true
-      await this.ctx.storage.put('created', true)
+      this.created = true
+      await this.storagePutWithRetry('created', true)
       return new Response('Created', { status: 200 })
     }
 
@@ -238,7 +254,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     this.strokes.push(stroke)
     // Debounced or background save would be better, but let's at least keep memory in sync
-    this.ctx.storage.put('strokes', this.strokes).catch((e) => console.error('Storage error:', e))
+    this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
+      console.error('Background storage save failed:', e)
+    )
 
     this.broadcast(
       {
@@ -264,7 +282,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
       // Update storage periodically or in background
       // For now, we broadcast immediately and save in background
-      this.ctx.storage.put('strokes', this.strokes).catch((e) => console.error('Storage error:', e))
+      this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
+        console.error('Background storage save failed:', e)
+      )
 
       this.broadcast(
         {

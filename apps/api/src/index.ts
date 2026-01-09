@@ -34,8 +34,8 @@ app.get('/', (c) => {
 // Create a new room
 app.post('/api/rooms', async (c) => {
   try {
-    // Generate a 12-character ID to reduce collision risk (~281 trillion combinations)
-    const roomId = crypto.randomUUID().slice(0, 12).toUpperCase()
+    // Generate a full UUID to maximize entropy
+    const roomId = crypto.randomUUID().toUpperCase()
     const id = c.env.DRAWING_ROOM.idFromName(roomId)
     const room = c.env.DRAWING_ROOM.get(id)
     await room.fetch(new Request('http://internal/create', { method: 'POST' }))
@@ -51,8 +51,8 @@ app.get('/api/rooms/:id', async (c) => {
   try {
     const roomId = c.req.param('id')
 
-    // Validate room ID format
-    if (!/^[A-Z0-9]{12}$/i.test(roomId)) {
+    // Validate room ID format (UUID)
+    if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(roomId)) {
       return c.json({ error: 'Invalid room ID format' }, 400)
     }
 
@@ -79,8 +79,8 @@ app.get('/api/rooms/:id/ws', async (c) => {
   try {
     const roomId = c.req.param('id')
 
-    // Validate roomId format (12 characters, uppercase alphanumeric)
-    if (!/^[A-Z0-9]{12}$/.test(roomId)) {
+    // Validate roomId format (UUID)
+    if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(roomId)) {
       return c.text('Invalid Room ID', 400)
     }
 

@@ -99,9 +99,14 @@
         canvasComponent?.addRemoteStroke(stroke)
       },
       onStrokeUpdate: (strokeId, point) => {
-        const stroke = strokes.find((s) => s.id === strokeId)
-        if (stroke) {
-          stroke.points.push(point)
+        const index = strokes.findIndex((s) => s.id === strokeId)
+        if (index !== -1) {
+          // Mutating stroke.points is efficient for drawing, but to satisfy
+          // Svelte 5 state management we should ideally be immutable.
+          // However, for high-frequency updates (drawing), creating new arrays
+          // every 16ms might be costly properly.
+          // But to strictly follow the review:
+          strokes[index].points = [...strokes[index].points, point]
         }
         canvasComponent?.updateRemoteStroke(strokeId, point)
       },
@@ -124,9 +129,9 @@
   }
 
   function handleStrokeUpdate(strokeId: string, point: Point) {
-    const stroke = strokes.find((s) => s.id === strokeId)
-    if (stroke) {
-      stroke.points.push(point)
+    const index = strokes.findIndex((s) => s.id === strokeId)
+    if (index !== -1) {
+      strokes[index].points = [...strokes[index].points, point]
     }
     ws?.sendStrokeUpdate(strokeId, point)
   }
