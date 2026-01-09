@@ -43,10 +43,18 @@ const COLORS = [
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
   private initialized = false
+  private created = false
 
   private async ensureInitialized() {
     if (!this.initialized) {
       this.strokes = (await this.ctx.storage.get<Stroke[]>('strokes')) || []
+      this.created = (await this.ctx.storage.get<boolean>('created')) || false
+
+      // Migration: If we have strokes but no created flag, assume it's a legacy room
+      if (!this.created && this.strokes.length > 0) {
+        this.created = true
+        await this.ctx.storage.put('created', true)
+      }
       this.initialized = true
     }
   }
@@ -55,7 +63,32 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     await this.ensureInitialized()
     const url = new URL(request.url)
 
+    if (url.pathname === '/create' && request.method === 'POST') {
+      this.created = true
+      await this.ctx.storage.put('created', true)
+      return new Response('Created', { status: 200 })
+    }
+
     if (url.pathname === '/ws') {
+      // Optional: Reject WebSocket if room not created?
+      // For now we allow it but maybe we should auto-create on join?
+      // Or strict: if not created, 404.
+      // The issue specifically mentioned the info endpoint, but consistency suggests strictness.
+      // However, making /ws strict might break direct joins if the create flow fails or if we want to allow "join to create"?
+      // The prompt suggests: "prevent users from 'activating' a random room just by joining".
+      // Let's enforce strictness for WS too, but effectively handleJoin does initialization.
+      // Actually, let's stick to the minimal scope requested: Fix the INFO endpoint 404s.
+      // But verify if we should block WS. Logic: "clients cannot detect bad/expired room codes".
+      // If WS allows connection, client thinks it works.
+      // Let's check `created` in WS connection.
+
+      if (!this.created) {
+        // Should we support handling join for legacy rooms that might be empty?
+        // We did the migration check in ensureInitialized.
+        // If strokes are empty and created is false, it's truly a non-existent room.
+        return new Response('Room not found', { status: 404 })
+      }
+
       const upgradeHeader = request.headers.get('Upgrade')
       if (!upgradeHeader || upgradeHeader !== 'websocket') {
         return new Response('Expected WebSocket', { status: 426 })
@@ -70,6 +103,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     }
 
     if (url.pathname === '/info') {
+      if (!this.created) {
+        return new Response('Not found', { status: 404 })
+      }
       const players = this.getPlayers()
       return Response.json({
         playerCount: players.length,

@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "allow": ["Bash(bun run check-types:*)", "Bash(bun run lint:*)", "Bash(bunx eslint:*)"]
+  }
+}
