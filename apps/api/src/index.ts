@@ -36,6 +36,9 @@ app.post('/api/rooms', async (c) => {
   try {
     // Generate a 12-character ID to reduce collision risk (~281 trillion combinations)
     const roomId = crypto.randomUUID().slice(0, 12).toUpperCase()
+    const id = c.env.DRAWING_ROOM.idFromName(roomId)
+    const room = c.env.DRAWING_ROOM.get(id)
+    await room.fetch(new Request('http://internal/create', { method: 'POST' }))
     return c.json({ roomId })
   } catch (e) {
     console.error('Error creating room:', e)
