@@ -190,7 +190,14 @@
   }
 </script>
 
-<div bind:this={container} class="canvas-container"></div>
+<div bind:this={container} class="canvas-container">
+  {#if !app}
+    <div class="loading-overlay">
+      <div class="spinner"></div>
+      <span>Initializing Canvas...</span>
+    </div>
+  {/if}
+</div>
 
 <style>
   .canvas-container {
@@ -198,8 +205,37 @@
     height: 100%;
     border-radius: 16px;
     overflow: hidden;
+    position: relative;
     box-shadow:
       0 25px 50px -12px rgb(0 0 0 / 0.5),
       inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  }
+
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a2e;
+    color: white;
+    gap: 16px;
+    z-index: 10;
+  }
+
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #4ecdc4;
+    animation: spin 1s ease-in-out infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

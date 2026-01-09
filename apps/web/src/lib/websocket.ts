@@ -51,6 +51,13 @@ export class GameWebSocket {
         this.handleMessage(data)
       } catch (e) {
         console.error('Failed to parse message:', e)
+        // If we get multiple malformed messages, something is wrong
+        this.reconnectAttempts++ // Reuse this counter or make a new one?
+        // Let's just monitor for now, or force disconnect if excessive?
+        // Proposal: just log for now but better than silent
+        // Or if we want to be strict:
+        // this.handlers.onConnectionFailed?.('Received invalid data from server')
+        // this.disconnect()
       }
     }
 
