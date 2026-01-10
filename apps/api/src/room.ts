@@ -453,12 +453,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       this.playerMessageCount.set(playerId, 1)
       this.playerStrokeCount.set(playerId, 1)
     } else {
-      if (strokeCount >= this.MAX_STROKES_PER_WINDOW) {
-        console.warn(`Stroke rate limit exceeded for player ${playerId}`)
+      const messageCount = this.playerMessageCount.get(playerId) || 0
+      if (
+        strokeCount >= this.MAX_STROKES_PER_WINDOW ||
+        messageCount >= this.MAX_MESSAGES_PER_WINDOW
+      ) {
+        console.warn(`Rate limit exceeded for player ${playerId}`)
         return
       }
       this.playerStrokeCount.set(playerId, strokeCount + 1)
-      this.playerMessageCount.set(playerId, (this.playerMessageCount.get(playerId) || 0) + 1)
+      this.playerMessageCount.set(playerId, messageCount + 1)
     }
 
     await this.ensureInitialized()
