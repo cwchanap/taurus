@@ -99,7 +99,8 @@ export class GameWebSocket {
   private attemptReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
-      setTimeout(() => this.connect(), 1000 * this.reconnectAttempts)
+      const delayMs = Math.pow(2, this.reconnectAttempts - 1) * 1000
+      setTimeout(() => this.connect(), delayMs)
     } else {
       this.handlers.onConnectionFailed?.(
         `Failed to reconnect after ${this.maxReconnectAttempts} attempts. Please refresh the page.`

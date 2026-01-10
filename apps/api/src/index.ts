@@ -12,17 +12,33 @@ interface Env {
 const app = new Hono<{ Bindings: Env }>()
 
 app.use('*', async (c, next) => {
+  const isDevelopment = c.env.NODE_ENV === 'development'
+
+  // Allow permissive CORS ONLY in explicit development mode
+  if (isDevelopment) {
+    return cors()(c, next)
+  }
+
+  // In non-development, require explicit CORS configuration
+  const allowedOrigins = (c.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter((o) => o.length > 0)
+
+  // Default to restrictive if no origins configured
+  if (allowedOrigins.length === 0) {
+    const restrictiveCors = cors({
+      origin: () => null,
+    })
+    return restrictiveCors(c, next)
+  }
+
   const corsMiddleware = cors({
     origin: (origin) => {
-      const allowedOrigins = (c.env.CORS_ORIGINS || '').split(',')
+      if (!origin) return null
       return allowedOrigins.includes(origin) || allowedOrigins.includes('*') ? origin : null
     },
   })
-
-  // Permissive CORS for development or empty whitelist
-  if (c.env.NODE_ENV === 'development' || !c.env.CORS_ORIGINS) {
-    return cors()(c, next)
-  }
 
   return corsMiddleware(c, next)
 })
