@@ -52,6 +52,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
   private initialized = false
   private created = false
+  private hostPlayerId: string | null = null
+  private storageWriteTimer: ReturnType<typeof setTimeout> | null = null
+  private storageWriteDelay = 2000 // 2 seconds
 
   private async ensureInitialized() {
     if (!this.initialized) {
@@ -95,6 +98,19 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         await new Promise((resolve) => setTimeout(resolve, Math.pow(2, i) * 100))
       }
     }
+  }
+
+  private scheduleStorageWrite() {
+    if (this.storageWriteTimer) {
+      clearTimeout(this.storageWriteTimer)
+    }
+
+    this.storageWriteTimer = setTimeout(async () => {
+      this.storageWriteTimer = null
+      this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
+        console.error('Background storage save failed:', e)
+      )
+    }, this.storageWriteDelay)
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -346,6 +362,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const attachment: WebSocketAttachment = { playerId, player }
     ws.serializeAttachment(attachment)
 
+    // First player becomes the host
+    if (this.hostPlayerId === null) {
+      this.hostPlayerId = playerId
+    }
+
     // Send current state to the new player (include existing players)
     await this.ensureInitialized()
 
@@ -372,6 +393,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private handleLeave(ws: WebSocket) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (playerId) {
+      // Transfer host ownership if the host leaves
+      if (playerId === this.hostPlayerId) {
+        const players = this.getPlayers()
+        // Assign host to the next player if available
+        this.hostPlayerId = players.length > 0 ? players[0].id : null
+      }
+
       this.broadcast({
         type: 'player-left',
         playerId,
@@ -393,10 +421,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     }
 
     this.strokes.push(stroke)
-    // Debounced or background save would be better, but let's at least keep memory in sync
-    this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
-      console.error('Background storage save failed:', e)
-    )
+    // Schedule debounced storage write
+    this.scheduleStorageWrite()
 
     this.broadcast(
       {
@@ -438,11 +464,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
       stroke.points.push(data.point)
 
-      // Update storage periodically or in background
-      // For now, we broadcast immediately and save in background
-      this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
-        console.error('Background storage save failed:', e)
-      )
+      // Schedule debounced storage write
+      this.scheduleStorageWrite()
 
       this.broadcast(
         {
@@ -458,6 +481,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private async handleClear(ws: WebSocket) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
+
+    // Only host can clear
+    if (playerId !== this.hostPlayerId) {
+      console.warn(`Player ${playerId} attempted to clear canvas but is not the host`)
+      return
+    }
 
     try {
       await this.storageDeleteWithRetry('strokes')

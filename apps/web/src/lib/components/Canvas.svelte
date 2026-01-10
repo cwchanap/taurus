@@ -150,7 +150,7 @@
 
     const existingStroke = strokes.find((s) => s.id === strokeId)
     if (!existingStroke) {
-      console.warn(`Stroke not found needed for update ${strokeId}`)
+      console.warn(`Stroke not found for update ${strokeId}`)
       return false
     }
 
