@@ -54,7 +54,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private created = false
   private hostPlayerId: string | null = null
   private storageWriteTimer: ReturnType<typeof setTimeout> | null = null
-  private storageWriteDelay = 2000 // 2 seconds
+  private storageWriteDelay = 1000 // Reduced to 1 second for stroke data
 
   // Rate limiting for stroke messages
   private playerLastMessageTime: Map<string, number> = new Map()
@@ -116,10 +116,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       clearTimeout(this.storageWriteTimer)
     }
 
-    this.storageWriteTimer = setTimeout(async () => {
+    this.storageWriteTimer = setTimeout(() => {
       this.storageWriteTimer = null
-      this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
-        console.error('Background storage save failed:', e)
+      // Using ctx.waitUntil to ensure the promise completes even if the DO is evicted
+      this.ctx.waitUntil(
+        this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
+          console.error('Background storage save failed:', e)
+        )
       )
     }, this.storageWriteDelay)
   }
@@ -416,7 +419,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Transfer host ownership if the host leaves
     if (playerId === this.hostPlayerId) {
-      const players = this.getPlayers()
+      const players = this.getPlayers().filter((p) => p.id !== playerId)
       // Assign host to the next player if available
       this.hostPlayerId = players.length > 0 ? players[0].id : null
     }
@@ -551,6 +554,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     if (playerId !== this.hostPlayerId) {
       console.warn(`Player ${playerId} attempted to clear canvas but is not the host`)
       return
+    }
+
+    // Cancel pending storage write to avoid racing with the delete
+    if (this.storageWriteTimer) {
+      clearTimeout(this.storageWriteTimer)
+      this.storageWriteTimer = null
     }
 
     try {

@@ -21,6 +21,8 @@
   let isDrawing = false
   let lastPoint: Point | null = null
   let strokeGraphics: Map<string, Graphics> = new Map()
+  let strokeColor = ''
+  let strokeSize = 0
 
   $effect(() => {
     if (!app) return
@@ -86,12 +88,15 @@
     app.stage.addChild(currentGraphics)
     strokeGraphics.set(currentStrokeId, currentGraphics)
 
+    strokeColor = color
+    strokeSize = brushSize
+
     const stroke: Stroke = {
       id: currentStrokeId,
       playerId: '',
       points: [point],
-      color: color,
-      size: brushSize,
+      color: strokeColor,
+      size: strokeSize,
     }
 
     onStrokeStart(stroke)
@@ -105,7 +110,7 @@
     currentGraphics
       .moveTo(lastPoint.x, lastPoint.y)
       .lineTo(point.x, point.y)
-      .stroke({ width: brushSize, color: color, cap: 'round' })
+      .stroke({ width: strokeSize, color: strokeColor, cap: 'round' })
 
     lastPoint = point
     onStrokeUpdate(currentStrokeId, point)
