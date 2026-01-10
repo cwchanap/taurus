@@ -40,6 +40,14 @@ const COLORS = [
   '#F7DC6F',
 ]
 
+// Validation constants
+const MAX_PLAYER_NAME_LENGTH = 50
+const MAX_COLOR_LENGTH = 100
+const MAX_STROKE_SIZE = 1000
+const MIN_STROKE_SIZE = 0.1
+const MAX_STROKE_POINTS = 10000
+const MAX_COORDINATE_VALUE = 100000
+
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
   private initialized = false
@@ -79,7 +87,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const url = new URL(request.url)
 
     if (url.pathname === '/create' && request.method === 'POST') {
-      this.created = true
       this.created = true
       await this.storagePutWithRetry('created', true)
       return new Response('Created', { status: 200 })
@@ -148,6 +155,119 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     return attachment?.playerId ?? null
   }
 
+  /**
+   * Validates a point object
+   */
+  private isValidPoint(point: unknown): point is Point {
+    if (!point || typeof point !== 'object') {
+      return false
+    }
+
+    const p = point as Record<string, unknown>
+    return (
+      typeof p.x === 'number' &&
+      Number.isFinite(p.x) &&
+      Math.abs(p.x) <= MAX_COORDINATE_VALUE &&
+      typeof p.y === 'number' &&
+      Number.isFinite(p.y) &&
+      Math.abs(p.y) <= MAX_COORDINATE_VALUE
+    )
+  }
+
+  /**
+   * Validates a player name
+   */
+  private isValidPlayerName(name: unknown): name is string {
+    if (typeof name !== 'string') {
+      return false
+    }
+    return name.length > 0 && name.length <= MAX_PLAYER_NAME_LENGTH
+  }
+
+  /**
+   * Validates a color string
+   */
+  private isValidColor(color: unknown): color is string {
+    if (typeof color !== 'string') {
+      return false
+    }
+    return color.length > 0 && color.length <= MAX_COLOR_LENGTH
+  }
+
+  /**
+   * Validates a size value
+   */
+  private isValidSize(size: unknown): size is number {
+    if (typeof size !== 'number') {
+      return false
+    }
+    return Number.isFinite(size) && size >= MIN_STROKE_SIZE && size <= MAX_STROKE_SIZE
+  }
+
+  /**
+   * Validates a stroke ID (should be a non-empty string, reasonable length)
+   */
+  private isValidStrokeId(strokeId: unknown): strokeId is string {
+    if (typeof strokeId !== 'string') {
+      return false
+    }
+    return strokeId.length > 0 && strokeId.length <= 100
+  }
+
+  /**
+   * Validates and sanitizes stroke data from client
+   * Returns validated Stroke object or null if invalid
+   */
+  private validateAndCreateStroke(strokeData: unknown, playerId: string): Stroke | null {
+    if (!strokeData || typeof strokeData !== 'object') {
+      console.warn('Invalid stroke data: not an object')
+      return null
+    }
+
+    const data = strokeData as Record<string, unknown>
+
+    // Validate points array
+    const points = data.points
+    if (!Array.isArray(points)) {
+      console.warn('Invalid stroke data: points is not an array')
+      return null
+    }
+
+    if (points.length === 0 || points.length > MAX_STROKE_POINTS) {
+      console.warn(`Invalid stroke data: points array length ${points.length} exceeds limits`)
+      return null
+    }
+
+    // Validate each point
+    for (let i = 0; i < points.length; i++) {
+      if (!this.isValidPoint(points[i])) {
+        console.warn(`Invalid stroke data: point at index ${i} is invalid`)
+        return null
+      }
+    }
+
+    // Validate color
+    if (!this.isValidColor(data.color)) {
+      console.warn('Invalid stroke data: color is invalid')
+      return null
+    }
+
+    // Validate size
+    if (!this.isValidSize(data.size)) {
+      console.warn('Invalid stroke data: size is invalid')
+      return null
+    }
+
+    // Return validated stroke with server-generated ID
+    return {
+      id: crypto.randomUUID(), // Server generates ID to prevent spoofing
+      playerId,
+      points,
+      color: data.color,
+      size: data.size,
+    }
+  }
+
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     // Parse message - client error if this fails
     let data: Message
@@ -194,13 +314,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   }
 
   private async handleJoin(ws: WebSocket, data: Message & { name: string }) {
+    // Validate player name
+    const name = this.isValidPlayerName(data.name) ? data.name : 'Anonymous'
+
     const playerId = crypto.randomUUID()
     const existingPlayers = this.getPlayers()
     const color = COLORS[existingPlayers.length % COLORS.length]
 
     const player: Player = {
       id: playerId,
-      name: data.name || 'Anonymous',
+      name,
       color,
     }
 
@@ -247,9 +370,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     await this.ensureInitialized()
 
-    const stroke: Stroke = {
-      ...data.stroke,
-      playerId,
+    // Validate and create stroke
+    const stroke = this.validateAndCreateStroke(data.stroke, playerId)
+    if (!stroke) {
+      console.warn(`Invalid stroke data received from player ${playerId}`)
+      return
     }
 
     this.strokes.push(stroke)
@@ -274,10 +399,28 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
+    // Validate strokeId
+    if (!this.isValidStrokeId(data.strokeId)) {
+      console.warn(`Invalid strokeId received from player ${playerId}`)
+      return
+    }
+
+    // Validate incoming point data
+    if (!this.isValidPoint(data.point)) {
+      console.warn(`Invalid point data received from player ${playerId}`)
+      return
+    }
+
     await this.ensureInitialized()
 
     const stroke = this.strokes.find((s) => s.id === data.strokeId && s.playerId === playerId)
     if (stroke) {
+      // Check if stroke has reached maximum points
+      if (stroke.points.length >= MAX_STROKE_POINTS) {
+        console.warn(`Stroke ${data.strokeId} has reached maximum points limit`)
+        return
+      }
+
       stroke.points.push(data.point)
 
       // Update storage periodically or in background
