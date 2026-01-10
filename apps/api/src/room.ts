@@ -82,6 +82,21 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     }
   }
 
+  private async storageDeleteWithRetry(key: string, retries = 3): Promise<void> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await this.ctx.storage.delete(key)
+        return
+      } catch (e) {
+        if (i === retries - 1) {
+          console.error(`Failed to delete ${key} after ${retries} attempts:`, e)
+          throw e
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.pow(2, i) * 100))
+      }
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     await this.ensureInitialized()
     const url = new URL(request.url)
@@ -444,12 +459,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    await this.ctx.storage.delete('strokes')
-    this.strokes = []
+    try {
+      await this.storageDeleteWithRetry('strokes')
+      this.strokes = []
 
-    this.broadcast({
-      type: 'clear',
-    })
+      this.broadcast({
+        type: 'clear',
+      })
+    } catch (e) {
+      console.error(`Player ${playerId} failed to clear strokes:`, e)
+    }
   }
 
   private broadcast(message: object, exclude?: WebSocket) {
