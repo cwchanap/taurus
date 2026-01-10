@@ -101,11 +101,9 @@
       onStrokeUpdate: (strokeId, point) => {
         const index = strokes.findIndex((s) => s.id === strokeId)
         if (index !== -1) {
-          // Mutating stroke.points is efficient for drawing, but to satisfy
-          // Svelte 5 state management we should ideally be immutable.
-          // However, for high-frequency updates (drawing), creating new arrays
-          // every 16ms might be costly.
-          strokes[index].points = [...strokes[index].points, point]
+          // Mutate the points array in-place for performance. Svelte 5 recognizes
+          // this mutation as an update to the 'strokes' state since it's an array element.
+          strokes[index].points.push(point)
         }
         canvasComponent?.updateRemoteStroke(strokeId, point)
       },
@@ -130,7 +128,8 @@
   function handleStrokeUpdate(strokeId: string, point: Point) {
     const index = strokes.findIndex((s) => s.id === strokeId)
     if (index !== -1) {
-      strokes[index].points = [...strokes[index].points, point]
+      // Use in-place mutation for performance during active drawing
+      strokes[index].points.push(point)
     }
     ws?.sendStrokeUpdate(strokeId, point)
   }
