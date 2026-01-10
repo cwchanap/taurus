@@ -104,8 +104,7 @@
           // Mutating stroke.points is efficient for drawing, but to satisfy
           // Svelte 5 state management we should ideally be immutable.
           // However, for high-frequency updates (drawing), creating new arrays
-          // every 16ms might be costly properly.
-          // But to strictly follow the review:
+          // every 16ms might be costly.
           strokes[index].points = [...strokes[index].points, point]
         }
         canvasComponent?.updateRemoteStroke(strokeId, point)
