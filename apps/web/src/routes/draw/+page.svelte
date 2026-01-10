@@ -101,9 +101,14 @@
       onStrokeUpdate: (strokeId, point) => {
         const index = strokes.findIndex((s) => s.id === strokeId)
         if (index !== -1) {
-          // Mutate the points array in-place for performance. Svelte 5 recognizes
-          // this mutation as an update to the 'strokes' state since it's an array element.
-          strokes[index].points.push(point)
+          // Perform an immutable update by creating a new points array and replacing the stroke object
+          const updatedStroke = {
+            ...strokes[index],
+            points: [...strokes[index].points, point],
+          }
+          const updatedStrokes = [...strokes]
+          updatedStrokes[index] = updatedStroke
+          strokes = updatedStrokes
         }
         canvasComponent?.updateRemoteStroke(strokeId, point)
       },
@@ -128,8 +133,14 @@
   function handleStrokeUpdate(strokeId: string, point: Point) {
     const index = strokes.findIndex((s) => s.id === strokeId)
     if (index !== -1) {
-      // Use in-place mutation for performance during active drawing
-      strokes[index].points.push(point)
+      // Perform an immutable update for consistency
+      const updatedStroke = {
+        ...strokes[index],
+        points: [...strokes[index].points, point],
+      }
+      const updatedStrokes = [...strokes]
+      updatedStrokes[index] = updatedStroke
+      strokes = updatedStrokes
     }
     ws?.sendStrokeUpdate(strokeId, point)
   }
@@ -189,6 +200,7 @@
           {color}
           {brushSize}
           {strokes}
+          {playerId}
           onStrokeStart={handleStrokeStart}
           onStrokeUpdate={handleStrokeUpdate}
         />

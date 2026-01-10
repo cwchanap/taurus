@@ -7,11 +7,12 @@
     color: string
     brushSize: number
     strokes: Stroke[]
+    playerId: string
     onStrokeStart: (stroke: Stroke) => void
     onStrokeUpdate: (strokeId: string, point: Point) => void
   }
 
-  let { color, brushSize, strokes, onStrokeStart, onStrokeUpdate }: Props = $props()
+  let { color, brushSize, strokes, playerId, onStrokeStart, onStrokeUpdate }: Props = $props()
 
   let container: HTMLDivElement
   let mounted = false
@@ -93,7 +94,7 @@
 
     const stroke: Stroke = {
       id: currentStrokeId,
-      playerId: '',
+      playerId,
       points: [point],
       color: strokeColor,
       size: strokeSize,
@@ -162,7 +163,7 @@
     const points = existingStroke.points || []
 
     // Need at least 2 points to draw a line
-    if (points.length < 1) return true
+    if (points.length < 2) return true
 
     const lastPt = points[points.length - 1]
 
