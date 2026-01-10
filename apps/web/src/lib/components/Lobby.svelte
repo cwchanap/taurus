@@ -68,9 +68,9 @@
         <div class="join-section">
           <input
             type="text"
-            placeholder="Room Code"
+            placeholder="12-digit code"
             bind:value={roomCode}
-            maxlength="8"
+            maxlength="12"
             class="room-code-input"
             aria-label="Room Code"
           />

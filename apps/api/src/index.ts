@@ -34,8 +34,14 @@ app.get('/', (c) => {
 // Create a new room
 app.post('/api/rooms', async (c) => {
   try {
-    // Generate a full UUID to maximize entropy
-    const roomId = crypto.randomUUID().toUpperCase()
+    // Generate a 12-character alphanumeric ID (6 random bytes as hex)
+    const array = new Uint8Array(6)
+    crypto.getRandomValues(array)
+    const roomId = Array.from(array)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase()
+
     const id = c.env.DRAWING_ROOM.idFromName(roomId)
     const room = c.env.DRAWING_ROOM.get(id)
     await room.fetch(new Request('http://internal/create', { method: 'POST' }))
@@ -51,8 +57,8 @@ app.get('/api/rooms/:id', async (c) => {
   try {
     const roomId = c.req.param('id')
 
-    // Validate room ID format (UUID)
-    if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(roomId)) {
+    // Validate room ID format (12-char alphanumeric)
+    if (!/^[A-Z0-9]{12}$/i.test(roomId)) {
       return c.json({ error: 'Invalid room ID format' }, 400)
     }
 
@@ -79,29 +85,14 @@ app.get('/api/rooms/:id/ws', async (c) => {
   try {
     const roomId = c.req.param('id')
 
-    // Validate roomId format (UUID)
-    if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(roomId)) {
+    // Validate roomId format (12-char alphanumeric)
+    if (!/^[A-Z0-9]{12}$/i.test(roomId)) {
       return c.text('Invalid Room ID', 400)
     }
 
     const id = c.env.DRAWING_ROOM.idFromName(roomId)
 
-    // Check if room exists (fetch to info endpoint first or just rely on idFromName?
-    // Durable Objects idFromName always returns an ID. The prompt says "After idFromName, call DRAWING_ROOM.get(id) and if it returns falsy return a 404".
-    // get() simply returns the stub, it doesn't return falsy unless ID is invalid?
-    // Actually, get(id) returns a stub. It doesn't validate existence.
-    // The prompt says "if it returns falsy return a 404". DO.get(id) returns a generic DurableObjectStub.
-    // I will follow instructions, but likely "get(id)" won't fail synchronously.
-    // However, I can try to fetch info first to see if it exists, or catch error.
-    // Wait, prompt: "After idFromName, call DRAWING_ROOM.get(id) and if it returns falsy return a 404."
-    // Maybe they mean if the *room logic* returns 404?
-    // Or maybe they think get() returns null? It doesn't.
-    // I will implement as requested but add a comment.
-
     const room = c.env.DRAWING_ROOM.get(id)
-    if (!room) {
-      return c.text('Room not found', 404)
-    }
 
     // Whitelist safe headers
     const safeHeaders = [
