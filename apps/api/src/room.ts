@@ -56,6 +56,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private storageWriteTimer: ReturnType<typeof setTimeout> | null = null
   private storageWriteDelay = 2000 // 2 seconds
 
+  // Rate limiting for stroke messages
+  private playerLastMessageTime: Map<string, number> = new Map()
+  private playerMessageCount: Map<string, number> = new Map()
+  private readonly RATE_LIMIT_WINDOW = 1000 // 1 second
+  private readonly MAX_MESSAGES_PER_WINDOW = 30
+  private readonly MAX_STROKES_PER_WINDOW = 5
+  private playerStrokeCount: Map<string, number> = new Map()
+
+  // Track players being cleaned up to prevent duplicate leave broadcasts
+  private cleanedPlayers = new Set<string>()
+
   private async ensureInitialized() {
     if (!this.initialized) {
       this.strokes = (await this.ctx.storage.get<Stroke[]>('strokes')) || []
@@ -362,6 +373,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const attachment: WebSocketAttachment = { playerId, player }
     ws.serializeAttachment(attachment)
 
+    // Clean up any leftover cleanup flag (reconnection scenario)
+    this.cleanedPlayers.delete(playerId)
+
     // First player becomes the host
     if (this.hostPlayerId === null) {
       this.hostPlayerId = playerId
@@ -392,24 +406,57 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
   private handleLeave(ws: WebSocket) {
     const playerId = this.getPlayerIdForSocket(ws)
-    if (playerId) {
-      // Transfer host ownership if the host leaves
-      if (playerId === this.hostPlayerId) {
-        const players = this.getPlayers()
-        // Assign host to the next player if available
-        this.hostPlayerId = players.length > 0 ? players[0].id : null
-      }
+    if (!playerId) return
 
-      this.broadcast({
-        type: 'player-left',
-        playerId,
-      })
+    // Prevent duplicate broadcasts
+    if (this.cleanedPlayers.has(playerId)) {
+      return
     }
+    this.cleanedPlayers.add(playerId)
+
+    // Transfer host ownership if the host leaves
+    if (playerId === this.hostPlayerId) {
+      const players = this.getPlayers()
+      // Assign host to the next player if available
+      this.hostPlayerId = players.length > 0 ? players[0].id : null
+    }
+
+    this.broadcast({
+      type: 'player-left',
+      playerId,
+    })
+
+    // Clean up rate limiting data
+    this.playerLastMessageTime.delete(playerId)
+    this.playerMessageCount.delete(playerId)
+    this.playerStrokeCount.delete(playerId)
+
+    // Clean up the flag after a short delay (in case socket is reused)
+    setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
   }
 
   private async handleStroke(ws: WebSocket, data: Message & { stroke: Stroke }) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
+
+    // Rate limiting check for new strokes (more restrictive than updates)
+    const now = Date.now()
+    const lastMessageTime = this.playerLastMessageTime.get(playerId) || 0
+    const strokeCount = this.playerStrokeCount.get(playerId) || 0
+
+    if (now - lastMessageTime > this.RATE_LIMIT_WINDOW) {
+      // Reset window
+      this.playerLastMessageTime.set(playerId, now)
+      this.playerMessageCount.set(playerId, 1)
+      this.playerStrokeCount.set(playerId, 1)
+    } else {
+      if (strokeCount >= this.MAX_STROKES_PER_WINDOW) {
+        console.warn(`Stroke rate limit exceeded for player ${playerId}`)
+        return
+      }
+      this.playerStrokeCount.set(playerId, strokeCount + 1)
+      this.playerMessageCount.set(playerId, (this.playerMessageCount.get(playerId) || 0) + 1)
+    }
 
     await this.ensureInitialized()
 
@@ -439,6 +486,24 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   ) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
+
+    // Rate limiting check
+    const now = Date.now()
+    const lastMessageTime = this.playerLastMessageTime.get(playerId) || 0
+    const messageCount = this.playerMessageCount.get(playerId) || 0
+
+    if (now - lastMessageTime > this.RATE_LIMIT_WINDOW) {
+      // Reset window
+      this.playerLastMessageTime.set(playerId, now)
+      this.playerMessageCount.set(playerId, 1)
+      this.playerStrokeCount.set(playerId, 0)
+    } else {
+      if (messageCount >= this.MAX_MESSAGES_PER_WINDOW) {
+        console.warn(`Rate limit exceeded for player ${playerId}`)
+        return
+      }
+      this.playerMessageCount.set(playerId, messageCount + 1)
+    }
 
     // Validate strokeId
     if (!this.isValidStrokeId(data.strokeId)) {
@@ -502,6 +567,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
   private broadcast(message: object, exclude?: WebSocket) {
     const data = JSON.stringify(message)
+    const deadSockets: WebSocket[] = []
+
     for (const ws of this.ctx.getWebSockets()) {
       if (ws !== exclude) {
         try {
@@ -509,10 +576,20 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         } catch (error) {
           // Only ignore InvalidStateError (connection closed between getting socket and sending)
           if (error instanceof DOMException && error.name === 'InvalidStateError') {
+            deadSockets.push(ws)
             continue
           }
           console.error('Unexpected broadcast error:', error)
         }
+      }
+    }
+
+    // Close dead connections to prevent accumulation
+    for (const deadWs of deadSockets) {
+      try {
+        deadWs.close()
+      } catch {
+        // Ignore errors when closing
       }
     }
   }

@@ -154,29 +154,19 @@
       return false
     }
 
-    // Ensure points array exists
-    if (!existingStroke.points) existingStroke.points = []
-
-    // Append point if it's new (check against last point to avoid dupes/re-adding)
-    const points = existingStroke.points
-    const lastStored = points[points.length - 1]
-
-    if (!lastStored || lastStored.x !== point.x || lastStored.y !== point.y) {
-      points.push(point)
-    }
+    const points = existingStroke.points || []
 
     // Need at least 2 points to draw a line
-    if (points.length < 2) return true
+    if (points.length < 1) return true
 
-    const lastPt = points[points.length - 2]
-    const newPt = points[points.length - 1]
+    const lastPt = points[points.length - 1]
 
-    // Skip if no movement (redundant check but safe)
-    if (lastPt.x === newPt.x && lastPt.y === newPt.y) return true
+    // Skip if duplicate point
+    if (lastPt.x === point.x && lastPt.y === point.y) return true
 
     graphics
       .moveTo(lastPt.x, lastPt.y)
-      .lineTo(newPt.x, newPt.y)
+      .lineTo(point.x, point.y)
       .stroke({ width: existingStroke.size, color: existingStroke.color, cap: 'round' })
 
     return true
