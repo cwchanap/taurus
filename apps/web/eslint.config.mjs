@@ -7,6 +7,6 @@ export default [
   eslintConfigPrettier,
   ...tseslint.configs.recommended,
   {
-    ignores: [".svelte-kit/**"],
+    ignores: [".svelte-kit/**", "build/**", "dist/**"],
   },
 ];
