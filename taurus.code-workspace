@@ -1,0 +1,122 @@
+{
+    "folders": [
+        {
+            "name": "Root",
+            "path": "."
+        },
+        {
+            "name": "App: API",
+            "path": "apps/api"
+        },
+        {
+            "name": "App: Web",
+            "path": "apps/web"
+        },
+        {
+            "name": "Pkg: UI",
+            "path": "packages/ui"
+        }
+    ],
+    "settings": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.eslint": "explicit"
+        },
+        "eslint.validate": [
+            "javascript",
+            "typescript",
+            "svelte"
+        ],
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "typescript.enablePromptUseWorkspaceTsdk": true,
+        "files.associations": {
+            "*.css": "tailwindcss"
+        },
+        "search.exclude": {
+            "**/.svelte-kit": true,
+            "**/node_modules": true,
+            "**/dist": true,
+            "**/bun.lock": true
+        },
+        "explorer.fileNesting.enabled": true,
+        "explorer.fileNesting.patterns": {
+            "svelte.config.js": "vite.config.ts, tsconfig.json, .prettierrc, .eslint.config.mjs",
+            "package.json": "bun.lock, turbo.json, .gitignore, .prettierignore, .editorconfig",
+            "*.ts": "${capture}.js, ${capture}.d.ts",
+            "*.svelte": "${capture}.ts, ${capture}.js"
+        }
+    },
+    "extensions": {
+        "recommendations": [
+            "svelte.svelte-vscode",
+            "dbaeumer.vscode-eslint",
+            "esbenp.prettier-vscode",
+            "bradlc.vscode-tailwindcss",
+            "oven-sh.bun-vscode",
+            "ms-playwright.playwright"
+        ]
+    },
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "type": "pwa-node",
+                "request": "launch",
+                "name": "Wrangler Dev (API)",
+                "cwd": "${workspaceFolder:App: API}",
+                "runtimeExecutable": "bun",
+                "runtimeArgs": [
+                    "run",
+                    "dev"
+                ],
+                "skipFiles": [
+                    "<node_internals>/**"
+                ]
+            },
+            {
+                "type": "pwa-chrome",
+                "request": "launch",
+                "name": "Debug Web (Chrome)",
+                "url": "http://localhost:5173",
+                "webRoot": "${workspaceFolder:App: Web}"
+            },
+            {
+                "type": "bun",
+                "request": "launch",
+                "name": "Bun Test (API)",
+                "cwd": "${workspaceFolder:App: API}",
+                "program": "${file}",
+                "args": [
+                    "test"
+                ]
+            }
+        ]
+    },
+    "tasks": {
+        "version": "2.0.0",
+        "tasks": [
+            {
+                "label": "Turbo Dev",
+                "type": "shell",
+                "command": "bun run dev",
+                "group": "test",
+                "problemMatcher": [],
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "Turbo Build",
+                "type": "shell",
+                "command": "bun run build",
+                "group": {
+                    "kind": "build",
+                    "isDefault": true
+                },
+                "problemMatcher": []
+            }
+        ]
+    }
+}
