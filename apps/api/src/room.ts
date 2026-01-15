@@ -29,6 +29,15 @@ interface WebSocketAttachment {
   player: Player
 }
 
+interface ChatMessage {
+  id: string
+  playerId: string
+  playerName: string
+  playerColor: string
+  content: string
+  timestamp: number
+}
+
 const COLORS = [
   '#FF6B6B',
   '#4ECDC4',
@@ -47,6 +56,8 @@ const MAX_STROKE_SIZE = 1000
 const MIN_STROKE_SIZE = 0.1
 const MAX_STROKE_POINTS = 10000
 const MAX_COORDINATE_VALUE = 100000
+const MAX_CHAT_MESSAGE_LENGTH = 500
+const MAX_CHAT_HISTORY = 50
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
@@ -66,6 +77,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
   // Track players being cleaned up to prevent duplicate leave broadcasts
   private cleanedPlayers = new Set<string>()
+
+  // Chat messages (in-memory, last N messages)
+  private chatMessages: ChatMessage[] = []
 
   private async ensureInitialized() {
     if (!this.initialized) {
@@ -344,6 +358,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         case 'clear':
           await this.handleClear(ws)
           break
+        case 'chat':
+          await this.handleChat(ws, data as Message & { content: string })
+          break
       }
     } catch (e) {
       console.error('Handler error for message type:', data.type, e)
@@ -394,6 +411,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         player,
         players: [...existingPlayers, player],
         strokes: this.strokes,
+        chatHistory: this.chatMessages,
       })
     )
 
@@ -576,6 +594,62 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     } catch (e) {
       console.error(`Player ${playerId} failed to clear strokes:`, e)
     }
+  }
+
+  private async handleChat(ws: WebSocket, data: Message & { content: string }) {
+    const playerId = this.getPlayerIdForSocket(ws)
+    if (!playerId) return
+
+    // Get player info from socket attachment
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+    if (!attachment?.player) return
+
+    // Rate limiting check (reuse existing pattern)
+    const now = Date.now()
+    const lastMessageTime = this.playerLastMessageTime.get(playerId) || 0
+    const messageCount = this.playerMessageCount.get(playerId) || 0
+
+    if (now - lastMessageTime > this.RATE_LIMIT_WINDOW) {
+      // Reset window
+      this.playerLastMessageTime.set(playerId, now)
+      this.playerMessageCount.set(playerId, 1)
+    } else {
+      if (messageCount >= this.MAX_MESSAGES_PER_WINDOW) {
+        console.warn(`Chat rate limit exceeded for player ${playerId}`)
+        return
+      }
+      this.playerMessageCount.set(playerId, messageCount + 1)
+    }
+
+    // Validate message content
+    const content = data.content
+    if (typeof content !== 'string' || content.length === 0) {
+      return
+    }
+
+    // Truncate if too long
+    const sanitizedContent = content.slice(0, MAX_CHAT_MESSAGE_LENGTH)
+
+    const chatMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      playerId,
+      playerName: attachment.player.name,
+      playerColor: attachment.player.color,
+      content: sanitizedContent,
+      timestamp: now,
+    }
+
+    // Add to history (keep last N messages)
+    this.chatMessages.push(chatMessage)
+    if (this.chatMessages.length > MAX_CHAT_HISTORY) {
+      this.chatMessages.shift()
+    }
+
+    // Broadcast to all players including sender
+    this.broadcast({
+      type: 'chat',
+      message: chatMessage,
+    })
   }
 
   private broadcast(message: object, exclude?: WebSocket) {

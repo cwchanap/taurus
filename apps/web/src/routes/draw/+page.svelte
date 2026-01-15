@@ -3,10 +3,11 @@
   import Canvas from '$lib/components/Canvas.svelte'
   import Toolbar from '$lib/components/Toolbar.svelte'
   import PlayerList from '$lib/components/PlayerList.svelte'
+  import ChatBox from '$lib/components/ChatBox.svelte'
   import Lobby from '$lib/components/Lobby.svelte'
   import { GameWebSocket } from '$lib/websocket'
   import { onDestroy } from 'svelte'
-  import type { Player, Stroke, Point } from '$lib/types'
+  import type { Player, Stroke, Point, ChatMessage } from '$lib/types'
 
   // API URL - configurable via VITE_API_URL environment variable
   const API_URL =
@@ -19,6 +20,7 @@
   let playerId = $state('')
   let players = $state<Player[]>([])
   let strokes = $state<Stroke[]>([])
+  let chatMessages = $state<ChatMessage[]>([])
   let isLoading = $state(false)
   let isConnected = $state(false)
   let errorMessage = $state('')
@@ -79,12 +81,13 @@
       onConnectionFailed: (reason) => {
         errorMessage = reason
       },
-      onInit: (id, player, playerList, strokeList) => {
+      onInit: (id, player, playerList, strokeList, chatHistory) => {
         playerId = id
         players = playerList
         // Clear canvas before applying new state to avoid desync
         canvasComponent?.clearCanvas()
         strokes = strokeList
+        chatMessages = chatHistory
         gameState = 'game'
         isLoading = false
       },
@@ -101,20 +104,18 @@
       onStrokeUpdate: (strokeId, point) => {
         const index = strokes.findIndex((s) => s.id === strokeId)
         if (index !== -1) {
-          // Perform an immutable update by creating a new points array and replacing the stroke object
-          const updatedStroke = {
-            ...strokes[index],
-            points: [...strokes[index].points, point],
-          }
-          const updatedStrokes = [...strokes]
-          updatedStrokes[index] = updatedStroke
-          strokes = updatedStrokes
+          // Optimization: Mutate the array in place to avoid O(N) copy on every point
+          // Svelte 5 proxies will detect the deep change
+          strokes[index].points.push(point)
         }
         canvasComponent?.updateRemoteStroke(strokeId, point)
       },
       onClear: () => {
         strokes = []
         canvasComponent?.clearCanvas()
+      },
+      onChat: (message) => {
+        chatMessages = [...chatMessages, message]
       },
     })
 
@@ -133,14 +134,8 @@
   function handleStrokeUpdate(strokeId: string, point: Point) {
     const index = strokes.findIndex((s) => s.id === strokeId)
     if (index !== -1) {
-      // Perform an immutable update for consistency
-      const updatedStroke = {
-        ...strokes[index],
-        points: [...strokes[index].points, point],
-      }
-      const updatedStrokes = [...strokes]
-      updatedStrokes[index] = updatedStroke
-      strokes = updatedStrokes
+      // Optimization: Mutate directly
+      strokes[index].points.push(point)
     }
     ws?.sendStrokeUpdate(strokeId, point)
   }
@@ -149,6 +144,10 @@
     strokes = []
     canvasComponent?.clearCanvas()
     ws?.sendClear()
+  }
+
+  function handleSendMessage(content: string) {
+    ws?.sendChat(content)
   }
 </script>
 
@@ -208,6 +207,11 @@
 
       <aside class="sidebar right">
         <PlayerList {players} currentPlayerId={playerId} />
+        <ChatBox
+          messages={chatMessages}
+          currentPlayerId={playerId}
+          onSendMessage={handleSendMessage}
+        />
       </aside>
     </div>
   </div>
