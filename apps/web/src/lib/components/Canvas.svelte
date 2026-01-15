@@ -28,19 +28,25 @@
   $effect(() => {
     if (!app) return
 
-    // Remove graphics for strokes that no longer exist
-    const currentStrokeIds = new Set(strokes.map((s) => s.id))
-    for (const [id, graphics] of strokeGraphics) {
-      if (!currentStrokeIds.has(id)) {
-        graphics.destroy()
-        strokeGraphics.delete(id)
-      }
-    }
+    // Optimization: Only check for added/removed strokes if the count changes
+    // This assumes strokes are only added/removed, not replaced in-place with different IDs
+    // The previous implementation was rebuilding the Set on every single point update
+    if (strokeGraphics.size !== strokes.length) {
+      const currentStrokeIds = new Set(strokes.map((s) => s.id))
 
-    // Draw initial strokes and stay reactive to new ones
-    for (const stroke of strokes) {
-      if (!strokeGraphics.has(stroke.id)) {
-        drawStroke(stroke)
+      // Remove deleted
+      for (const [id, graphics] of strokeGraphics) {
+        if (!currentStrokeIds.has(id)) {
+          graphics.destroy()
+          strokeGraphics.delete(id)
+        }
+      }
+
+      // Add new
+      for (const stroke of strokes) {
+        if (!strokeGraphics.has(stroke.id)) {
+          drawStroke(stroke)
+        }
       }
     }
   })
