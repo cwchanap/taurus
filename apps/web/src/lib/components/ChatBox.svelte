@@ -69,6 +69,7 @@
       bind:value={inputValue}
       onkeydown={handleKeyDown}
       maxlength="500"
+      aria-label="Chat message"
     />
     <button type="submit" class="send-btn" disabled={!inputValue.trim()} aria-label="Send message">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

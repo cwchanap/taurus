@@ -28,25 +28,27 @@
   $effect(() => {
     if (!app) return
 
-    // Optimization: Only check for added/removed strokes if the count changes
-    // This assumes strokes are only added/removed, not replaced in-place with different IDs
-    // The previous implementation was rebuilding the Set on every single point update
-    if (strokeGraphics.size !== strokes.length) {
-      const currentStrokeIds = new Set(strokes.map((s) => s.id))
+    // ID-based reconciliation to ensure we don't leak Graphics or miss updates.
+    // We compute the set of current IDs to detect removals and additions.
+    const currentStrokeIds = new Set(strokes.map((s) => s.id))
 
-      // Remove deleted
-      for (const [id, graphics] of strokeGraphics) {
-        if (!currentStrokeIds.has(id)) {
-          graphics.destroy()
-          strokeGraphics.delete(id)
-        }
+    // Dev-mode check: Ensure no two strokes have the same ID
+    if (import.meta.env.DEV && currentStrokeIds.size !== strokes.length) {
+      console.error('Canvas: Duplicate stroke IDs detected!')
+    }
+
+    // Remove deleted strokes
+    for (const [id, graphics] of strokeGraphics.entries()) {
+      if (!currentStrokeIds.has(id)) {
+        graphics.destroy()
+        strokeGraphics.delete(id)
       }
+    }
 
-      // Add new
-      for (const stroke of strokes) {
-        if (!strokeGraphics.has(stroke.id)) {
-          drawStroke(stroke)
-        }
+    // Add new strokes
+    for (const stroke of strokes) {
+      if (!strokeGraphics.has(stroke.id)) {
+        drawStroke(stroke)
       }
     }
   })
