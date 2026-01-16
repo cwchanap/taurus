@@ -1,38 +1,40 @@
 import { describe, expect, test } from 'bun:test'
+import { MAX_CHAT_MESSAGE_LENGTH, MAX_PLAYER_NAME_LENGTH, MAX_CHAT_HISTORY } from './constants'
+import { validateMessageContent, sanitizeMessage, isValidPlayerName } from './validation'
+import { ChatHistory } from './chat-history'
 
 // Test ChatMessage validation constants and logic (extracted from room.ts)
-const MAX_CHAT_MESSAGE_LENGTH = 500
-const MAX_PLAYER_NAME_LENGTH = 50
 
 describe('Chat Message Validation', () => {
   describe('Message content validation', () => {
     test('should accept valid message content', () => {
       const content = 'Hello, this is a test message!'
-      const isValid = typeof content === 'string' && content.length > 0
+      const isValid = validateMessageContent(content)
       expect(isValid).toBe(true)
     })
 
     test('should reject empty message content', () => {
       const content = ''
-      const isValid = typeof content === 'string' && content.length > 0
+      const isValid = validateMessageContent(content)
       expect(isValid).toBe(false)
     })
 
     test('should reject non-string message content', () => {
       const content = 123
-      const isValid = typeof content === 'string' && content.length > 0
+      const isValid = validateMessageContent(content)
       expect(isValid).toBe(false)
     })
 
     test('should truncate overly long messages', () => {
-      const longContent = 'a'.repeat(1000)
-      const sanitizedContent = longContent.slice(0, MAX_CHAT_MESSAGE_LENGTH)
+      const longContent = 'a'.repeat(MAX_CHAT_MESSAGE_LENGTH + 100)
+      const sanitizedContent = sanitizeMessage(longContent)
       expect(sanitizedContent.length).toBe(MAX_CHAT_MESSAGE_LENGTH)
+      expect(sanitizedContent).toBe('a'.repeat(MAX_CHAT_MESSAGE_LENGTH))
     })
 
     test('should preserve messages under max length', () => {
       const content = 'Short message'
-      const sanitizedContent = content.slice(0, MAX_CHAT_MESSAGE_LENGTH)
+      const sanitizedContent = sanitizeMessage(content)
       expect(sanitizedContent).toBe(content)
     })
   })
@@ -45,7 +47,7 @@ describe('Chat Message Validation', () => {
         playerId: 'player-123',
         playerName: 'TestUser',
         playerColor: '#FF6B6B',
-        content: 'Hello world!',
+        content: sanitizeMessage('Hello world!'),
         timestamp: now,
       }
 
@@ -60,46 +62,56 @@ describe('Chat Message Validation', () => {
 
     test('should validate player name length', () => {
       const validName = 'ValidUsername'
-      const isValidName = validName.length > 0 && validName.length <= MAX_PLAYER_NAME_LENGTH
+      const isValid = isValidPlayerName(validName)
 
-      expect(isValidName).toBe(true)
+      expect(isValid).toBe(true)
     })
 
     test('should reject overly long player names', () => {
-      const longName = 'a'.repeat(100)
-      const isValidName = longName.length > 0 && longName.length <= MAX_PLAYER_NAME_LENGTH
+      const longName = 'a'.repeat(MAX_PLAYER_NAME_LENGTH + 1)
+      const isValid = isValidPlayerName(longName)
 
-      expect(isValidName).toBe(false)
+      expect(isValid).toBe(false)
     })
   })
 
   describe('Chat history management', () => {
-    const MAX_CHAT_HISTORY = 50
-
     test('should maintain chat history under limit', () => {
-      const chatMessages: { id: string; content: string }[] = []
+      const history = new ChatHistory()
 
       for (let i = 0; i < 30; i++) {
-        chatMessages.push({ id: `msg-${i}`, content: `Message ${i}` })
+        history.addMessage({
+          id: `msg-${i}`,
+          playerId: 'p1',
+          playerName: 'User',
+          playerColor: '#000',
+          content: `Message ${i}`,
+          timestamp: Date.now(),
+        })
       }
 
-      expect(chatMessages.length).toBeLessThanOrEqual(MAX_CHAT_HISTORY)
+      expect(history.getMessages().length).toBeLessThanOrEqual(MAX_CHAT_HISTORY)
     })
 
     test('should remove oldest messages when limit exceeded', () => {
-      const chatMessages: { id: string; content: string }[] = []
+      const history = new ChatHistory()
 
       // Add more than MAX_CHAT_HISTORY messages
       for (let i = 0; i < 60; i++) {
-        chatMessages.push({ id: `msg-${i}`, content: `Message ${i}` })
-        if (chatMessages.length > MAX_CHAT_HISTORY) {
-          chatMessages.shift() // Remove oldest
-        }
+        history.addMessage({
+          id: `msg-${i}`,
+          playerId: 'p1',
+          playerName: 'User',
+          playerColor: '#000',
+          content: `Message ${i}`,
+          timestamp: Date.now(),
+        })
       }
 
-      expect(chatMessages.length).toBe(MAX_CHAT_HISTORY)
-      expect(chatMessages[0].id).toBe('msg-10') // First 10 should be removed
-      expect(chatMessages[chatMessages.length - 1].id).toBe('msg-59') // Last should be newest
+      const messages = history.getMessages()
+      expect(messages.length).toBe(MAX_CHAT_HISTORY)
+      expect(messages[0].id).toBe('msg-10') // First 10 should be removed (0-9)
+      expect(messages[messages.length - 1].id).toBe('msg-59') // Last should be newest
     })
   })
 

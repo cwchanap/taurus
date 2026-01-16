@@ -29,14 +29,7 @@ interface WebSocketAttachment {
   player: Player
 }
 
-interface ChatMessage {
-  id: string
-  playerId: string
-  playerName: string
-  playerColor: string
-  content: string
-  timestamp: number
-}
+import { ChatHistory, ChatMessage } from './chat-history'
 
 const COLORS = [
   '#FF6B6B',
@@ -49,15 +42,18 @@ const COLORS = [
   '#F7DC6F',
 ]
 
-// Validation constants
-const MAX_PLAYER_NAME_LENGTH = 50
-const MAX_COLOR_LENGTH = 100
-const MAX_STROKE_SIZE = 1000
-const MIN_STROKE_SIZE = 0.1
-const MAX_STROKE_POINTS = 10000
-const MAX_COORDINATE_VALUE = 100000
-const MAX_CHAT_MESSAGE_LENGTH = 500
-const MAX_CHAT_HISTORY = 50
+import {
+  MAX_COLOR_LENGTH,
+  MAX_STROKE_SIZE,
+  MIN_STROKE_SIZE,
+  MAX_STROKE_POINTS,
+  MAX_COORDINATE_VALUE,
+} from './constants'
+import {
+  validateMessageContent,
+  sanitizeMessage,
+  isValidPlayerName as isValidPlayerNameUtil,
+} from './validation'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
@@ -78,8 +74,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   // Track players being cleaned up to prevent duplicate leave broadcasts
   private cleanedPlayers = new Set<string>()
 
-  // Chat messages (in-memory, last N messages)
-  private chatMessages: ChatMessage[] = []
+  // Chat history manager
+  private chatHistory = new ChatHistory()
 
   private async ensureInitialized() {
     if (!this.initialized) {
@@ -237,10 +233,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
    * Validates a player name
    */
   private isValidPlayerName(name: unknown): name is string {
-    if (typeof name !== 'string') {
-      return false
-    }
-    return name.length > 0 && name.length <= MAX_PLAYER_NAME_LENGTH
+    return isValidPlayerNameUtil(name)
   }
 
   /**
@@ -411,7 +404,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         player,
         players: [...existingPlayers, player],
         strokes: this.strokes,
-        chatHistory: this.chatMessages,
+        chatHistory: this.chatHistory.getMessages(),
       })
     )
 
@@ -613,6 +606,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       // Reset window
       this.playerLastMessageTime.set(playerId, now)
       this.playerMessageCount.set(playerId, 1)
+      this.playerStrokeCount.set(playerId, 0)
     } else {
       if (messageCount >= this.MAX_MESSAGES_PER_WINDOW) {
         console.warn(`Chat rate limit exceeded for player ${playerId}`)
@@ -623,12 +617,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Validate message content
     const content = data.content
-    if (typeof content !== 'string' || content.length === 0) {
+    if (!validateMessageContent(content)) {
       return
     }
 
     // Truncate if too long
-    const sanitizedContent = content.slice(0, MAX_CHAT_MESSAGE_LENGTH)
+    const sanitizedContent = sanitizeMessage(content)
 
     const chatMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -640,10 +634,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     }
 
     // Add to history (keep last N messages)
-    this.chatMessages.push(chatMessage)
-    if (this.chatMessages.length > MAX_CHAT_HISTORY) {
-      this.chatMessages.shift()
-    }
+    this.chatHistory.addMessage(chatMessage)
 
     // Broadcast to all players including sender
     this.broadcast({
