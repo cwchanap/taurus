@@ -95,9 +95,10 @@ describe('Chat Message Validation', () => {
 
     test('should remove oldest messages when limit exceeded', () => {
       const history = new ChatHistory()
+      const totalAdded = MAX_CHAT_HISTORY + 10
 
       // Add more than MAX_CHAT_HISTORY messages
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < totalAdded; i++) {
         history.addMessage({
           id: `msg-${i}`,
           playerId: 'p1',
@@ -109,9 +110,11 @@ describe('Chat Message Validation', () => {
       }
 
       const messages = history.getMessages()
+      const firstExpectedIndex = totalAdded - MAX_CHAT_HISTORY
+
       expect(messages.length).toBe(MAX_CHAT_HISTORY)
-      expect(messages[0].id).toBe('msg-10') // First 10 should be removed (0-9)
-      expect(messages[messages.length - 1].id).toBe('msg-59') // Last should be newest
+      expect(messages[0].id).toBe(`msg-${firstExpectedIndex}`)
+      expect(messages[messages.length - 1].id).toBe(`msg-${totalAdded - 1}`)
     })
   })
 
