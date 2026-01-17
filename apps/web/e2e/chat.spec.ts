@@ -133,10 +133,14 @@ test.describe('Chat Multi-Player Broadcast', () => {
       await expect(player1Page.locator('.game-container')).toBeVisible({ timeout: 10000 })
       const roomCode = await player1Page.locator('.room-code').textContent()
 
+      if (!roomCode) {
+        throw new Error('Failed to retrieve room code from Player 1')
+      }
+
       // Player 2 joins the room
       await player2Page.goto('/draw')
       await player2Page.getByPlaceholder('Enter your name').fill('Player2')
-      await player2Page.getByPlaceholder('Enter room code').fill(roomCode || '')
+      await player2Page.getByPlaceholder('Enter room code').fill(roomCode)
       await player2Page.getByRole('button', { name: 'Join' }).click()
 
       // Wait for Player 2 to join
