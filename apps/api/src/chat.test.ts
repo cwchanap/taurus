@@ -19,6 +19,24 @@ describe('Chat Message Validation', () => {
       expect(isValid).toBe(false)
     })
 
+    test('should reject whitespace-only message content', () => {
+      const content = '   '
+      const isValid = validateMessageContent(content)
+      expect(isValid).toBe(false)
+    })
+
+    test('should reject tabs and newlines-only message content', () => {
+      const content = '\t\n\r'
+      const isValid = validateMessageContent(content)
+      expect(isValid).toBe(false)
+    })
+
+    test('should accept message with leading/trailing whitespace', () => {
+      const content = '  Hello world  '
+      const isValid = validateMessageContent(content)
+      expect(isValid).toBe(true)
+    })
+
     test('should reject non-string message content', () => {
       const content = 123
       const isValid = validateMessageContent(content)
@@ -36,6 +54,37 @@ describe('Chat Message Validation', () => {
       const content = 'Short message'
       const sanitizedContent = sanitizeMessage(content)
       expect(sanitizedContent).toBe(content)
+    })
+
+    test('should trim leading whitespace from messages', () => {
+      const content = '   Hello world'
+      const sanitizedContent = sanitizeMessage(content)
+      expect(sanitizedContent).toBe('Hello world')
+    })
+
+    test('should trim trailing whitespace from messages', () => {
+      const content = 'Hello world   '
+      const sanitizedContent = sanitizeMessage(content)
+      expect(sanitizedContent).toBe('Hello world')
+    })
+
+    test('should trim both leading and trailing whitespace from messages', () => {
+      const content = '   Hello world   '
+      const sanitizedContent = sanitizeMessage(content)
+      expect(sanitizedContent).toBe('Hello world')
+    })
+
+    test('should handle mixed whitespace characters', () => {
+      const content = '\t\n  Hello world  \r\n'
+      const sanitizedContent = sanitizeMessage(content)
+      expect(sanitizedContent).toBe('Hello world')
+    })
+
+    test('should trim before truncating long messages', () => {
+      const content = '   '.repeat(100) + 'a'.repeat(MAX_CHAT_MESSAGE_LENGTH)
+      const sanitizedContent = sanitizeMessage(content)
+      expect(sanitizedContent.length).toBe(MAX_CHAT_MESSAGE_LENGTH)
+      expect(sanitizedContent).toBe('a'.repeat(MAX_CHAT_MESSAGE_LENGTH))
     })
   })
 
