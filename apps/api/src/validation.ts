@@ -2,16 +2,17 @@ import { MAX_CHAT_MESSAGE_LENGTH, MAX_PLAYER_NAME_LENGTH } from './constants'
 
 /**
  * Validates chat message content
+ * Rejects empty strings and strings that contain only whitespace
  */
 export function validateMessageContent(content: unknown): content is string {
-  return typeof content === 'string' && content.length > 0
+  return typeof content === 'string' && content.trim().length > 0
 }
 
 /**
- * Sanitizes chat message content (truncates if necessary)
+ * Sanitizes chat message content (trims whitespace and truncates if necessary)
  */
 export function sanitizeMessage(content: string): string {
-  return content.slice(0, MAX_CHAT_MESSAGE_LENGTH)
+  return content.trim().slice(0, MAX_CHAT_MESSAGE_LENGTH)
 }
 
 /**
