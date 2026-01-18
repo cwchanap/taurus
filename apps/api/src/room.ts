@@ -449,31 +449,50 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
   }
 
+  /**
+   * Checks and updates rate limits for a player.
+   * @param playerId The player ID
+   * @param isNewStroke Whether this message counts as a new stroke
+   * @returns true if allowed, false if rate limited
+   */
+  private checkRateLimit(playerId: string, isNewStroke: boolean): boolean {
+    const now = Date.now()
+    const lastWindowStart = this.playerLastMessageTime.get(playerId) || 0
+
+    if (now - lastWindowStart > this.RATE_LIMIT_WINDOW) {
+      // Start a new window
+      this.playerLastMessageTime.set(playerId, now)
+      this.playerMessageCount.set(playerId, 1)
+      this.playerStrokeCount.set(playerId, isNewStroke ? 1 : 0)
+      return true
+    }
+
+    const currentMessageCount = this.playerMessageCount.get(playerId) || 0
+    const currentStrokeCount = this.playerStrokeCount.get(playerId) || 0
+
+    if (currentMessageCount >= this.MAX_MESSAGES_PER_WINDOW) {
+      return false
+    }
+
+    if (isNewStroke && currentStrokeCount >= this.MAX_STROKES_PER_WINDOW) {
+      return false
+    }
+
+    this.playerMessageCount.set(playerId, currentMessageCount + 1)
+    if (isNewStroke) {
+      this.playerStrokeCount.set(playerId, currentStrokeCount + 1)
+    }
+    return true
+  }
+
   private async handleStroke(ws: WebSocket, data: Message & { stroke: Stroke }) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
     // Rate limiting check for new strokes (more restrictive than updates)
-    const now = Date.now()
-    const lastMessageTime = this.playerLastMessageTime.get(playerId) || 0
-    const strokeCount = this.playerStrokeCount.get(playerId) || 0
-
-    if (now - lastMessageTime > this.RATE_LIMIT_WINDOW) {
-      // Reset window
-      this.playerLastMessageTime.set(playerId, now)
-      this.playerMessageCount.set(playerId, 1)
-      this.playerStrokeCount.set(playerId, 1)
-    } else {
-      const messageCount = this.playerMessageCount.get(playerId) || 0
-      if (
-        strokeCount >= this.MAX_STROKES_PER_WINDOW ||
-        messageCount >= this.MAX_MESSAGES_PER_WINDOW
-      ) {
-        console.warn(`Rate limit exceeded for player ${playerId}`)
-        return
-      }
-      this.playerStrokeCount.set(playerId, strokeCount + 1)
-      this.playerMessageCount.set(playerId, messageCount + 1)
+    if (!this.checkRateLimit(playerId, true)) {
+      console.warn(`Rate limit exceeded for player ${playerId}`)
+      return
     }
 
     await this.ensureInitialized()
@@ -506,21 +525,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     if (!playerId) return
 
     // Rate limiting check
-    const now = Date.now()
-    const lastMessageTime = this.playerLastMessageTime.get(playerId) || 0
-    const messageCount = this.playerMessageCount.get(playerId) || 0
-
-    if (now - lastMessageTime > this.RATE_LIMIT_WINDOW) {
-      // Reset window
-      this.playerLastMessageTime.set(playerId, now)
-      this.playerMessageCount.set(playerId, 1)
-      this.playerStrokeCount.set(playerId, 0)
-    } else {
-      if (messageCount >= this.MAX_MESSAGES_PER_WINDOW) {
-        console.warn(`Rate limit exceeded for player ${playerId}`)
-        return
-      }
-      this.playerMessageCount.set(playerId, messageCount + 1)
+    if (!this.checkRateLimit(playerId, false)) {
+      console.warn(`Rate limit exceeded for player ${playerId}`)
+      return
     }
 
     // Validate strokeId
@@ -598,21 +605,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     if (!attachment?.player) return
 
     // Rate limiting check (reuse existing pattern)
-    const now = Date.now()
-    const lastMessageTime = this.playerLastMessageTime.get(playerId) || 0
-    const messageCount = this.playerMessageCount.get(playerId) || 0
-
-    if (now - lastMessageTime > this.RATE_LIMIT_WINDOW) {
-      // Reset window
-      this.playerLastMessageTime.set(playerId, now)
-      this.playerMessageCount.set(playerId, 1)
-      this.playerStrokeCount.set(playerId, 0)
-    } else {
-      if (messageCount >= this.MAX_MESSAGES_PER_WINDOW) {
-        console.warn(`Chat rate limit exceeded for player ${playerId}`)
-        return
-      }
-      this.playerMessageCount.set(playerId, messageCount + 1)
+    if (!this.checkRateLimit(playerId, false)) {
+      console.warn(`Chat rate limit exceeded for player ${playerId}`)
+      return
     }
 
     // Validate message content
@@ -624,6 +619,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     // Truncate if too long
     const sanitizedContent = sanitizeMessage(content)
 
+    const now = Date.now()
     const chatMessage: ChatMessage = {
       id: crypto.randomUUID(),
       playerId,

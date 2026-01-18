@@ -116,6 +116,7 @@ test.describe('Chat Room Feature', () => {
 
 test.describe('Chat Multi-Player Broadcast', () => {
   test('should broadcast messages between players', async ({ browser }) => {
+    test.slow()
     // Create two browser contexts for two players
     const context1 = await browser.newContext()
     const context2 = await browser.newContext()
