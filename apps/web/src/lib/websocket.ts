@@ -1,12 +1,19 @@
-import type { MessageType, Player, Stroke } from './types'
+import type { MessageType, Player, Stroke, ChatMessage } from './types'
 
 export type GameEventHandler = {
-  onInit?: (playerId: string, player: Player, players: Player[], strokes: Stroke[]) => void
+  onInit?: (
+    playerId: string,
+    player: Player,
+    players: Player[],
+    strokes: Stroke[],
+    chatHistory: ChatMessage[]
+  ) => void
   onPlayerJoined?: (player: Player) => void
   onPlayerLeft?: (playerId: string) => void
   onStroke?: (stroke: Stroke) => void
   onStrokeUpdate?: (strokeId: string, point: { x: number; y: number }) => void
   onClear?: () => void
+  onChat?: (message: ChatMessage) => void
   onConnectionChange?: (connected: boolean) => void
   onConnectionFailed?: (reason: string) => void
 }
@@ -71,7 +78,13 @@ export class GameWebSocket {
   private handleMessage(data: MessageType) {
     switch (data.type) {
       case 'init':
-        this.handlers.onInit?.(data.playerId, data.player, data.players, data.strokes)
+        this.handlers.onInit?.(
+          data.playerId,
+          data.player,
+          data.players,
+          data.strokes,
+          data.chatHistory
+        )
         break
       case 'player-joined':
         this.handlers.onPlayerJoined?.(data.player)
@@ -87,6 +100,9 @@ export class GameWebSocket {
         break
       case 'clear':
         this.handlers.onClear?.()
+        break
+      case 'chat':
+        this.handlers.onChat?.(data.message)
         break
     }
   }
@@ -130,6 +146,10 @@ export class GameWebSocket {
 
   sendClear() {
     this.send({ type: 'clear' })
+  }
+
+  sendChat(content: string) {
+    this.send({ type: 'chat', content })
   }
 
   disconnect() {

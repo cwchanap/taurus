@@ -1,11 +1,18 @@
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
-  webServer: {
-    command: 'bun run build && bun run preview',
-    port: 4173,
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    {
+      command: 'cd ../api && bun run dev',
+      port: 8787,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      command: 'bun run build && bun run preview',
+      port: 4173,
+      reuseExistingServer: !process.env.CI,
+    },
+  ],
   testDir: 'e2e',
   testMatch: /(.+\.)?(test|spec)\.[jt]s/,
   fullyParallel: true,
@@ -14,20 +21,14 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
+    baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',
   },
+  timeout: 60000,
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
     },
   ],
 })

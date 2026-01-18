@@ -29,6 +29,8 @@ interface WebSocketAttachment {
   player: Player
 }
 
+import { ChatHistory, ChatMessage } from './chat-history'
+
 const COLORS = [
   '#FF6B6B',
   '#4ECDC4',
@@ -40,13 +42,18 @@ const COLORS = [
   '#F7DC6F',
 ]
 
-// Validation constants
-const MAX_PLAYER_NAME_LENGTH = 50
-const MAX_COLOR_LENGTH = 100
-const MAX_STROKE_SIZE = 1000
-const MIN_STROKE_SIZE = 0.1
-const MAX_STROKE_POINTS = 10000
-const MAX_COORDINATE_VALUE = 100000
+import {
+  MAX_COLOR_LENGTH,
+  MAX_STROKE_SIZE,
+  MIN_STROKE_SIZE,
+  MAX_STROKE_POINTS,
+  MAX_COORDINATE_VALUE,
+} from './constants'
+import {
+  validateMessageContent,
+  sanitizeMessage,
+  isValidPlayerName as isValidPlayerNameUtil,
+} from './validation'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
@@ -66,6 +73,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
   // Track players being cleaned up to prevent duplicate leave broadcasts
   private cleanedPlayers = new Set<string>()
+
+  // Chat history manager
+  private chatHistory = new ChatHistory()
 
   private async ensureInitialized() {
     if (!this.initialized) {
@@ -223,10 +233,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
    * Validates a player name
    */
   private isValidPlayerName(name: unknown): name is string {
-    if (typeof name !== 'string') {
-      return false
-    }
-    return name.length > 0 && name.length <= MAX_PLAYER_NAME_LENGTH
+    return isValidPlayerNameUtil(name)
   }
 
   /**
@@ -344,6 +351,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         case 'clear':
           await this.handleClear(ws)
           break
+        case 'chat':
+          await this.handleChat(ws, data as Message & { content: string })
+          break
       }
     } catch (e) {
       console.error('Handler error for message type:', data.type, e)
@@ -394,6 +404,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         player,
         players: [...existingPlayers, player],
         strokes: this.strokes,
+        chatHistory: this.chatHistory.getMessages(),
       })
     )
 
@@ -438,31 +449,50 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
   }
 
+  /**
+   * Checks and updates rate limits for a player.
+   * @param playerId The player ID
+   * @param isNewStroke Whether this message counts as a new stroke
+   * @returns true if allowed, false if rate limited
+   */
+  private checkRateLimit(playerId: string, isNewStroke: boolean): boolean {
+    const now = Date.now()
+    const lastWindowStart = this.playerLastMessageTime.get(playerId) || 0
+
+    if (now - lastWindowStart > this.RATE_LIMIT_WINDOW) {
+      // Start a new window
+      this.playerLastMessageTime.set(playerId, now)
+      this.playerMessageCount.set(playerId, 1)
+      this.playerStrokeCount.set(playerId, isNewStroke ? 1 : 0)
+      return true
+    }
+
+    const currentMessageCount = this.playerMessageCount.get(playerId) || 0
+    const currentStrokeCount = this.playerStrokeCount.get(playerId) || 0
+
+    if (currentMessageCount >= this.MAX_MESSAGES_PER_WINDOW) {
+      return false
+    }
+
+    if (isNewStroke && currentStrokeCount >= this.MAX_STROKES_PER_WINDOW) {
+      return false
+    }
+
+    this.playerMessageCount.set(playerId, currentMessageCount + 1)
+    if (isNewStroke) {
+      this.playerStrokeCount.set(playerId, currentStrokeCount + 1)
+    }
+    return true
+  }
+
   private async handleStroke(ws: WebSocket, data: Message & { stroke: Stroke }) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
     // Rate limiting check for new strokes (more restrictive than updates)
-    const now = Date.now()
-    const lastMessageTime = this.playerLastMessageTime.get(playerId) || 0
-    const strokeCount = this.playerStrokeCount.get(playerId) || 0
-
-    if (now - lastMessageTime > this.RATE_LIMIT_WINDOW) {
-      // Reset window
-      this.playerLastMessageTime.set(playerId, now)
-      this.playerMessageCount.set(playerId, 1)
-      this.playerStrokeCount.set(playerId, 1)
-    } else {
-      const messageCount = this.playerMessageCount.get(playerId) || 0
-      if (
-        strokeCount >= this.MAX_STROKES_PER_WINDOW ||
-        messageCount >= this.MAX_MESSAGES_PER_WINDOW
-      ) {
-        console.warn(`Rate limit exceeded for player ${playerId}`)
-        return
-      }
-      this.playerStrokeCount.set(playerId, strokeCount + 1)
-      this.playerMessageCount.set(playerId, messageCount + 1)
+    if (!this.checkRateLimit(playerId, true)) {
+      console.warn(`Rate limit exceeded for player ${playerId}`)
+      return
     }
 
     await this.ensureInitialized()
@@ -495,21 +525,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     if (!playerId) return
 
     // Rate limiting check
-    const now = Date.now()
-    const lastMessageTime = this.playerLastMessageTime.get(playerId) || 0
-    const messageCount = this.playerMessageCount.get(playerId) || 0
-
-    if (now - lastMessageTime > this.RATE_LIMIT_WINDOW) {
-      // Reset window
-      this.playerLastMessageTime.set(playerId, now)
-      this.playerMessageCount.set(playerId, 1)
-      this.playerStrokeCount.set(playerId, 0)
-    } else {
-      if (messageCount >= this.MAX_MESSAGES_PER_WINDOW) {
-        console.warn(`Rate limit exceeded for player ${playerId}`)
-        return
-      }
-      this.playerMessageCount.set(playerId, messageCount + 1)
+    if (!this.checkRateLimit(playerId, false)) {
+      console.warn(`Rate limit exceeded for player ${playerId}`)
+      return
     }
 
     // Validate strokeId
@@ -576,6 +594,49 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     } catch (e) {
       console.error(`Player ${playerId} failed to clear strokes:`, e)
     }
+  }
+
+  private async handleChat(ws: WebSocket, data: Message & { content: string }) {
+    const playerId = this.getPlayerIdForSocket(ws)
+    if (!playerId) return
+
+    // Get player info from socket attachment
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+    if (!attachment?.player) return
+
+    // Rate limiting check (reuse existing pattern)
+    if (!this.checkRateLimit(playerId, false)) {
+      console.warn(`Chat rate limit exceeded for player ${playerId}`)
+      return
+    }
+
+    // Validate message content
+    const content = data.content
+    if (!validateMessageContent(content)) {
+      return
+    }
+
+    // Truncate if too long
+    const sanitizedContent = sanitizeMessage(content)
+
+    const now = Date.now()
+    const chatMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      playerId,
+      playerName: attachment.player.name,
+      playerColor: attachment.player.color,
+      content: sanitizedContent,
+      timestamp: now,
+    }
+
+    // Add to history (keep last N messages)
+    this.chatHistory.addMessage(chatMessage)
+
+    // Broadcast to all players including sender
+    this.broadcast({
+      type: 'chat',
+      message: chatMessage,
+    })
   }
 
   private broadcast(message: object, exclude?: WebSocket) {

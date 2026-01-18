@@ -23,11 +23,28 @@ export interface Room {
   strokes: Stroke[]
 }
 
+export interface ChatMessage {
+  id: string
+  playerId: string
+  playerName: string
+  playerColor: string
+  content: string
+  timestamp: number
+}
+
 export type MessageType =
   | { type: 'join'; name: string }
-  | { type: 'init'; playerId: string; player: Player; players: Player[]; strokes: Stroke[] }
+  | {
+      type: 'init'
+      playerId: string
+      player: Player
+      players: Player[]
+      strokes: Stroke[]
+      chatHistory: ChatMessage[]
+    }
   | { type: 'player-joined'; player: Player }
   | { type: 'player-left'; playerId: string }
   | { type: 'stroke'; stroke: Stroke }
   | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'clear' }
+  | { type: 'chat'; message: ChatMessage }

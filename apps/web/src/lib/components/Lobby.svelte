@@ -29,6 +29,9 @@
 <div class="lobby">
   <div class="lobby-card">
     <div class="header">
+      <div class="logo-container">
+        <img src="/logo.png" alt="Taurus Mascot" class="mascot" />
+      </div>
       <h1 class="title">🎨 Draw Together</h1>
       <p class="subtitle">Create or join a room to start drawing with friends</p>
     </div>
@@ -113,6 +116,22 @@
   .header {
     text-align: center;
     margin-bottom: 32px;
+  }
+
+  .logo-container {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 16px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid #4ecdc4;
+    box-shadow: 0 0 20px rgb(78 205 196 / 0.3);
+  }
+
+  .mascot {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .title {

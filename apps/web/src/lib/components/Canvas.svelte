@@ -28,16 +28,24 @@
   $effect(() => {
     if (!app) return
 
-    // Remove graphics for strokes that no longer exist
+    // ID-based reconciliation to ensure we don't leak Graphics or miss updates.
+    // We compute the set of current IDs to detect removals and additions.
     const currentStrokeIds = new Set(strokes.map((s) => s.id))
-    for (const [id, graphics] of strokeGraphics) {
+
+    // Dev-mode check: Ensure no two strokes have the same ID
+    if (import.meta.env.DEV && currentStrokeIds.size !== strokes.length) {
+      console.error('Canvas: Duplicate stroke IDs detected!')
+    }
+
+    // Remove deleted strokes
+    for (const [id, graphics] of strokeGraphics.entries()) {
       if (!currentStrokeIds.has(id)) {
         graphics.destroy()
         strokeGraphics.delete(id)
       }
     }
 
-    // Draw initial strokes and stay reactive to new ones
+    // Add new strokes
     for (const stroke of strokes) {
       if (!strokeGraphics.has(stroke.id)) {
         drawStroke(stroke)
