@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   webServer: [
     {
-      command: 'cd ../api && bun run dev',
+      command: 'cd ../api && bun run dev --ip 127.0.0.1',
       port: 8787,
       reuseExistingServer: !process.env.CI,
     },
