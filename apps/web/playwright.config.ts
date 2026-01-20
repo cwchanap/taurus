@@ -38,7 +38,6 @@ export default defineConfig({
             '--use-gl=swiftshader',
             '--disable-dev-shm-usage',
             '--no-sandbox',
-            '--disable-gpu',
           ],
         },
       },

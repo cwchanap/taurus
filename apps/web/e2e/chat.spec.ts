@@ -132,6 +132,7 @@ test.describe('Chat Multi-Player Broadcast', () => {
 
       // Wait for game view and get room code
       await expect(player1Page.locator('.game-container')).toBeVisible({ timeout: 10000 })
+      await player1Page.waitForTimeout(1000)
       const roomCode = await player1Page.locator('.room-code').textContent()
 
       if (!roomCode) {
