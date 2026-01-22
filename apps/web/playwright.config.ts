@@ -20,11 +20,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
+
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'on-first-retry',
   },
-  timeout: 120 * 1000,
+  timeout: 30000,
   projects: [
     {
       name: 'chromium',
@@ -34,8 +35,7 @@ export default defineConfig({
           args: [
             '--disable-web-security',
             '--disable-features=IsolateOrigins,site-per-process',
-            '--enable-unsafe-swiftshader',
-            '--use-gl=swiftshader',
+            '--disable-gpu',
             '--disable-dev-shm-usage',
             '--no-sandbox',
           ],
