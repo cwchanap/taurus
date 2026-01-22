@@ -30,7 +30,7 @@
   <div class="lobby-card">
     <div class="header">
       <div class="logo-container">
-        <img src="/logo.png" alt="Taurus Mascot" class="mascot" />
+        <img src="/logo.png" alt="Draw Together logo" class="mascot" />
       </div>
       <h1 class="title">🎨 Draw Together</h1>
       <p class="subtitle">Create or join a room to start drawing with friends</p>
