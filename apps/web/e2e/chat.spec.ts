@@ -8,7 +8,7 @@ test.describe('Chat Room Feature', () => {
 
   test('should display chat box in game view', async ({ page }) => {
     // Enter player name
-    await page.getByPlaceholder('Enter your name').fill('TestPlayer')
+    await page.getByPlaceholder('Enter your name...').fill('TestPlayer')
 
     // Create a room
     await page.getByRole('button', { name: 'Create Room' }).click()
@@ -23,7 +23,7 @@ test.describe('Chat Room Feature', () => {
 
   test('should send and display chat message', async ({ page }) => {
     // Enter player name
-    await page.getByPlaceholder('Enter your name').fill('ChatTester')
+    await page.getByPlaceholder('Enter your name...').fill('ChatTester')
 
     // Create a room
     await page.getByRole('button', { name: 'Create Room' }).click()
@@ -49,7 +49,7 @@ test.describe('Chat Room Feature', () => {
 
   test('should show empty state when no messages', async ({ page }) => {
     // Enter player name
-    await page.getByPlaceholder('Enter your name').fill('NewPlayer')
+    await page.getByPlaceholder('Enter your name...').fill('NewPlayer')
 
     // Create a room
     await page.getByRole('button', { name: 'Create Room' }).click()
@@ -63,7 +63,7 @@ test.describe('Chat Room Feature', () => {
 
   test('should disable send button when input is empty', async ({ page }) => {
     // Enter player name
-    await page.getByPlaceholder('Enter your name').fill('ButtonTester')
+    await page.getByPlaceholder('Enter your name...').fill('ButtonTester')
 
     // Create a room
     await page.getByRole('button', { name: 'Create Room' }).click()
@@ -91,7 +91,7 @@ test.describe('Chat Room Feature', () => {
 
   test('should send message using send button', async ({ page }) => {
     // Enter player name
-    await page.getByPlaceholder('Enter your name').fill('ClickSender')
+    await page.getByPlaceholder('Enter your name...').fill('ClickSender')
 
     // Create a room
     await page.getByRole('button', { name: 'Create Room' }).click()
@@ -116,7 +116,6 @@ test.describe('Chat Room Feature', () => {
 
 test.describe('Chat Multi-Player Broadcast', () => {
   test('should broadcast messages between players', async ({ browser }) => {
-    test.slow()
     // Create two browser contexts for two players
     const context1 = await browser.newContext()
     const context2 = await browser.newContext()
@@ -127,12 +126,12 @@ test.describe('Chat Multi-Player Broadcast', () => {
     try {
       // Player 1 creates a room
       await player1Page.goto('/draw')
-      await player1Page.getByPlaceholder('Enter your name').fill('Player1')
+      await player1Page.getByPlaceholder('Enter your name...').fill('Player1')
       await player1Page.getByRole('button', { name: 'Create Room' }).click()
 
       // Wait for game view and get room code
       await expect(player1Page.locator('.game-container')).toBeVisible({ timeout: 10000 })
-      await player1Page.waitForTimeout(1000)
+
       const roomCode = await player1Page.locator('.room-code').textContent()
 
       if (!roomCode) {
@@ -141,8 +140,8 @@ test.describe('Chat Multi-Player Broadcast', () => {
 
       // Player 2 joins the room
       await player2Page.goto('/draw')
-      await player2Page.getByPlaceholder('Enter your name').fill('Player2')
-      await player2Page.getByPlaceholder('Enter room code').fill(roomCode)
+      await player2Page.getByPlaceholder('Enter your name...').fill('Player2')
+      await player2Page.getByPlaceholder('12-digit code').fill(roomCode)
       await player2Page.getByRole('button', { name: 'Join' }).click()
 
       // Wait for Player 2 to join
