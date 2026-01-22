@@ -63,13 +63,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private storageWriteTimer: ReturnType<typeof setTimeout> | null = null
   private storageWriteDelay = 1000 // Reduced to 1 second for stroke data
 
-  // Rate limiting for stroke messages
+  // Rate limiting
   private playerLastMessageTime: Map<string, number> = new Map()
   private playerMessageCount: Map<string, number> = new Map()
   private readonly RATE_LIMIT_WINDOW = 1000 // 1 second
   private readonly MAX_MESSAGES_PER_WINDOW = 30
   private readonly MAX_STROKES_PER_WINDOW = 5
   private playerStrokeCount: Map<string, number> = new Map()
+  private playerLastStrokeWindowTime: Map<string, number> = new Map()
 
   // Track players being cleaned up to prevent duplicate leave broadcasts
   private cleanedPlayers = new Set<string>()
@@ -444,6 +445,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     this.playerLastMessageTime.delete(playerId)
     this.playerMessageCount.delete(playerId)
     this.playerStrokeCount.delete(playerId)
+    this.playerLastStrokeWindowTime.delete(playerId)
 
     // Clean up the flag after a short delay (in case socket is reused)
     setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
@@ -457,31 +459,37 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
    */
   private checkRateLimit(playerId: string, isNewStroke: boolean): boolean {
     const now = Date.now()
-    const lastWindowStart = this.playerLastMessageTime.get(playerId) || 0
 
-    if (now - lastWindowStart > this.RATE_LIMIT_WINDOW) {
-      // Start a new window
+    // 1. Total message rate limit (all types: join, stroke, update, chat, clear)
+    const lastMsgWindowStart = this.playerLastMessageTime.get(playerId) || 0
+    if (now - lastMsgWindowStart > this.RATE_LIMIT_WINDOW) {
       this.playerLastMessageTime.set(playerId, now)
       this.playerMessageCount.set(playerId, 1)
-      this.playerStrokeCount.set(playerId, isNewStroke ? 1 : 0)
-      return true
+    } else {
+      const currentMessageCount = this.playerMessageCount.get(playerId) || 0
+      if (currentMessageCount >= this.MAX_MESSAGES_PER_WINDOW) {
+        return false
+      }
+      this.playerMessageCount.set(playerId, currentMessageCount + 1)
     }
 
-    const currentMessageCount = this.playerMessageCount.get(playerId) || 0
-    const currentStrokeCount = this.playerStrokeCount.get(playerId) || 0
-
-    if (currentMessageCount >= this.MAX_MESSAGES_PER_WINDOW) {
-      return false
-    }
-
-    if (isNewStroke && currentStrokeCount >= this.MAX_STROKES_PER_WINDOW) {
-      return false
-    }
-
-    this.playerMessageCount.set(playerId, currentMessageCount + 1)
+    // 2. Stroke-specific rate limit (only for NEW strokes)
     if (isNewStroke) {
-      this.playerStrokeCount.set(playerId, currentStrokeCount + 1)
+      const lastStrokeWindowStart = this.playerLastStrokeWindowTime.get(playerId) || 0
+      if (now - lastStrokeWindowStart > this.RATE_LIMIT_WINDOW) {
+        this.playerLastStrokeWindowTime.set(playerId, now)
+        this.playerStrokeCount.set(playerId, 1)
+      } else {
+        const currentStrokeCount = this.playerStrokeCount.get(playerId) || 0
+        if (currentStrokeCount >= this.MAX_STROKES_PER_WINDOW) {
+          // If we block the stroke, we should probably "refund" the message count
+          // but for simplicity and strictness we treat the blocked attempt as a message
+          return false
+        }
+        this.playerStrokeCount.set(playerId, currentStrokeCount + 1)
+      }
     }
+
     return true
   }
 

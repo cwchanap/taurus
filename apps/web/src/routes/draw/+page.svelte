@@ -104,11 +104,14 @@
       onStrokeUpdate: (strokeId, point) => {
         const index = strokes.findIndex((s) => s.id === strokeId)
         if (index !== -1) {
-          // Optimization: Mutate the array in place to avoid O(N) copy on every point
-          // Svelte 5 proxies will detect the deep change
+          // Optimization: Update the canvas imperatively before mutating state.
+          // This avoids the "line to self" issue in Canvas.svelte.
+          canvasComponent?.updateRemoteStroke(strokeId, point)
+
+          // Optimization: Mutate the array in place to avoid O(N) copy on every point.
+          // Svelte 5 proxies detect this deep change for other components if needed.
           strokes[index].points.push(point)
         }
-        canvasComponent?.updateRemoteStroke(strokeId, point)
       },
       onClear: () => {
         strokes = []
