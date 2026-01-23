@@ -22,5 +22,6 @@ export function isValidPlayerName(name: unknown): name is string {
   if (typeof name !== 'string') {
     return false
   }
-  return name.length > 0 && name.length <= MAX_PLAYER_NAME_LENGTH
+  const trimmed = name.trim()
+  return trimmed.length > 0 && trimmed.length <= MAX_PLAYER_NAME_LENGTH
 }
