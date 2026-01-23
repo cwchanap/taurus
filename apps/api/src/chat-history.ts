@@ -30,6 +30,13 @@ export class ChatHistory {
   }
 
   /**
+   * Loads messages into history (used for persistence)
+   */
+  setMessages(messages: ChatMessage[]): void {
+    this.messages = messages.slice(-MAX_CHAT_HISTORY)
+  }
+
+  /**
    * Resets the chat history (useful for tests)
    */
   clear(): void {
