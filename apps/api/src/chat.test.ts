@@ -165,6 +165,25 @@ describe('Chat Message Validation', () => {
       expect(messages[0].id).toBe(`msg-${firstExpectedIndex}`)
       expect(messages[messages.length - 1].id).toBe(`msg-${totalAdded - 1}`)
     })
+
+    test('should trim messages when setting history from storage', () => {
+      const history = new ChatHistory()
+      const storedMessages = Array.from({ length: MAX_CHAT_HISTORY + 5 }, (_, index) => ({
+        id: `msg-${index}`,
+        playerId: 'p1',
+        playerName: 'User',
+        playerColor: '#000',
+        content: `Message ${index}`,
+        timestamp: Date.now(),
+      }))
+
+      history.setMessages(storedMessages)
+
+      const messages = history.getMessages()
+      expect(messages.length).toBe(MAX_CHAT_HISTORY)
+      expect(messages[0].id).toBe(`msg-${storedMessages.length - MAX_CHAT_HISTORY}`)
+      expect(messages[messages.length - 1].id).toBe(`msg-${storedMessages.length - 1}`)
+    })
   })
 
   describe('Message broadcast format', () => {

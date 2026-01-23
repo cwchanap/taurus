@@ -42,7 +42,13 @@
 <div class="chat-box">
   <h3 class="title">Chat</h3>
 
-  <div class="messages" bind:this={messagesContainer}>
+  <div
+    class="messages"
+    bind:this={messagesContainer}
+    role="log"
+    aria-live="polite"
+    aria-relevant="additions"
+  >
     {#each messages as message}
       <div class="message" class:own={message.playerId === currentPlayerId}>
         <div class="message-header">

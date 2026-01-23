@@ -82,6 +82,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     if (!this.initialized) {
       this.strokes = (await this.ctx.storage.get<Stroke[]>('strokes')) || []
       this.created = (await this.ctx.storage.get<boolean>('created')) || false
+      const storedChatHistory = (await this.ctx.storage.get<ChatMessage[]>('chatHistory')) || []
+      this.chatHistory.setMessages(storedChatHistory)
 
       // Migration: If we have strokes but no created flag, assume it's a legacy room
       if (!this.created && this.strokes.length > 0) {
@@ -639,6 +641,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Add to history (keep last N messages)
     this.chatHistory.addMessage(chatMessage)
+    await this.storagePutWithRetry('chatHistory', this.chatHistory.getMessages())
 
     // Broadcast to all players including sender
     this.broadcast({
