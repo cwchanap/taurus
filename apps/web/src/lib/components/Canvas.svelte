@@ -170,8 +170,8 @@
 
     const points = existingStroke.points || []
 
-    // Need at least 2 points to draw a line
-    if (points.length < 2) return true
+    // Need at least 1 point to draw a line to the new point
+    if (points.length < 1) return true
 
     const lastPt = points[points.length - 1]
 
