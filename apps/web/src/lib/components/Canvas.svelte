@@ -8,11 +8,20 @@
     brushSize: number
     strokes: Stroke[]
     playerId: string
+    disabled?: boolean
     onStrokeStart: (stroke: Stroke) => void
     onStrokeUpdate: (strokeId: string, point: Point) => void
   }
 
-  let { color, brushSize, strokes, playerId, onStrokeStart, onStrokeUpdate }: Props = $props()
+  let {
+    color,
+    brushSize,
+    strokes,
+    playerId,
+    disabled = false,
+    onStrokeStart,
+    onStrokeUpdate,
+  }: Props = $props()
 
   let container: HTMLDivElement
   let mounted = false
@@ -86,7 +95,7 @@
   })
 
   function onPointerDown(event: { global: { x: number; y: number } }) {
-    if (!app) return
+    if (!app || disabled) return
     isDrawing = true
     currentStrokeId = crypto.randomUUID()
 

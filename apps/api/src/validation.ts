@@ -22,6 +22,10 @@ export function isValidPlayerName(name: unknown): name is string {
   if (typeof name !== 'string') {
     return false
   }
+  // Prevent arbitrarily long whitespace-padded names
+  if (name.length > MAX_PLAYER_NAME_LENGTH * 2) {
+    return false
+  }
   const trimmed = name.trim()
   return trimmed.length > 0 && trimmed.length <= MAX_PLAYER_NAME_LENGTH
 }

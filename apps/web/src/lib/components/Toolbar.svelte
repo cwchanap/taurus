@@ -5,9 +5,17 @@
     onColorChange: (color: string) => void
     onBrushSizeChange: (size: number) => void
     onClear: () => void
+    disabled?: boolean
   }
 
-  let { color, brushSize, onColorChange, onBrushSizeChange, onClear }: Props = $props()
+  let {
+    color,
+    brushSize,
+    onColorChange,
+    onBrushSizeChange,
+    onClear,
+    disabled = false,
+  }: Props = $props()
 
   const colors = [
     '#FF6B6B',
@@ -23,7 +31,7 @@
   const sizes = [4, 8, 16]
 </script>
 
-<div class="toolbar">
+<div class="toolbar" class:disabled>
   <div class="section">
     <span class="label">Colors</span>
     <div class="color-grid">
@@ -34,6 +42,7 @@
           style="background-color: {c}"
           onclick={() => onColorChange(c)}
           aria-label="Select color {c}"
+          {disabled}
         ></button>
       {/each}
     </div>
@@ -49,6 +58,7 @@
           onclick={() => onBrushSizeChange(size)}
           aria-label="Brush size {size}px"
           aria-pressed={brushSize === size}
+          {disabled}
         >
           <span class="size-dot" style="width: {size}px; height: {size}px;"></span>
         </button>
@@ -57,7 +67,7 @@
   </div>
 
   <div class="section">
-    <button class="clear-btn" onclick={onClear}>
+    <button class="clear-btn" onclick={onClear} {disabled}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
       </svg>
@@ -175,5 +185,18 @@
   .clear-btn svg {
     width: 18px;
     height: 18px;
+  }
+
+  /* Disabled state */
+  .toolbar.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .color-btn:disabled,
+  .size-btn:disabled,
+  .clear-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 </style>

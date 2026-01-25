@@ -5,16 +5,26 @@
   import PlayerList from '$lib/components/PlayerList.svelte'
   import ChatBox from '$lib/components/ChatBox.svelte'
   import Lobby from '$lib/components/Lobby.svelte'
+  import GameHeader from '$lib/components/GameHeader.svelte'
+  import Scoreboard from '$lib/components/Scoreboard.svelte'
   import { GameWebSocket } from '$lib/websocket'
   import { onDestroy } from 'svelte'
-  import type { Player, Stroke, Point, ChatMessage } from '$lib/types'
+  import type {
+    Player,
+    Stroke,
+    Point,
+    ChatMessage,
+    GameStatus,
+    RoundResult,
+    Winner,
+  } from '$lib/types'
 
   // API URL - configurable via VITE_API_URL environment variable
   const API_URL =
     import.meta.env.VITE_API_URL ||
     (browser ? (import.meta.env.DEV ? 'http://localhost:8787' : window.location.origin) : '')
 
-  let gameState = $state<'lobby' | 'game'>('lobby')
+  let pageState = $state<'lobby' | 'game'>('lobby')
   let roomId = $state('')
   let playerName = $state('')
   let playerId = $state('')
@@ -24,12 +34,33 @@
   let isLoading = $state(false)
   let isConnected = $state(false)
   let errorMessage = $state('')
+  let isHost = $state(false)
+
+  // Game state
+  let gameStatus = $state<GameStatus>('lobby')
+  let currentDrawerId = $state<string | null>(null)
+  let currentDrawerName = $state('')
+  let currentWord = $state<string | undefined>()
+  let wordLength = $state(0)
+  let roundNumber = $state(0)
+  let totalRounds = $state(0)
+  let timeRemaining = $state(0)
+  let scores = $state<Record<string, number>>({})
+  let lastRevealedWord = $state('')
+  let lastRoundResult = $state<RoundResult | null>(null)
+  let gameWinner = $state<Winner | null>(null)
+  let correctGuessNotification = $state<{ playerName: string; score: number } | null>(null)
 
   let color = $state('#4ECDC4')
   let brushSize = $state(8)
 
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
+
+  // Derived state
+  const isCurrentDrawer = $derived(playerId === currentDrawerId)
+  const canDraw = $derived(gameStatus !== 'playing' || isCurrentDrawer)
+  const canStartGame = $derived(isHost && gameStatus === 'lobby' && players.length >= 2)
 
   async function createRoom() {
     isLoading = true
@@ -81,14 +112,27 @@
       onConnectionFailed: (reason) => {
         errorMessage = reason
       },
-      onInit: (id, player, playerList, strokeList, chatHistory) => {
+      onInit: (id, player, playerList, strokeList, chatHistory, hostFlag, initialGameState) => {
         playerId = id
         players = playerList
+        isHost = hostFlag
         // Clear canvas before applying new state to avoid desync
         canvasComponent?.clearCanvas()
         strokes = strokeList
         chatMessages = chatHistory
-        gameState = 'game'
+        // Initialize game state from server
+        gameStatus = initialGameState.status
+        currentDrawerId = initialGameState.currentDrawerId
+        roundNumber = initialGameState.currentRound
+        totalRounds = initialGameState.totalRounds
+        scores = initialGameState.scores
+        if (initialGameState.roundEndTime) {
+          timeRemaining = Math.max(
+            0,
+            Math.ceil((initialGameState.roundEndTime - Date.now()) / 1000)
+          )
+        }
+        pageState = 'game'
         isLoading = false
       },
       onPlayerJoined: (player) => {
@@ -104,12 +148,7 @@
       onStrokeUpdate: (strokeId, point) => {
         const index = strokes.findIndex((s) => s.id === strokeId)
         if (index !== -1) {
-          // Optimization: Update the canvas imperatively before mutating state.
-          // This avoids the "line to self" issue in Canvas.svelte.
           canvasComponent?.updateRemoteStroke(strokeId, point)
-
-          // Optimization: Mutate the array in place to avoid O(N) copy on every point.
-          // Svelte 5 proxies detect this deep change for other components if needed.
           strokes[index].points.push(point)
         }
       },
@@ -119,6 +158,48 @@
       },
       onChat: (message) => {
         chatMessages = [...chatMessages, message]
+      },
+      // Game event handlers
+      onGameStarted: (rounds, drawerOrder, initialScores) => {
+        totalRounds = rounds
+        scores = initialScores
+        gameStatus = 'playing'
+      },
+      onRoundStart: (round, rounds, drawerId, drawerNameVal, word, wordLen, endTime) => {
+        roundNumber = round
+        totalRounds = rounds
+        currentDrawerId = drawerId
+        currentDrawerName = drawerNameVal
+        currentWord = word
+        wordLength = wordLen
+        timeRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
+        gameStatus = 'playing'
+        lastRoundResult = null
+        correctGuessNotification = null
+      },
+      onRoundEnd: (word, result, newScores) => {
+        lastRevealedWord = word
+        lastRoundResult = result
+        scores = newScores
+        gameStatus = 'round-end'
+        currentWord = undefined
+      },
+      onGameOver: (finalScores, winner) => {
+        scores = finalScores
+        gameWinner = winner
+        gameStatus = 'game-over'
+        currentDrawerId = null
+        currentWord = undefined
+      },
+      onCorrectGuess: (guesserId, guesserName, score, remaining) => {
+        correctGuessNotification = { playerName: guesserName, score }
+        // Clear notification after a few seconds
+        setTimeout(() => {
+          correctGuessNotification = null
+        }, 3000)
+      },
+      onTick: (remaining) => {
+        timeRemaining = remaining
       },
     })
 
@@ -137,7 +218,6 @@
   function handleStrokeUpdate(strokeId: string, point: Point) {
     const index = strokes.findIndex((s) => s.id === strokeId)
     if (index !== -1) {
-      // Optimization: Mutate directly
       strokes[index].points.push(point)
     }
     ws?.sendStrokeUpdate(strokeId, point)
@@ -152,6 +232,22 @@
   function handleSendMessage(content: string) {
     ws?.sendChat(content)
   }
+
+  function handleStartGame() {
+    ws?.sendStartGame()
+  }
+
+  function handlePlayAgain() {
+    // Reset game state for new game
+    gameStatus = 'lobby'
+    gameWinner = null
+    lastRoundResult = null
+    scores = {}
+    currentDrawerId = null
+    currentWord = undefined
+    roundNumber = 0
+    totalRounds = 0
+  }
 </script>
 
 <svelte:head>
@@ -162,7 +258,7 @@
   />
 </svelte:head>
 
-{#if gameState === 'lobby'}
+{#if pageState === 'lobby'}
   <Lobby
     {playerName}
     onPlayerNameChange={(name) => (playerName = name)}
@@ -173,7 +269,7 @@
   />
 {:else}
   <div class="game-container">
-    <header class="game-header">
+    <header class="page-header">
       <h1 class="game-title">🎨 Draw Together</h1>
       <div class="room-info">
         <span class="room-label">Room:</span>
@@ -185,6 +281,60 @@
       </div>
     </header>
 
+    <!-- Game Header for active game -->
+    {#if gameStatus === 'playing' || gameStatus === 'round-end'}
+      <GameHeader
+        status={gameStatus}
+        {currentWord}
+        {wordLength}
+        {timeRemaining}
+        {currentDrawerName}
+        {isCurrentDrawer}
+        {roundNumber}
+        {totalRounds}
+      />
+    {/if}
+
+    <!-- Correct guess notification -->
+    {#if correctGuessNotification}
+      <div class="correct-guess-notification">
+        ✅ {correctGuessNotification.playerName} guessed correctly! +{correctGuessNotification.score}
+        pts
+      </div>
+    {/if}
+
+    <!-- Round end overlay -->
+    {#if gameStatus === 'round-end' && lastRoundResult}
+      <div class="round-overlay">
+        <div class="round-result">
+          <h2>Round Over!</h2>
+          <p class="revealed-word">The word was: <strong>{lastRevealedWord}</strong></p>
+          <p>Next round starting soon...</p>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Game over overlay -->
+    {#if gameStatus === 'game-over'}
+      <div class="game-over-overlay">
+        <div class="game-over-content">
+          <h2>🎉 Game Over!</h2>
+          {#if gameWinner}
+            <p class="winner">
+              Winner: <strong>{gameWinner.playerName}</strong> with {gameWinner.score} points!
+            </p>
+          {:else}
+            <p>No winner this time.</p>
+          {/if}
+          {#if isHost}
+            <button class="play-again-btn" onclick={handlePlayAgain}>Play Again</button>
+          {:else}
+            <p class="waiting">Waiting for host to start a new game...</p>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     <div class="game-layout">
       <aside class="sidebar left">
         <Toolbar
@@ -193,7 +343,21 @@
           onColorChange={(c) => (color = c)}
           onBrushSizeChange={(s) => (brushSize = s)}
           onClear={handleClear}
+          disabled={!canDraw}
         />
+
+        <!-- Start Game button for host -->
+        {#if gameStatus === 'lobby'}
+          <div class="start-game-section">
+            {#if canStartGame}
+              <button class="start-game-btn" onclick={handleStartGame}> 🚀 Start Game </button>
+            {:else if isHost}
+              <p class="waiting-text">Need at least 2 players to start</p>
+            {:else}
+              <p class="waiting-text">Waiting for host to start...</p>
+            {/if}
+          </div>
+        {/if}
       </aside>
 
       <main class="canvas-area">
@@ -203,13 +367,22 @@
           {brushSize}
           {strokes}
           {playerId}
+          disabled={!canDraw}
           onStrokeStart={handleStrokeStart}
           onStrokeUpdate={handleStrokeUpdate}
         />
+        <!-- Cannot draw indicator -->
+        {#if gameStatus === 'playing' && !isCurrentDrawer}
+          <div class="cannot-draw-indicator">👀 You're guessing! Type your answer in chat.</div>
+        {/if}
       </main>
 
       <aside class="sidebar right">
-        <PlayerList {players} currentPlayerId={playerId} />
+        {#if gameStatus !== 'lobby'}
+          <Scoreboard {scores} {players} {currentDrawerId} currentPlayerId={playerId} />
+        {:else}
+          <PlayerList {players} currentPlayerId={playerId} />
+        {/if}
         <ChatBox
           messages={chatMessages}
           currentPlayerId={playerId}
@@ -240,7 +413,7 @@
     flex-direction: column;
   }
 
-  .game-header {
+  .page-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -318,5 +491,134 @@
   .canvas-area {
     min-height: 500px;
     display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  .start-game-section {
+    margin-top: 16px;
+    padding: 16px;
+    background: linear-gradient(135deg, rgb(30 30 50 / 0.9), rgb(20 20 40 / 0.95));
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  .start-game-btn {
+    width: 100%;
+    padding: 14px 20px;
+    font-size: 16px;
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(135deg, #4ecdc4, #45b7d1);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .start-game-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgb(78 205 196 / 0.4);
+  }
+
+  .waiting-text {
+    font-size: 13px;
+    color: rgb(255 255 255 / 0.5);
+    margin: 0;
+  }
+
+  .correct-guess-notification {
+    position: fixed;
+    top: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 24px;
+    background: linear-gradient(135deg, rgb(78 205 196 / 0.9), rgb(69 183 209 / 0.9));
+    border-radius: 12px;
+    font-weight: 600;
+    z-index: 100;
+    animation: slideDown 0.3s ease;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+
+  .round-overlay,
+  .game-over-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+
+  .round-result,
+  .game-over-content {
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    padding: 40px 60px;
+    border-radius: 20px;
+    text-align: center;
+    border: 1px solid rgb(255 255 255 / 0.1);
+  }
+
+  .round-result h2,
+  .game-over-content h2 {
+    margin: 0 0 16px;
+    font-size: 28px;
+  }
+
+  .revealed-word {
+    font-size: 20px;
+    color: #4ecdc4;
+  }
+
+  .winner {
+    font-size: 20px;
+    color: #ffeaa7;
+  }
+
+  .play-again-btn {
+    margin-top: 20px;
+    padding: 14px 32px;
+    font-size: 16px;
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(135deg, #4ecdc4, #45b7d1);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .play-again-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgb(78 205 196 / 0.4);
+  }
+
+  .waiting {
+    color: rgb(255 255 255 / 0.5);
+    font-size: 14px;
+  }
+
+  .cannot-draw-indicator {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    background: rgb(0 0 0 / 0.6);
+    border-radius: 10px;
+    font-size: 14px;
+    color: rgb(255 255 255 / 0.8);
   }
 </style>

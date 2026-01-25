@@ -1,4 +1,12 @@
-import type { MessageType, Player, Stroke, ChatMessage } from './types'
+import type {
+  MessageType,
+  Player,
+  Stroke,
+  ChatMessage,
+  GameState,
+  RoundResult,
+  Winner,
+} from './types'
 
 export type GameEventHandler = {
   onInit?: (
@@ -6,7 +14,9 @@ export type GameEventHandler = {
     player: Player,
     players: Player[],
     strokes: Stroke[],
-    chatHistory: ChatMessage[]
+    chatHistory: ChatMessage[],
+    isHost: boolean,
+    gameState: GameState
   ) => void
   onPlayerJoined?: (player: Player) => void
   onPlayerLeft?: (playerId: string) => void
@@ -16,6 +26,30 @@ export type GameEventHandler = {
   onChat?: (message: ChatMessage) => void
   onConnectionChange?: (connected: boolean) => void
   onConnectionFailed?: (reason: string) => void
+  // Game event handlers
+  onGameStarted?: (
+    totalRounds: number,
+    drawerOrder: string[],
+    scores: Record<string, number>
+  ) => void
+  onRoundStart?: (
+    roundNumber: number,
+    totalRounds: number,
+    drawerId: string,
+    drawerName: string,
+    word: string | undefined,
+    wordLength: number,
+    endTime: number
+  ) => void
+  onRoundEnd?: (word: string, result: RoundResult, scores: Record<string, number>) => void
+  onGameOver?: (finalScores: Record<string, number>, winner: Winner | null) => void
+  onCorrectGuess?: (
+    playerId: string,
+    playerName: string,
+    score: number,
+    timeRemaining: number
+  ) => void
+  onTick?: (timeRemaining: number) => void
 }
 
 export class GameWebSocket {
@@ -83,7 +117,9 @@ export class GameWebSocket {
           data.player,
           data.players,
           data.strokes,
-          data.chatHistory
+          data.chatHistory,
+          data.isHost,
+          data.gameState
         )
         break
       case 'player-joined':
@@ -103,6 +139,37 @@ export class GameWebSocket {
         break
       case 'chat':
         this.handlers.onChat?.(data.message)
+        break
+      case 'game-started':
+        this.handlers.onGameStarted?.(data.totalRounds, data.drawerOrder, data.scores)
+        break
+      case 'round-start':
+        this.handlers.onRoundStart?.(
+          data.roundNumber,
+          data.totalRounds,
+          data.drawerId,
+          data.drawerName,
+          data.word,
+          data.wordLength,
+          data.endTime
+        )
+        break
+      case 'round-end':
+        this.handlers.onRoundEnd?.(data.word, data.result, data.scores)
+        break
+      case 'game-over':
+        this.handlers.onGameOver?.(data.finalScores, data.winner)
+        break
+      case 'correct-guess':
+        this.handlers.onCorrectGuess?.(
+          data.playerId,
+          data.playerName,
+          data.score,
+          data.timeRemaining
+        )
+        break
+      case 'tick':
+        this.handlers.onTick?.(data.timeRemaining)
         break
     }
   }
@@ -150,6 +217,10 @@ export class GameWebSocket {
 
   sendChat(content: string) {
     this.send({ type: 'chat', content })
+  }
+
+  sendStartGame() {
+    this.send({ type: 'start-game' })
   }
 
   disconnect() {

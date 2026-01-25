@@ -48,7 +48,13 @@ import {
   MIN_STROKE_SIZE,
   MAX_STROKE_POINTS,
   MAX_COORDINATE_VALUE,
+  ROUND_DURATION_MS,
+  MIN_PLAYERS_TO_START,
+  CORRECT_GUESS_BASE_SCORE,
+  DRAWER_BONUS_SCORE,
 } from './constants'
+import { getRandomWordExcluding } from './vocabulary'
+import { GameState, createInitialGameState, scoresToRecord, type RoundResult } from './game-types'
 import {
   validateMessageContent,
   sanitizeMessage,
@@ -77,6 +83,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
   // Chat history manager
   private chatHistory = new ChatHistory()
+
+  // Game state
+  private gameState: GameState = createInitialGameState()
+  private roundTimer: ReturnType<typeof setTimeout> | null = null
+  private tickTimer: ReturnType<typeof setInterval> | null = null
 
   private async ensureInitialized() {
     if (!this.initialized) {
@@ -357,6 +368,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         case 'chat':
           await this.handleChat(ws, data as Message & { content: string })
           break
+        case 'start-game':
+          await this.handleStartGame(ws)
+          break
       }
     } catch (e) {
       console.error('Handler error for message type:', data.type, e)
@@ -373,7 +387,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
   private async handleJoin(ws: WebSocket, data: Message & { name: string }) {
     // Validate player name
-    const name = this.isValidPlayerName(data.name) ? data.name : 'Anonymous'
+    const name = this.isValidPlayerName(data.name) ? data.name.trim() : 'Anonymous'
 
     const playerId = crypto.randomUUID()
     const existingPlayers = this.getPlayers()
@@ -408,6 +422,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         players: [...existingPlayers, player],
         strokes: this.strokes,
         chatHistory: this.chatHistory.getMessages(),
+        isHost: playerId === this.hostPlayerId,
+        gameState: {
+          status: this.gameState.status,
+          currentRound: this.gameState.currentRound,
+          totalRounds: this.gameState.totalRounds,
+          currentDrawerId: this.gameState.currentDrawerId,
+          roundEndTime: this.gameState.roundEndTime,
+          scores: scoresToRecord(this.gameState.scores),
+        },
       })
     )
 
@@ -448,6 +471,23 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     this.playerMessageCount.delete(playerId)
     this.playerStrokeCount.delete(playerId)
     this.playerLastStrokeWindowTime.delete(playerId)
+
+    // Handle game state when player leaves during active game
+    if (this.gameState.status === 'playing') {
+      // Remove player from drawer order
+      this.gameState.drawerOrder = this.gameState.drawerOrder.filter((id) => id !== playerId)
+
+      // If the leaving player was the current drawer, end the round
+      if (playerId === this.gameState.currentDrawerId) {
+        this.endRound(true) // Skip to next round
+      }
+
+      // If not enough players left, end the game
+      const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
+      if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
+        this.endGame()
+      }
+    }
 
     // Clean up the flag after a short delay (in case socket is reused)
     setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
@@ -499,6 +539,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
+    // During active game, only the current drawer can draw
+    if (this.gameState.status === 'playing' && playerId !== this.gameState.currentDrawerId) {
+      return
+    }
+
     // Rate limiting check for new strokes (more restrictive than updates)
     if (!this.checkRateLimit(playerId, true)) {
       console.warn(`Rate limit exceeded for player ${playerId}`)
@@ -533,6 +578,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   ) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
+
+    // During active game, only the current drawer can draw
+    if (this.gameState.status === 'playing' && playerId !== this.gameState.currentDrawerId) {
+      return
+    }
 
     // Rate limiting check
     if (!this.checkRateLimit(playerId, false)) {
@@ -629,6 +679,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     // Truncate if too long
     const sanitizedContent = sanitizeMessage(content)
 
+    // Check for correct guess during active game
+    if (this.gameState.status === 'playing' && this.gameState.currentWord) {
+      // Drawer cannot guess
+      if (playerId === this.gameState.currentDrawerId) {
+        // Drawer's messages still get sent but we don't check for guess
+      } else if (!this.gameState.correctGuessers.has(playerId)) {
+        // Check if the guess is correct (case-insensitive)
+        if (sanitizedContent.toLowerCase().trim() === this.gameState.currentWord.toLowerCase()) {
+          this.handleCorrectGuess(playerId, attachment.player.name)
+          // Don't broadcast the correct answer to prevent revealing it
+          return
+        }
+      }
+      // Player already guessed correctly - let their message through
+    }
+
     const now = Date.now()
     const chatMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -677,5 +743,301 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         // Ignore errors when closing
       }
     }
+  }
+
+  // ==================== GAME LOGIC ====================
+
+  /**
+   * Handle start-game message from host
+   */
+  private async handleStartGame(ws: WebSocket) {
+    const playerId = this.getPlayerIdForSocket(ws)
+    if (!playerId) return
+
+    // Only host can start the game
+    if (playerId !== this.hostPlayerId) {
+      console.warn(`Player ${playerId} attempted to start game but is not the host`)
+      return
+    }
+
+    // Can only start from lobby
+    if (this.gameState.status !== 'lobby') {
+      console.warn(`Cannot start game: game is already in status ${this.gameState.status}`)
+      return
+    }
+
+    const players = this.getPlayers()
+    if (players.length < MIN_PLAYERS_TO_START) {
+      console.warn(`Cannot start game: need at least ${MIN_PLAYERS_TO_START} players`)
+      return
+    }
+
+    // Initialize game state
+    const playerIds = players.map((p) => p.id)
+    // Shuffle player order for drawing
+    const shuffledOrder = [...playerIds].sort(() => Math.random() - 0.5)
+
+    this.gameState = {
+      status: 'playing',
+      currentRound: 0,
+      totalRounds: shuffledOrder.length,
+      currentDrawerId: null,
+      currentWord: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: shuffledOrder,
+      scores: new Map(playerIds.map((id) => [id, 0])),
+      correctGuessers: new Set(),
+      usedWords: new Set(),
+    }
+
+    // Broadcast game started
+    this.broadcast({
+      type: 'game-started',
+      totalRounds: this.gameState.totalRounds,
+      drawerOrder: this.gameState.drawerOrder,
+      scores: scoresToRecord(this.gameState.scores),
+    })
+
+    // Start first round
+    this.startRound()
+  }
+
+  /**
+   * Start a new round
+   */
+  private startRound() {
+    this.gameState.currentRound++
+
+    // Get next drawer
+    const drawerIndex = this.gameState.currentRound - 1
+    if (drawerIndex >= this.gameState.drawerOrder.length) {
+      this.endGame()
+      return
+    }
+
+    const drawerId = this.gameState.drawerOrder[drawerIndex]
+    const drawerName = this.getPlayerName(drawerId)
+
+    // Pick a random word
+    const word = getRandomWordExcluding(this.gameState.usedWords)
+    this.gameState.usedWords.add(word)
+
+    // Set round state
+    const now = Date.now()
+    this.gameState.currentDrawerId = drawerId
+    this.gameState.currentWord = word
+    this.gameState.roundStartTime = now
+    this.gameState.roundEndTime = now + ROUND_DURATION_MS
+    this.gameState.correctGuessers = new Set()
+
+    // Clear canvas for new round
+    this.strokes = []
+    if (this.storageWriteTimer) {
+      clearTimeout(this.storageWriteTimer)
+      this.storageWriteTimer = null
+    }
+    this.ctx.waitUntil(this.storageDeleteWithRetry('strokes'))
+
+    // Broadcast round start to all players
+    // Note: Send word only to the drawer
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+      if (attachment?.playerId) {
+        ws.send(
+          JSON.stringify({
+            type: 'round-start',
+            roundNumber: this.gameState.currentRound,
+            totalRounds: this.gameState.totalRounds,
+            drawerId,
+            drawerName,
+            word: attachment.playerId === drawerId ? word : undefined,
+            wordLength: word.length,
+            endTime: this.gameState.roundEndTime,
+          })
+        )
+      }
+    }
+
+    // Broadcast canvas clear
+    this.broadcast({ type: 'clear' })
+
+    // Set round timer
+    this.clearTimers()
+    this.roundTimer = setTimeout(() => {
+      this.endRound(false)
+    }, ROUND_DURATION_MS)
+
+    // Set tick timer for countdown
+    this.tickTimer = setInterval(() => {
+      const remaining = Math.max(0, (this.gameState.roundEndTime || 0) - Date.now())
+      if (remaining > 0) {
+        this.broadcast({
+          type: 'tick',
+          timeRemaining: Math.ceil(remaining / 1000),
+        })
+      }
+    }, 1000)
+  }
+
+  /**
+   * End the current round
+   * @param skipToNext If true, immediately start next round (e.g., when drawer leaves)
+   */
+  private endRound(skipToNext: boolean) {
+    this.clearTimers()
+
+    if (this.gameState.status !== 'playing') return
+
+    const drawerId = this.gameState.currentDrawerId
+    const word = this.gameState.currentWord
+
+    if (!drawerId || !word) return
+
+    // Calculate drawer bonus if someone guessed correctly
+    let drawerScore = 0
+    if (this.gameState.correctGuessers.size > 0) {
+      drawerScore = DRAWER_BONUS_SCORE * this.gameState.correctGuessers.size
+      const currentDrawerScore = this.gameState.scores.get(drawerId) || 0
+      this.gameState.scores.set(drawerId, currentDrawerScore + drawerScore)
+    }
+
+    // Build round result
+    const result: RoundResult = {
+      drawerId,
+      drawerName: this.getPlayerName(drawerId),
+      word,
+      correctGuessers: Array.from(this.gameState.correctGuessers).map((id) => ({
+        playerId: id,
+        playerName: this.getPlayerName(id),
+        score: 0, // Score was already awarded in handleCorrectGuess
+      })),
+      drawerScore,
+    }
+
+    // Broadcast round end
+    this.broadcast({
+      type: 'round-end',
+      word,
+      result,
+      scores: scoresToRecord(this.gameState.scores),
+    })
+
+    // Update status temporarily
+    this.gameState.status = 'round-end'
+    this.gameState.currentDrawerId = null
+    this.gameState.currentWord = null
+
+    // Check if game should end
+    if (this.gameState.currentRound >= this.gameState.totalRounds) {
+      // Give a short delay before showing final results
+      setTimeout(() => this.endGame(), 3000)
+      return
+    }
+
+    // Start next round after delay (unless skipping)
+    if (skipToNext) {
+      this.gameState.status = 'playing'
+      this.startRound()
+    } else {
+      setTimeout(() => {
+        if (this.gameState.status === 'round-end') {
+          this.gameState.status = 'playing'
+          this.startRound()
+        }
+      }, 5000) // 5 second break between rounds
+    }
+  }
+
+  /**
+   * End the game and broadcast final results
+   */
+  private endGame() {
+    this.clearTimers()
+
+    // Find winner
+    let winner: { playerId: string; playerName: string; score: number } | null = null
+    let highestScore = 0
+
+    for (const [playerId, score] of this.gameState.scores) {
+      if (score > highestScore) {
+        highestScore = score
+        winner = {
+          playerId,
+          playerName: this.getPlayerName(playerId),
+          score,
+        }
+      }
+    }
+
+    // Broadcast game over
+    this.broadcast({
+      type: 'game-over',
+      finalScores: scoresToRecord(this.gameState.scores),
+      winner,
+    })
+
+    // Reset to lobby state
+    this.gameState = createInitialGameState()
+  }
+
+  /**
+   * Handle a correct guess from a player
+   */
+  private handleCorrectGuess(playerId: string, playerName: string) {
+    if (!this.gameState.roundEndTime || !this.gameState.currentWord) return
+
+    // Mark player as having guessed correctly
+    this.gameState.correctGuessers.add(playerId)
+
+    // Calculate time-based score
+    const timeRemaining = Math.max(0, this.gameState.roundEndTime - Date.now())
+    const timeRatio = timeRemaining / ROUND_DURATION_MS
+    // Score: base score + bonus for faster guesses (up to 50% extra)
+    const score = Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
+
+    // Update player score
+    const currentScore = this.gameState.scores.get(playerId) || 0
+    this.gameState.scores.set(playerId, currentScore + score)
+
+    // Broadcast correct guess notification
+    this.broadcast({
+      type: 'correct-guess',
+      playerId,
+      playerName,
+      score,
+      timeRemaining: Math.ceil(timeRemaining / 1000),
+    })
+
+    // Check if all non-drawer players have guessed
+    const players = this.getPlayers()
+    const nonDrawerCount = players.filter((p) => p.id !== this.gameState.currentDrawerId).length
+    if (this.gameState.correctGuessers.size >= nonDrawerCount) {
+      // Everyone guessed, end round early
+      this.endRound(false)
+    }
+  }
+
+  /**
+   * Clear all game-related timers
+   */
+  private clearTimers() {
+    if (this.roundTimer) {
+      clearTimeout(this.roundTimer)
+      this.roundTimer = null
+    }
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer)
+      this.tickTimer = null
+    }
+  }
+
+  /**
+   * Get player name by ID
+   */
+  private getPlayerName(playerId: string): string {
+    const players = this.getPlayers()
+    const player = players.find((p) => p.id === playerId)
+    return player?.name || 'Unknown'
   }
 }

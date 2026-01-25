@@ -1,0 +1,113 @@
+/**
+ * Game state types for the drawing guessing game
+ */
+
+export type GameStatus = 'lobby' | 'playing' | 'round-end' | 'game-over'
+
+export interface GameState {
+  status: GameStatus
+  currentRound: number
+  totalRounds: number
+  currentDrawerId: string | null
+  currentWord: string | null
+  roundStartTime: number | null
+  roundEndTime: number | null
+  drawerOrder: string[] // Player IDs in draw order
+  scores: Map<string, number>
+  correctGuessers: Set<string> // Players who guessed correctly this round
+  usedWords: Set<string> // Words already used in this game
+}
+
+export interface RoundResult {
+  drawerId: string
+  drawerName: string
+  word: string
+  correctGuessers: Array<{ playerId: string; playerName: string; score: number }>
+  drawerScore: number
+}
+
+export interface PlayerScore {
+  playerId: string
+  playerName: string
+  score: number
+}
+
+// Game-related message types (server -> client)
+export interface GameStartedMessage {
+  type: 'game-started'
+  totalRounds: number
+  drawerOrder: string[]
+  scores: Record<string, number>
+}
+
+export interface RoundStartMessage {
+  type: 'round-start'
+  roundNumber: number
+  totalRounds: number
+  drawerId: string
+  drawerName: string
+  word?: string // Only sent to the drawer
+  wordLength: number // Sent to all so guessers know word length
+  endTime: number // Timestamp when round ends
+}
+
+export interface RoundEndMessage {
+  type: 'round-end'
+  word: string
+  result: RoundResult
+  scores: Record<string, number>
+}
+
+export interface GameOverMessage {
+  type: 'game-over'
+  finalScores: Record<string, number>
+  winner: { playerId: string; playerName: string; score: number } | null
+}
+
+export interface CorrectGuessMessage {
+  type: 'correct-guess'
+  playerId: string
+  playerName: string
+  score: number
+  timeRemaining: number
+}
+
+export interface TickMessage {
+  type: 'tick'
+  timeRemaining: number
+}
+
+// Game-related message types (client -> server)
+export interface StartGameClientMessage {
+  type: 'start-game'
+}
+
+/**
+ * Create initial game state
+ */
+export function createInitialGameState(): GameState {
+  return {
+    status: 'lobby',
+    currentRound: 0,
+    totalRounds: 0,
+    currentDrawerId: null,
+    currentWord: null,
+    roundStartTime: null,
+    roundEndTime: null,
+    drawerOrder: [],
+    scores: new Map(),
+    correctGuessers: new Set(),
+    usedWords: new Set(),
+  }
+}
+
+/**
+ * Convert scores Map to Record for JSON serialization
+ */
+export function scoresToRecord(scores: Map<string, number>): Record<string, number> {
+  const record: Record<string, number> = {}
+  for (const [playerId, score] of scores) {
+    record[playerId] = score
+  }
+  return record
+}
