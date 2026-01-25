@@ -32,6 +32,34 @@ export interface ChatMessage {
   timestamp: number
 }
 
+// Game-related types
+export type GameStatus = 'lobby' | 'playing' | 'round-end' | 'game-over'
+
+export interface GameState {
+  status: GameStatus
+  currentRound: number
+  totalRounds: number
+  currentDrawerId: string | null
+  currentWord?: string // Only set for drawer
+  wordLength?: number
+  roundEndTime: number | null
+  scores: Record<string, number>
+}
+
+export interface RoundResult {
+  drawerId: string
+  drawerName: string
+  word: string
+  correctGuessers: Array<{ playerId: string; playerName: string; score: number }>
+  drawerScore: number
+}
+
+export interface Winner {
+  playerId: string
+  playerName: string
+  score: number
+}
+
 export type MessageType =
   | { type: 'join'; name: string }
   | {
@@ -41,6 +69,8 @@ export type MessageType =
       players: Player[]
       strokes: Stroke[]
       chatHistory: ChatMessage[]
+      isHost: boolean
+      gameState: GameState
     }
   | { type: 'player-joined'; player: Player }
   | { type: 'player-left'; playerId: string }
@@ -48,3 +78,39 @@ export type MessageType =
   | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'clear' }
   | { type: 'chat'; message: ChatMessage }
+  // Game-related messages
+  | {
+      type: 'game-started'
+      totalRounds: number
+      drawerOrder: string[]
+      scores: Record<string, number>
+    }
+  | {
+      type: 'round-start'
+      roundNumber: number
+      totalRounds: number
+      drawerId: string
+      drawerName: string
+      word?: string
+      wordLength: number
+      endTime: number
+    }
+  | {
+      type: 'round-end'
+      word: string
+      result: RoundResult
+      scores: Record<string, number>
+    }
+  | {
+      type: 'game-over'
+      finalScores: Record<string, number>
+      winner: Winner | null
+    }
+  | {
+      type: 'correct-guess'
+      playerId: string
+      playerName: string
+      score: number
+      timeRemaining: number
+    }
+  | { type: 'tick'; timeRemaining: number }
