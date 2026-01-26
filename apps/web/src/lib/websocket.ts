@@ -6,6 +6,7 @@ import type {
   GameState,
   RoundResult,
   Winner,
+  ScoreEntry,
 } from './types'
 
 export type GameEventHandler = {
@@ -30,7 +31,7 @@ export type GameEventHandler = {
   onGameStarted?: (
     totalRounds: number,
     drawerOrder: string[],
-    scores: Record<string, number>
+    scores: Record<string, ScoreEntry>
   ) => void
   onRoundStart?: (
     roundNumber: number,
@@ -41,8 +42,8 @@ export type GameEventHandler = {
     wordLength: number,
     endTime: number
   ) => void
-  onRoundEnd?: (word: string, result: RoundResult, scores: Record<string, number>) => void
-  onGameOver?: (finalScores: Record<string, number>, winner: Winner | null) => void
+  onRoundEnd?: (word: string, result: RoundResult, scores: Record<string, ScoreEntry>) => void
+  onGameOver?: (finalScores: Record<string, ScoreEntry>, winner: Winner | null) => void
   onCorrectGuess?: (
     playerId: string,
     playerName: string,
@@ -50,6 +51,7 @@ export type GameEventHandler = {
     timeRemaining: number
   ) => void
   onTick?: (timeRemaining: number) => void
+  onGameReset?: () => void
 }
 
 export class GameWebSocket {
@@ -171,6 +173,9 @@ export class GameWebSocket {
       case 'tick':
         this.handlers.onTick?.(data.timeRemaining)
         break
+      case 'game-reset':
+        this.handlers.onGameReset?.()
+        break
     }
   }
 
@@ -221,6 +226,10 @@ export class GameWebSocket {
 
   sendStartGame() {
     this.send({ type: 'start-game' })
+  }
+
+  sendResetGame() {
+    this.send({ type: 'reset-game' })
   }
 
   disconnect() {

@@ -125,48 +125,48 @@ describe('Game Types', () => {
 
   describe('scoresToRecord', () => {
     test('should convert empty map to empty record', () => {
-      const scores = new Map<string, number>()
+      const scores = new Map<string, { score: number; name: string }>()
       const record = scoresToRecord(scores)
       expect(record).toEqual({})
     })
 
     test('should convert map with entries to record', () => {
-      const scores = new Map<string, number>([
-        ['player1', 100],
-        ['player2', 75],
-        ['player3', 50],
+      const scores = new Map<string, { score: number; name: string }>([
+        ['player1', { score: 100, name: 'player1' }],
+        ['player2', { score: 75, name: 'player2' }],
+        ['player3', { score: 50, name: 'player3' }],
       ])
       const record = scoresToRecord(scores)
       expect(record).toEqual({
-        player1: 100,
-        player2: 75,
-        player3: 50,
+        player1: { score: 100, name: 'player1' },
+        player2: { score: 75, name: 'player2' },
+        player3: { score: 50, name: 'player3' },
       })
     })
 
     test('should handle scores with zero', () => {
-      const scores = new Map<string, number>([
-        ['player1', 0],
-        ['player2', 100],
+      const scores = new Map<string, { score: number; name: string }>([
+        ['player1', { score: 0, name: 'player1' }],
+        ['player2', { score: 100, name: 'player2' }],
       ])
       const record = scoresToRecord(scores)
       expect(record).toEqual({
-        player1: 0,
-        player2: 100,
+        player1: { score: 0, name: 'player1' },
+        player2: { score: 100, name: 'player2' },
       })
     })
 
     test('should be serializable to JSON', () => {
-      const scores = new Map<string, number>([
-        ['player1', 100],
-        ['player2', 75],
+      const scores = new Map<string, { score: number; name: string }>([
+        ['player1', { score: 100, name: 'player1' }],
+        ['player2', { score: 75, name: 'player2' }],
       ])
       const record = scoresToRecord(scores)
       const json = JSON.stringify(record)
       const parsed = JSON.parse(json)
       expect(parsed).toEqual({
-        player1: 100,
-        player2: 75,
+        player1: { score: 100, name: 'player1' },
+        player2: { score: 75, name: 'player2' },
       })
     })
   })
@@ -193,7 +193,8 @@ describe('Scoring Algorithm', () => {
   // where timeRatio = timeRemaining / ROUND_DURATION_MS
 
   function calculateScore(timeRemaining: number): number {
-    const timeRatio = timeRemaining / ROUND_DURATION_MS
+    const remaining = Math.max(0, timeRemaining)
+    const timeRatio = remaining / ROUND_DURATION_MS
     return Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
   }
 
@@ -221,8 +222,8 @@ describe('Scoring Algorithm', () => {
   })
 
   test('should cap at base score for negative time (edge case)', () => {
-    // Edge case: if timeRemaining is negative, treat as 0
-    const score = calculateScore(Math.max(0, -1000))
+    // Edge case: if timeRemaining is negative, it should be treated as 0
+    const score = calculateScore(-1000)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
   })
 })
@@ -310,8 +311,8 @@ describe('Game State Transitions', () => {
     const state = createInitialGameState()
     state.status = 'game-over'
     state.scores = new Map([
-      ['p1', 100],
-      ['p2', 75],
+      ['p1', { score: 100, name: 'p1' }],
+      ['p2', { score: 75, name: 'p2' }],
     ])
 
     // Reset

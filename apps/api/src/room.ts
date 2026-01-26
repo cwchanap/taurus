@@ -371,6 +371,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         case 'start-game':
           await this.handleStartGame(ws)
           break
+        case 'reset-game':
+          await this.handleResetGame(ws)
+          break
       }
     } catch (e) {
       console.error('Handler error for message type:', data.type, e)
@@ -409,6 +412,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     // First player becomes the host
     if (this.hostPlayerId === null) {
       this.hostPlayerId = playerId
+    }
+
+    // If a game is in progress, add the player to the scores map so their name is captured
+    if (this.gameState.status !== 'lobby' && !this.gameState.scores.has(playerId)) {
+      this.gameState.scores.set(playerId, { score: 0, name: player.name })
     }
 
     // Send current state to the new player (include existing players)
@@ -474,18 +482,33 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Handle game state when player leaves during active game
     if (this.gameState.status === 'playing') {
-      // Remove player from drawer order
-      this.gameState.drawerOrder = this.gameState.drawerOrder.filter((id) => id !== playerId)
+      const removedIndex = this.gameState.drawerOrder.indexOf(playerId)
+      if (removedIndex !== -1) {
+        // If the player being removed has already drawn or is currently drawing,
+        // we need to decrement currentRound so the next round points to the correct player
+        if (removedIndex <= this.gameState.currentRound - 1) {
+          this.gameState.currentRound = Math.max(0, this.gameState.currentRound - 1)
+        }
 
-      // If the leaving player was the current drawer, end the round
-      if (playerId === this.gameState.currentDrawerId) {
-        this.endRound(true) // Skip to next round
-      }
+        // Remove player from drawer order
+        this.gameState.drawerOrder.splice(removedIndex, 1)
 
-      // If not enough players left, end the game
-      const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
-      if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
-        this.endGame()
+        // Update total rounds to reflect the new player count
+        this.gameState.totalRounds = Math.max(1, this.gameState.drawerOrder.length)
+
+        // If the leaving player was the current drawer, end the round and skip to next
+        if (playerId === this.gameState.currentDrawerId) {
+          this.endRound(true)
+        } else {
+          // If not the drawer but someone else, check if we still have enough players
+          const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
+          if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
+            this.endGame()
+          } else if (this.gameState.currentRound >= this.gameState.totalRounds) {
+            // Edge case: if the last player in order left, end the game
+            this.endGame()
+          }
+        }
       }
     }
 
@@ -681,18 +704,23 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Check for correct guess during active game
     if (this.gameState.status === 'playing' && this.gameState.currentWord) {
-      // Drawer cannot guess
-      if (playerId === this.gameState.currentDrawerId) {
-        // Drawer's messages still get sent but we don't check for guess
-      } else if (!this.gameState.correctGuessers.has(playerId)) {
-        // Check if the guess is correct (case-insensitive)
-        if (sanitizedContent.toLowerCase().trim() === this.gameState.currentWord.toLowerCase()) {
-          this.handleCorrectGuess(playerId, attachment.player.name)
-          // Don't broadcast the correct answer to prevent revealing it
+      const isCorrectWord =
+        sanitizedContent.toLowerCase().trim() === this.gameState.currentWord.toLowerCase()
+
+      if (isCorrectWord) {
+        // If drawer or already correct, suppress message to avoid leaking word
+        if (
+          playerId === this.gameState.currentDrawerId ||
+          this.gameState.correctGuessers.has(playerId)
+        ) {
           return
         }
+
+        // Handle first-time correct guess
+        this.handleCorrectGuess(playerId, attachment.player.name)
+        // Don't broadcast the correct answer to prevent revealing it
+        return
       }
-      // Player already guessed correctly - let their message through
     }
 
     const now = Date.now()
@@ -786,7 +814,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       roundStartTime: null,
       roundEndTime: null,
       drawerOrder: shuffledOrder,
-      scores: new Map(playerIds.map((id) => [id, 0])),
+      scores: new Map(playerIds.map((id) => [id, { score: 0, name: this.getPlayerName(id) }])),
       correctGuessers: new Set(),
       usedWords: new Set(),
     }
@@ -801,6 +829,28 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Start first round
     this.startRound()
+  }
+
+  /**
+   * Handle reset-game message from host
+   */
+  private async handleResetGame(ws: WebSocket) {
+    const playerId = this.getPlayerIdForSocket(ws)
+    if (!playerId) return
+
+    // Only host can reset the game
+    if (playerId !== this.hostPlayerId) {
+      console.warn(`Player ${playerId} attempted to reset game but is not the host`)
+      return
+    }
+
+    // Reset to lobby state
+    this.gameState = createInitialGameState()
+
+    // Broadcast reset to all players
+    this.broadcast({
+      type: 'game-reset',
+    })
   }
 
   /**
@@ -898,8 +948,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     let drawerScore = 0
     if (this.gameState.correctGuessers.size > 0) {
       drawerScore = DRAWER_BONUS_SCORE * this.gameState.correctGuessers.size
-      const currentDrawerScore = this.gameState.scores.get(drawerId) || 0
-      this.gameState.scores.set(drawerId, currentDrawerScore + drawerScore)
+      const scoreInfo = this.gameState.scores.get(drawerId)
+      if (scoreInfo) {
+        scoreInfo.score += drawerScore
+      } else {
+        // Fallback if drawer wasn't in scores for some reason
+        this.gameState.scores.set(drawerId, {
+          score: drawerScore,
+          name: this.getPlayerName(drawerId),
+        })
+      }
     }
 
     // Build round result
@@ -959,13 +1017,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     let winner: { playerId: string; playerName: string; score: number } | null = null
     let highestScore = 0
 
-    for (const [playerId, score] of this.gameState.scores) {
-      if (score > highestScore) {
-        highestScore = score
+    for (const [playerId, scoreInfo] of this.gameState.scores) {
+      if (scoreInfo.score > highestScore) {
+        highestScore = scoreInfo.score
         winner = {
           playerId,
-          playerName: this.getPlayerName(playerId),
-          score,
+          playerName: scoreInfo.name,
+          score: scoreInfo.score,
         }
       }
     }
@@ -997,8 +1055,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const score = Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
 
     // Update player score
-    const currentScore = this.gameState.scores.get(playerId) || 0
-    this.gameState.scores.set(playerId, currentScore + score)
+    const scoreInfo = this.gameState.scores.get(playerId)
+    if (scoreInfo) {
+      scoreInfo.score += score
+    } else {
+      this.gameState.scores.set(playerId, { score, name: playerName })
+    }
 
     // Broadcast correct guess notification
     this.broadcast({
