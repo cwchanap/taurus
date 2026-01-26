@@ -34,6 +34,10 @@ export interface ChatMessage {
 
 // Game-related types
 export type GameStatus = 'lobby' | 'playing' | 'round-end' | 'game-over'
+export interface ScoreEntry {
+  score: number
+  name: string
+}
 
 export interface GameState {
   status: GameStatus
@@ -43,7 +47,7 @@ export interface GameState {
   currentWord?: string // Only set for drawer
   wordLength?: number
   roundEndTime: number | null
-  scores: Record<string, number>
+  scores: Record<string, ScoreEntry>
 }
 
 export interface RoundResult {
@@ -83,7 +87,7 @@ export type MessageType =
       type: 'game-started'
       totalRounds: number
       drawerOrder: string[]
-      scores: Record<string, number>
+      scores: Record<string, ScoreEntry>
     }
   | {
       type: 'round-start'
@@ -99,11 +103,11 @@ export type MessageType =
       type: 'round-end'
       word: string
       result: RoundResult
-      scores: Record<string, number>
+      scores: Record<string, ScoreEntry>
     }
   | {
       type: 'game-over'
-      finalScores: Record<string, number>
+      finalScores: Record<string, ScoreEntry>
       winner: Winner | null
     }
   | {
@@ -114,3 +118,5 @@ export type MessageType =
       timeRemaining: number
     }
   | { type: 'tick'; timeRemaining: number }
+  | { type: 'reset-game' }
+  | { type: 'game-reset' }

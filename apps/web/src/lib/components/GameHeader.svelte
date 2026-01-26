@@ -27,7 +27,7 @@
   )
 
   // Format time as MM:SS
-  const formattedTime = $derived(() => {
+  const formattedTime = $derived.by(() => {
     const mins = Math.floor(timeRemaining / 60)
     const secs = timeRemaining % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
@@ -46,7 +46,7 @@
     <div class="word-display">
       {#if isCurrentDrawer}
         <span class="word-label">Draw:</span>
-        <span class="word">{currentWord}</span>
+        <span class="word">{currentWord || '—'}</span>
       {:else}
         <span class="word-label">Guess:</span>
         <span class="word masked">{maskedWord}</span>
@@ -65,7 +65,7 @@
         <circle cx="12" cy="12" r="10" />
         <path d="M12 6v6l4 2" />
       </svg>
-      <span class="time">{formattedTime()}</span>
+      <span class="time">{formattedTime}</span>
     </div>
 
     <div class="drawer-info">

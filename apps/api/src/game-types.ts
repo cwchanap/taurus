@@ -13,7 +13,7 @@ export interface GameState {
   roundStartTime: number | null
   roundEndTime: number | null
   drawerOrder: string[] // Player IDs in draw order
-  scores: Map<string, number>
+  scores: Map<string, { score: number; name: string }>
   correctGuessers: Set<string> // Players who guessed correctly this round
   usedWords: Set<string> // Words already used in this game
 }
@@ -37,7 +37,7 @@ export interface GameStartedMessage {
   type: 'game-started'
   totalRounds: number
   drawerOrder: string[]
-  scores: Record<string, number>
+  scores: Record<string, { score: number; name: string }>
 }
 
 export interface RoundStartMessage {
@@ -55,12 +55,12 @@ export interface RoundEndMessage {
   type: 'round-end'
   word: string
   result: RoundResult
-  scores: Record<string, number>
+  scores: Record<string, { score: number; name: string }>
 }
 
 export interface GameOverMessage {
   type: 'game-over'
-  finalScores: Record<string, number>
+  finalScores: Record<string, { score: number; name: string }>
   winner: { playerId: string; playerName: string; score: number } | null
 }
 
@@ -104,10 +104,12 @@ export function createInitialGameState(): GameState {
 /**
  * Convert scores Map to Record for JSON serialization
  */
-export function scoresToRecord(scores: Map<string, number>): Record<string, number> {
-  const record: Record<string, number> = {}
-  for (const [playerId, score] of scores) {
-    record[playerId] = score
+export function scoresToRecord(
+  scores: Map<string, { score: number; name: string }>
+): Record<string, { score: number; name: string }> {
+  const record: Record<string, { score: number; name: string }> = {}
+  for (const [playerId, scoreInfo] of scores) {
+    record[playerId] = { ...scoreInfo }
   }
   return record
 }

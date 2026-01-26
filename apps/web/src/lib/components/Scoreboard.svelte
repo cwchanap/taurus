@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { Player } from '$lib/types'
+  import type { Player, ScoreEntry } from '$lib/types'
 
   interface Props {
-    scores: Record<string, number>
+    scores: Record<string, ScoreEntry>
     players: Player[]
     currentDrawerId: string | null
     currentPlayerId: string
@@ -15,7 +15,7 @@
     [...players]
       .map((p) => ({
         ...p,
-        score: scores[p.id] ?? 0,
+        score: scores[p.id]?.score ?? 0,
         isDrawing: p.id === currentDrawerId,
         isYou: p.id === currentPlayerId,
       }))

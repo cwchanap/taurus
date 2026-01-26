@@ -17,6 +17,7 @@
     GameStatus,
     RoundResult,
     Winner,
+    ScoreEntry,
   } from '$lib/types'
 
   // API URL - configurable via VITE_API_URL environment variable
@@ -45,7 +46,7 @@
   let roundNumber = $state(0)
   let totalRounds = $state(0)
   let timeRemaining = $state(0)
-  let scores = $state<Record<string, number>>({})
+  let scores = $state<Record<string, ScoreEntry>>({})
   let lastRevealedWord = $state('')
   let lastRoundResult = $state<RoundResult | null>(null)
   let gameWinner = $state<Winner | null>(null)
@@ -56,6 +57,7 @@
 
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
+  let correctGuessTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   // Derived state
   const isCurrentDrawer = $derived(playerId === currentDrawerId)
@@ -192,14 +194,31 @@
         currentWord = undefined
       },
       onCorrectGuess: (guesserId, guesserName, score, remaining) => {
+        if (correctGuessTimeoutId) {
+          clearTimeout(correctGuessTimeoutId)
+        }
         correctGuessNotification = { playerName: guesserName, score }
         // Clear notification after a few seconds
-        setTimeout(() => {
+        correctGuessTimeoutId = setTimeout(() => {
           correctGuessNotification = null
+          correctGuessTimeoutId = null
         }, 3000)
       },
       onTick: (remaining) => {
         timeRemaining = remaining
+      },
+      onGameReset: () => {
+        // Reset local game state to lobby
+        gameStatus = 'lobby'
+        gameWinner = null
+        lastRoundResult = null
+        scores = {}
+        currentDrawerId = null
+        currentWord = undefined
+        roundNumber = 0
+        totalRounds = 0
+        strokes = []
+        canvasComponent?.clearCanvas()
       },
     })
 
@@ -208,6 +227,9 @@
 
   onDestroy(() => {
     ws?.disconnect()
+    if (correctGuessTimeoutId) {
+      clearTimeout(correctGuessTimeoutId)
+    }
   })
 
   function handleStrokeStart(stroke: Stroke) {
@@ -238,15 +260,12 @@
   }
 
   function handlePlayAgain() {
-    // Reset game state for new game
-    gameStatus = 'lobby'
-    gameWinner = null
-    lastRoundResult = null
-    scores = {}
-    currentDrawerId = null
-    currentWord = undefined
-    roundNumber = 0
-    totalRounds = 0
+    // Inform server to reset the game - server will broadcast game-reset
+    ws?.sendResetGame()
+
+    // Clear local strokes immediately for better UX
+    strokes = []
+    canvasComponent?.clearCanvas()
   }
 </script>
 
