@@ -16,6 +16,7 @@ export interface GameState {
   scores: Map<string, { score: number; name: string }>
   correctGuessers: Set<string> // Players who guessed correctly this round
   usedWords: Set<string> // Words already used in this game
+  endGameAfterCurrentRound?: boolean // Flag to end game after current round (e.g., when player leaves)
 }
 
 export interface RoundResult {
@@ -98,6 +99,7 @@ export function createInitialGameState(): GameState {
     scores: new Map(),
     correctGuessers: new Set(),
     usedWords: new Set(),
+    endGameAfterCurrentRound: false,
   }
 }
 

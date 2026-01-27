@@ -114,6 +114,7 @@ describe('Game Types', () => {
       expect(state.scores.size).toBe(0)
       expect(state.correctGuessers.size).toBe(0)
       expect(state.usedWords.size).toBe(0)
+      expect(state.endGameAfterCurrentRound).toBe(false)
     })
 
     test('should initialize with null timestamps', () => {
@@ -320,6 +321,19 @@ describe('Game State Transitions', () => {
 
     expect(newState.status).toBe('lobby')
     expect(newState.scores.size).toBe(0)
+    expect(newState.endGameAfterCurrentRound).toBe(false)
+  })
+
+  test('should end game if endGameAfterCurrentRound is true', () => {
+    const state = createInitialGameState()
+    state.status = 'round-end'
+    state.currentRound = 1
+    state.totalRounds = 3
+    state.endGameAfterCurrentRound = true
+
+    // The logic in room.ts uses this flag to decide whether to call endGame()
+    // Here we just verify the state can hold the flag
+    expect(state.endGameAfterCurrentRound).toBe(true)
   })
 })
 

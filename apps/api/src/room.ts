@@ -505,8 +505,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
           if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
             this.endGame()
           } else if (this.gameState.currentRound >= this.gameState.totalRounds) {
-            // Edge case: if the last player in order left, end the game
-            this.endGame()
+            // Edge case: if the last player in order left, set flag to end after this round
+            // instead of ending immediately while others are still guessing.
+            this.gameState.endGameAfterCurrentRound = true
           }
         }
       }
@@ -817,6 +818,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       scores: new Map(playerIds.map((id) => [id, { score: 0, name: this.getPlayerName(id) }])),
       correctGuessers: new Set(),
       usedWords: new Set(),
+      endGameAfterCurrentRound: false,
     }
 
     // Broadcast game started
@@ -843,6 +845,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       console.warn(`Player ${playerId} attempted to reset game but is not the host`)
       return
     }
+
+    // Clear any active timers before resetting state
+    this.clearTimers()
 
     // Reset to lobby state
     this.gameState = createInitialGameState()
@@ -987,7 +992,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     this.gameState.currentWord = null
 
     // Check if game should end
-    if (this.gameState.currentRound >= this.gameState.totalRounds) {
+    if (
+      this.gameState.currentRound >= this.gameState.totalRounds ||
+      this.gameState.endGameAfterCurrentRound
+    ) {
       // Give a short delay before showing final results
       setTimeout(() => this.endGame(), 3000)
       return
