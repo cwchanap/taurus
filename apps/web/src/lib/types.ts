@@ -77,6 +77,7 @@ export type MessageType =
       gameState: GameState
     }
   | { type: 'player-joined'; player: Player }
+  | { type: 'host-change'; newHostId: string }
   | { type: 'player-left'; playerId: string }
   | { type: 'stroke'; stroke: Stroke }
   | { type: 'stroke-update'; strokeId: string; point: Point }

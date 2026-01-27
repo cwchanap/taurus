@@ -134,8 +134,28 @@
             Math.ceil((initialGameState.roundEndTime - Date.now()) / 1000)
           )
         }
+
+        // Restore drawer info and word length if game is in progress
+        if (currentDrawerId) {
+          const drawer = players.find((p) => p.id === currentDrawerId)
+          if (drawer) {
+            currentDrawerName = drawer.name
+          }
+        }
+
+        if (initialGameState.wordLength) {
+          wordLength = initialGameState.wordLength
+        }
+
+        if (initialGameState.currentWord) {
+          currentWord = initialGameState.currentWord
+        }
+
         pageState = 'game'
         isLoading = false
+      },
+      onHostChange: (newHostId) => {
+        isHost = newHostId === playerId
       },
       onPlayerJoined: (player) => {
         players = [...players, player]

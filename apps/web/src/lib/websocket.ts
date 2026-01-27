@@ -19,6 +19,7 @@ export type GameEventHandler = {
     isHost: boolean,
     gameState: GameState
   ) => void
+  onHostChange?: (newHostId: string) => void
   onPlayerJoined?: (player: Player) => void
   onPlayerLeft?: (playerId: string) => void
   onStroke?: (stroke: Stroke) => void
@@ -126,6 +127,9 @@ export class GameWebSocket {
         break
       case 'player-joined':
         this.handlers.onPlayerJoined?.(data.player)
+        break
+      case 'host-change':
+        this.handlers.onHostChange?.(data.newHostId)
         break
       case 'player-left':
         this.handlers.onPlayerLeft?.(data.playerId)
