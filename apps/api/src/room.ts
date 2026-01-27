@@ -437,6 +437,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
           totalRounds: this.gameState.totalRounds,
           currentDrawerId: this.gameState.currentDrawerId,
           roundEndTime: this.gameState.roundEndTime,
+          currentWord:
+            playerId === this.gameState.currentDrawerId ? this.gameState.currentWord : undefined,
+          wordLength: this.gameState.currentWord?.length,
           scores: scoresToRecord(this.gameState.scores),
         },
       })
@@ -467,6 +470,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       const players = this.getPlayers().filter((p) => p.id !== playerId)
       // Assign host to the next player if available
       this.hostPlayerId = players.length > 0 ? players[0].id : null
+
+      if (this.hostPlayerId) {
+        this.broadcast({
+          type: 'host-change',
+          newHostId: this.hostPlayerId,
+        })
+      }
     }
 
     this.broadcast({
@@ -497,8 +507,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
         this.gameState.totalRounds = Math.max(1, this.gameState.drawerOrder.length)
 
         // If the leaving player was the current drawer, end the round and skip to next
+        // If the leaving player was the current drawer
         if (playerId === this.gameState.currentDrawerId) {
-          this.endRound(true)
+          // Check if we still have enough players to continue
+          const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
+          if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
+            this.endGame()
+          } else {
+            this.endRound(true)
+          }
         } else {
           // If not the drawer but someone else, check if we still have enough players
           const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
@@ -851,6 +868,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Reset to lobby state
     this.gameState = createInitialGameState()
+
+    // Clear strokes and storage to prevent stale canvas on next game
+    this.strokes = []
+    if (this.storageWriteTimer) {
+      clearTimeout(this.storageWriteTimer)
+      this.storageWriteTimer = null
+    }
+    this.ctx.waitUntil(this.storageDeleteWithRetry('strokes'))
 
     // Broadcast reset to all players
     this.broadcast({
