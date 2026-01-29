@@ -518,10 +518,18 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       }
 
       // 3. Handle specific state interruptions
-      if (this.gameState.status === 'playing' && playerId === this.gameState.currentDrawerId) {
-        // Current drawer left during active round -> end round immediately
-        this.endRound(true)
-      } else if (removedIndex !== -1 && this.gameState.currentRound >= this.gameState.totalRounds) {
+      if (this.gameState.status === 'playing') {
+        // If the leaver had guessed correctly, remove them so they don't count towards
+        // the "all players guessed" logic or drawer bonus
+        this.gameState.correctGuessers.delete(playerId)
+
+        if (playerId === this.gameState.currentDrawerId) {
+          // Current drawer left during active round -> end round immediately
+          this.endRound(true)
+        }
+      }
+
+      if (removedIndex !== -1 && this.gameState.currentRound >= this.gameState.totalRounds) {
         // Edge case: if the last player in order left, set flag to end after this round
         this.gameState.endGameAfterCurrentRound = true
       }
