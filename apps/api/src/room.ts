@@ -88,6 +88,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private gameState: GameState = createInitialGameState()
   private roundTimer: ReturnType<typeof setTimeout> | null = null
   private tickTimer: ReturnType<typeof setInterval> | null = null
+  private roundEndTimer: ReturnType<typeof setTimeout> | null = null
+  private gameEndTimer: ReturnType<typeof setTimeout> | null = null
 
   private async ensureInitialized() {
     if (!this.initialized) {
@@ -439,7 +441,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
           roundEndTime: this.gameState.roundEndTime,
           currentWord:
             playerId === this.gameState.currentDrawerId ? this.gameState.currentWord : undefined,
-          wordLength: this.gameState.currentWord?.length,
+          wordLength: this.gameState.wordLength ?? undefined,
           scores: scoresToRecord(this.gameState.scores),
         },
       })
@@ -492,6 +494,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Handle game state when player leaves during active game
     if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {
+      // Ensure leavers don't count toward correct guess tracking
+      this.gameState.correctGuessers.delete(playerId)
       const removedIndex = this.gameState.drawerOrder.indexOf(playerId)
 
       // 1. Adjust drawer order if applicable
@@ -518,20 +522,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       }
 
       // 3. Handle specific state interruptions
-      if (this.gameState.status === 'playing') {
-        // If the leaver had guessed correctly, remove them so they don't count towards
-        // the "all players guessed" logic or drawer bonus
-        this.gameState.correctGuessers.delete(playerId)
-
-        if (playerId === this.gameState.currentDrawerId) {
-          // Current drawer left during active round -> end round immediately
-          this.endRound(true)
-        }
-      }
-
-      if (removedIndex !== -1 && this.gameState.currentRound >= this.gameState.totalRounds) {
+      if (this.gameState.status === 'playing' && playerId === this.gameState.currentDrawerId) {
+        // Current drawer left during active round -> end round immediately
+        this.endRound(true)
+      } else if (removedIndex !== -1 && this.gameState.currentRound >= this.gameState.totalRounds) {
         // Edge case: if the last player in order left, set flag to end after this round
         this.gameState.endGameAfterCurrentRound = true
+      }
+
+      if (this.gameState.status === 'playing') {
+        this.gameState.roundGuessers.delete(playerId)
       }
     }
 
@@ -834,11 +834,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       totalRounds: shuffledOrder.length,
       currentDrawerId: null,
       currentWord: null,
+      wordLength: null,
       roundStartTime: null,
       roundEndTime: null,
       drawerOrder: shuffledOrder,
       scores: new Map(playerIds.map((id) => [id, { score: 0, name: this.getPlayerName(id) }])),
       correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
       usedWords: new Set(),
       endGameAfterCurrentRound: false,
     }
@@ -894,15 +897,25 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private startRound() {
     this.gameState.currentRound++
 
-    // Get next drawer
-    const drawerIndex = this.gameState.currentRound - 1
-    if (drawerIndex >= this.gameState.drawerOrder.length) {
+    // Get next connected drawer
+    let drawerId: string | null = null
+    let drawerName = ''
+    const connectedPlayers = new Set(this.getPlayers().map((p) => p.id))
+    while (this.gameState.currentRound <= this.gameState.drawerOrder.length) {
+      const drawerIndex = this.gameState.currentRound - 1
+      const candidateId = this.gameState.drawerOrder[drawerIndex]
+      if (connectedPlayers.has(candidateId)) {
+        drawerId = candidateId
+        drawerName = this.getPlayerName(candidateId)
+        break
+      }
+      this.gameState.currentRound++
+    }
+
+    if (!drawerId) {
       this.endGame()
       return
     }
-
-    const drawerId = this.gameState.drawerOrder[drawerIndex]
-    const drawerName = this.getPlayerName(drawerId)
 
     // Pick a random word
     const word = getRandomWordExcluding(this.gameState.usedWords)
@@ -912,9 +925,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const now = Date.now()
     this.gameState.currentDrawerId = drawerId
     this.gameState.currentWord = word
+    this.gameState.wordLength = word.length
     this.gameState.roundStartTime = now
     this.gameState.roundEndTime = now + ROUND_DURATION_MS
     this.gameState.correctGuessers = new Set()
+    this.gameState.roundGuessers = new Set(
+      this.getPlayers()
+        .map((p) => p.id)
+        .filter((id) => id !== drawerId)
+    )
+    this.gameState.roundGuesserScores = new Map()
 
     // Clear canvas for new round
     this.strokes = []
@@ -1003,7 +1023,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       correctGuessers: Array.from(this.gameState.correctGuessers).map((id) => ({
         playerId: id,
         playerName: this.getPlayerName(id),
-        score: 0, // Score was already awarded in handleCorrectGuess
+        score: this.gameState.roundGuesserScores.get(id) ?? 0,
       })),
       drawerScore,
     }
@@ -1020,6 +1040,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     this.gameState.status = 'round-end'
     this.gameState.currentDrawerId = null
     this.gameState.currentWord = null
+    this.gameState.wordLength = null
 
     // Check if game should end
     if (
@@ -1027,7 +1048,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       this.gameState.endGameAfterCurrentRound
     ) {
       // Give a short delay before showing final results
-      setTimeout(() => this.endGame(), 3000)
+      if (this.gameEndTimer) {
+        clearTimeout(this.gameEndTimer)
+      }
+      this.gameEndTimer = setTimeout(() => this.endGame(), 3000)
       return
     }
 
@@ -1036,7 +1060,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       this.gameState.status = 'playing'
       this.startRound()
     } else {
-      setTimeout(() => {
+      if (this.roundEndTimer) {
+        clearTimeout(this.roundEndTimer)
+      }
+      this.roundEndTimer = setTimeout(() => {
         if (this.gameState.status === 'round-end') {
           this.gameState.status = 'playing'
           this.startRound()
@@ -1054,8 +1081,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     // Find winner
     let winner: { playerId: string; playerName: string; score: number } | null = null
     let highestScore = 0
+    const activePlayerIds = new Set(this.getPlayers().map((player) => player.id))
 
     for (const [playerId, scoreInfo] of this.gameState.scores) {
+      if (!activePlayerIds.has(playerId)) {
+        continue
+      }
       if (scoreInfo.score > highestScore) {
         highestScore = scoreInfo.score
         winner = {
@@ -1099,6 +1130,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     } else {
       this.gameState.scores.set(playerId, { score, name: playerName })
     }
+    this.gameState.roundGuesserScores.set(playerId, score)
 
     // Broadcast correct guess notification
     this.broadcast({
@@ -1110,9 +1142,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     })
 
     // Check if all non-drawer players have guessed
-    const players = this.getPlayers()
-    const nonDrawerCount = players.filter((p) => p.id !== this.gameState.currentDrawerId).length
-    if (this.gameState.correctGuessers.size >= nonDrawerCount) {
+    if (this.gameState.correctGuessers.size >= this.gameState.roundGuessers.size) {
       // Everyone guessed, end round early
       this.endRound(false)
     }
@@ -1129,6 +1159,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     if (this.tickTimer) {
       clearInterval(this.tickTimer)
       this.tickTimer = null
+    }
+    if (this.roundEndTimer) {
+      clearTimeout(this.roundEndTimer)
+      this.roundEndTimer = null
+    }
+    if (this.gameEndTimer) {
+      clearTimeout(this.gameEndTimer)
+      this.gameEndTimer = null
     }
   }
 

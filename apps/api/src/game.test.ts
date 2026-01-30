@@ -106,6 +106,7 @@ describe('Game Types', () => {
       const state = createInitialGameState()
       expect(state.currentDrawerId).toBeNull()
       expect(state.currentWord).toBeNull()
+      expect(state.wordLength).toBeNull()
     })
 
     test('should initialize with empty collections', () => {
@@ -113,6 +114,8 @@ describe('Game Types', () => {
       expect(state.drawerOrder).toEqual([])
       expect(state.scores.size).toBe(0)
       expect(state.correctGuessers.size).toBe(0)
+      expect(state.roundGuessers.size).toBe(0)
+      expect(state.roundGuesserScores.size).toBe(0)
       expect(state.usedWords.size).toBe(0)
       expect(state.endGameAfterCurrentRound).toBe(false)
     })
