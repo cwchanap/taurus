@@ -140,6 +140,8 @@
           const drawer = players.find((p) => p.id === currentDrawerId)
           if (drawer) {
             currentDrawerName = drawer.name
+          } else {
+            currentDrawerName = 'Unknown'
           }
         }
 
@@ -235,6 +237,7 @@
         scores = {}
         currentDrawerId = null
         currentWord = undefined
+        lastRevealedWord = ''
         roundNumber = 0
         totalRounds = 0
         strokes = []

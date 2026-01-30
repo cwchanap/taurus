@@ -10,11 +10,14 @@ export interface GameState {
   totalRounds: number
   currentDrawerId: string | null
   currentWord: string | null
+  wordLength: number | null
   roundStartTime: number | null
   roundEndTime: number | null
   drawerOrder: string[] // Player IDs in draw order
   scores: Map<string, { score: number; name: string }>
   correctGuessers: Set<string> // Players who guessed correctly this round
+  roundGuessers: Set<string> // Players eligible to guess this round
+  roundGuesserScores: Map<string, number> // Scores earned by guessers this round
   usedWords: Set<string> // Words already used in this game
   endGameAfterCurrentRound?: boolean // Flag to end game after current round (e.g., when player leaves)
 }
@@ -93,11 +96,14 @@ export function createInitialGameState(): GameState {
     totalRounds: 0,
     currentDrawerId: null,
     currentWord: null,
+    wordLength: null,
     roundStartTime: null,
     roundEndTime: null,
     drawerOrder: [],
     scores: new Map(),
     correctGuessers: new Set(),
+    roundGuessers: new Set(),
+    roundGuesserScores: new Map(),
     usedWords: new Set(),
     endGameAfterCurrentRound: false,
   }
