@@ -50,7 +50,6 @@ import {
   MAX_COORDINATE_VALUE,
   ROUND_DURATION_MS,
   MIN_PLAYERS_TO_START,
-  CORRECT_GUESS_BASE_SCORE,
   DRAWER_BONUS_SCORE,
 } from './constants'
 import { getRandomWordExcluding } from './vocabulary'
@@ -60,6 +59,7 @@ import {
   sanitizeMessage,
   isValidPlayerName as isValidPlayerNameUtil,
 } from './validation'
+import { calculateCorrectGuessScore } from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
@@ -1117,11 +1117,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     // Mark player as having guessed correctly
     this.gameState.correctGuessers.add(playerId)
 
-    // Calculate time-based score
-    const timeRemaining = Math.max(0, this.gameState.roundEndTime - Date.now())
-    const timeRatio = timeRemaining / ROUND_DURATION_MS
-    // Score: base score + bonus for faster guesses (up to 50% extra)
-    const score = Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
+    // Calculate time-based score using extracted function
+    const score = calculateCorrectGuessScore(this.gameState.roundEndTime)
 
     // Update player score
     const scoreInfo = this.gameState.scores.get(playerId)
@@ -1131,6 +1128,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       this.gameState.scores.set(playerId, { score, name: playerName })
     }
     this.gameState.roundGuesserScores.set(playerId, score)
+
+    // Calculate time remaining for notification
+    const timeRemaining = Math.max(0, this.gameState.roundEndTime - Date.now())
 
     // Broadcast correct guess notification
     this.broadcast({
