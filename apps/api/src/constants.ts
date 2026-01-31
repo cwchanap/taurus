@@ -12,3 +12,8 @@ export const ROUND_DURATION_MS = 60000 // 60 seconds per round
 export const MIN_PLAYERS_TO_START = 2
 export const CORRECT_GUESS_BASE_SCORE = 100
 export const DRAWER_BONUS_SCORE = 50
+
+// Rate limiting
+export const MAX_MESSAGES_PER_WINDOW = 50
+export const MAX_STROKES_PER_WINDOW = 100
+export const RATE_LIMIT_WINDOW = 10000 // 10 seconds
