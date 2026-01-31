@@ -12,7 +12,8 @@
       "Bash(bun install:*)",
       "Bash(bun run tsc:*)",
       "Bash(git show:*)",
-      "Bash(bun run check:*)"
+      "Bash(bun run check:*)",
+      "Bash(bun run build:*)"
     ]
   }
 }
