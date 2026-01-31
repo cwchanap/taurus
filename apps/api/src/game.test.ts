@@ -253,90 +253,17 @@ describe('Drawer Bonus Scoring', () => {
 })
 
 describe('Game State Transitions', () => {
-  test('lobby -> playing when game starts', () => {
+  // Note: These tests were removed as they were testing implementation details
+  // (directly mutating state.status) rather than actual behavior.
+  // Real state transition tests should be added to room.test.ts once we can
+  // properly test the DrawingRoom Durable Object methods (handleStartGame, handleEndRound, etc.)
+
+  test('createInitialGameState returns lobby state', () => {
     const state = createInitialGameState()
     expect(state.status).toBe('lobby')
-
-    // Simulate game start
-    state.status = 'playing'
-    state.currentRound = 1
-    state.totalRounds = 3
-    state.drawerOrder = ['p1', 'p2', 'p3']
-
-    expect(state.status).toBe('playing')
-    expect(state.currentRound).toBe(1)
-  })
-
-  test('playing -> round-end when round completes', () => {
-    const state = createInitialGameState()
-    state.status = 'playing'
-    state.currentDrawerId = 'p1'
-    state.currentWord = 'cat'
-
-    // Simulate round end
-    state.status = 'round-end'
-    state.currentDrawerId = null
-    state.currentWord = null
-
-    expect(state.status).toBe('round-end')
-    expect(state.currentDrawerId).toBeNull()
-  })
-
-  test('round-end -> playing for next round', () => {
-    const state = createInitialGameState()
-    state.status = 'round-end'
-    state.currentRound = 1
-    state.totalRounds = 3
-
-    // Next round
-    state.status = 'playing'
-    state.currentRound = 2
-    state.currentDrawerId = 'p2'
-    state.currentWord = 'dog'
-    state.correctGuessers = new Set()
-
-    expect(state.status).toBe('playing')
-    expect(state.currentRound).toBe(2)
-  })
-
-  test('round-end -> game-over when all rounds complete', () => {
-    const state = createInitialGameState()
-    state.status = 'round-end'
-    state.currentRound = 3
-    state.totalRounds = 3
-
-    // Game over
-    state.status = 'game-over'
-
-    expect(state.status).toBe('game-over')
-  })
-
-  test('game-over -> lobby when game resets', () => {
-    const state = createInitialGameState()
-    state.status = 'game-over'
-    state.scores = new Map([
-      ['p1', { score: 100, name: 'p1' }],
-      ['p2', { score: 75, name: 'p2' }],
-    ])
-
-    // Reset
-    const newState = createInitialGameState()
-
-    expect(newState.status).toBe('lobby')
-    expect(newState.scores.size).toBe(0)
-    expect(newState.endGameAfterCurrentRound).toBe(false)
-  })
-
-  test('should end game if endGameAfterCurrentRound is true', () => {
-    const state = createInitialGameState()
-    state.status = 'round-end'
-    state.currentRound = 1
-    state.totalRounds = 3
-    state.endGameAfterCurrentRound = true
-
-    // The logic in room.ts uses this flag to decide whether to call endGame()
-    // Here we just verify the state can hold the flag
-    expect(state.endGameAfterCurrentRound).toBe(true)
+    expect(state.currentRound).toBe(0)
+    expect(state.scores.size).toBe(0)
+    expect(state.endGameAfterCurrentRound).toBe(false)
   })
 })
 
