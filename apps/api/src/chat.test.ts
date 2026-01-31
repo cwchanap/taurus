@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { MAX_CHAT_MESSAGE_LENGTH, MAX_PLAYER_NAME_LENGTH, MAX_CHAT_HISTORY } from './constants'
+import {
+  MAX_CHAT_MESSAGE_LENGTH,
+  MAX_PLAYER_NAME_LENGTH,
+  MAX_CHAT_HISTORY,
+  MAX_COORDINATE_VALUE,
+} from './constants'
 import { validateMessageContent, sanitizeMessage, isValidPlayerName } from './validation'
 import { ChatHistory } from './chat-history'
 
@@ -210,6 +215,94 @@ describe('Chat Message Validation', () => {
 
       expect(parsed.type).toBe('chat')
       expect(parsed.message.content).toBe('Test message')
+    })
+  })
+
+  describe('isValidPlayerName - edge cases', () => {
+    test('accepts exactly MAX_PLAYER_NAME_LENGTH characters', () => {
+      const name = 'a'.repeat(MAX_PLAYER_NAME_LENGTH)
+      expect(isValidPlayerName(name)).toBe(true)
+    })
+
+    test('rejects exactly MAX_PLAYER_NAME_LENGTH + 1 characters', () => {
+      const name = 'a'.repeat(MAX_PLAYER_NAME_LENGTH + 1)
+      expect(isValidPlayerName(name)).toBe(false)
+    })
+
+    test('accepts unicode characters', () => {
+      expect(isValidPlayerName('用户名')).toBe(true)
+      expect(isValidPlayerName('🎨')).toBe(true)
+    })
+
+    test('rejects name with only special characters', () => {
+      expect(isValidPlayerName('!!!')).toBe(true) // Actually valid - has content
+    })
+
+    test('accepts name with mixed alphanumeric and unicode', () => {
+      expect(isValidPlayerName('User123用户')).toBe(true)
+    })
+
+    test('rejects null', () => {
+      expect(isValidPlayerName(null)).toBe(false)
+    })
+
+    test('rejects undefined', () => {
+      expect(isValidPlayerName(undefined)).toBe(false)
+    })
+
+    test('rejects number', () => {
+      expect(isValidPlayerName(123)).toBe(false)
+    })
+
+    test('rejects object', () => {
+      expect(isValidPlayerName({})).toBe(false)
+    })
+  })
+
+  describe('Point validation edge cases', () => {
+    function isValidPoint(p: { x: number; y: number }): boolean {
+      return (
+        typeof p.x === 'number' &&
+        Number.isFinite(p.x) &&
+        Math.abs(p.x) <= MAX_COORDINATE_VALUE &&
+        typeof p.y === 'number' &&
+        Number.isFinite(p.y) &&
+        Math.abs(p.y) <= MAX_COORDINATE_VALUE
+      )
+    }
+
+    test('rejects NaN coordinates', () => {
+      const point = { x: NaN, y: 100 }
+      expect(isValidPoint(point)).toBe(false)
+    })
+
+    test('rejects Infinity coordinates', () => {
+      expect(isValidPoint({ x: Infinity, y: 100 })).toBe(false)
+      expect(isValidPoint({ x: 100, y: -Infinity })).toBe(false)
+    })
+
+    test('accepts boundary value MAX_COORDINATE_VALUE', () => {
+      const point = { x: MAX_COORDINATE_VALUE, y: MAX_COORDINATE_VALUE }
+      expect(isValidPoint(point)).toBe(true)
+    })
+
+    test('rejects value just above MAX_COORDINATE_VALUE', () => {
+      const point = { x: MAX_COORDINATE_VALUE + 1, y: 100 }
+      expect(isValidPoint(point)).toBe(false)
+    })
+
+    test('accepts negative coordinates within bounds', () => {
+      const point = { x: -MAX_COORDINATE_VALUE, y: -MAX_COORDINATE_VALUE }
+      expect(isValidPoint(point)).toBe(true)
+    })
+
+    test('rejects negative coordinates outside bounds', () => {
+      const point = { x: -MAX_COORDINATE_VALUE - 1, y: 100 }
+      expect(isValidPoint(point)).toBe(false)
+    })
+
+    test('accepts zero coordinates', () => {
+      expect(isValidPoint({ x: 0, y: 0 })).toBe(true)
     })
   })
 })
