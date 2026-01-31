@@ -34,6 +34,7 @@
       "name": "web",
       "version": "0.0.1",
       "dependencies": {
+        "@repo/types": "workspace:*",
         "pixi.js": "^8.14.3",
       },
       "devDependencies": {
