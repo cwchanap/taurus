@@ -33,6 +33,7 @@
     "vitest": "^4.0.16"
   },
   "dependencies": {
+    "@repo/types": "workspace:*",
     "pixi.js": "^8.14.3"
   }
 }
