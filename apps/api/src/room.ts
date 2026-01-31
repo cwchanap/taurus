@@ -1,22 +1,10 @@
 import { DurableObject } from 'cloudflare:workers'
-
-interface Player {
-  id: string
-  name: string
-  color: string
-}
+import type { Player, Stroke, ChatMessage } from '@repo/types'
+import { ChatHistory } from './chat-history'
 
 interface Point {
   x: number
   y: number
-}
-
-interface Stroke {
-  id: string
-  playerId: string
-  points: Point[]
-  color: string
-  size: number
 }
 
 interface Message {
@@ -28,8 +16,6 @@ interface WebSocketAttachment {
   playerId: string
   player: Player
 }
-
-import { ChatHistory, ChatMessage } from './chat-history'
 
 const COLORS = [
   '#FF6B6B',

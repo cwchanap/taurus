@@ -2,8 +2,11 @@
  * Game state types for the drawing guessing game
  */
 
-export type GameStatus = 'lobby' | 'playing' | 'round-end' | 'game-over'
+import type { GameStatus, ScoreEntry, RoundResult, Winner, GameStateWire } from '@repo/types'
 
+export type { GameStatus, ScoreEntry, RoundResult, Winner, GameStateWire }
+
+// Backend-specific internal state (uses Map/Set for efficiency)
 export interface GameState {
   status: GameStatus
   currentRound: number
@@ -14,20 +17,12 @@ export interface GameState {
   roundStartTime: number | null
   roundEndTime: number | null
   drawerOrder: string[] // Player IDs in draw order
-  scores: Map<string, { score: number; name: string }>
+  scores: Map<string, ScoreEntry>
   correctGuessers: Set<string> // Players who guessed correctly this round
   roundGuessers: Set<string> // Players eligible to guess this round
   roundGuesserScores: Map<string, number> // Scores earned by guessers this round
   usedWords: Set<string> // Words already used in this game
   endGameAfterCurrentRound?: boolean // Flag to end game after current round (e.g., when player leaves)
-}
-
-export interface RoundResult {
-  drawerId: string
-  drawerName: string
-  word: string
-  correctGuessers: Array<{ playerId: string; playerName: string; score: number }>
-  drawerScore: number
 }
 
 export interface PlayerScore {
@@ -112,12 +107,22 @@ export function createInitialGameState(): GameState {
 /**
  * Convert scores Map to Record for JSON serialization
  */
-export function scoresToRecord(
-  scores: Map<string, { score: number; name: string }>
-): Record<string, { score: number; name: string }> {
-  const record: Record<string, { score: number; name: string }> = {}
-  for (const [playerId, scoreInfo] of scores) {
-    record[playerId] = { ...scoreInfo }
+export function scoresToRecord(scores: Map<string, ScoreEntry>): Record<string, ScoreEntry> {
+  return Object.fromEntries(scores)
+}
+
+/**
+ * Helper to convert internal state to wire format
+ */
+export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateWire {
+  return {
+    status: state.status,
+    currentRound: state.currentRound,
+    totalRounds: state.totalRounds,
+    currentDrawerId: state.currentDrawerId,
+    currentWord: isDrawer && state.currentWord ? state.currentWord : undefined,
+    wordLength: state.wordLength ?? undefined,
+    roundEndTime: state.roundEndTime,
+    scores: scoresToRecord(state.scores),
   }
-  return record
 }

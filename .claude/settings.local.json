@@ -1,5 +1,18 @@
 {
   "permissions": {
-    "allow": ["Bash(bun run check-types:*)", "Bash(bun run lint:*)", "Bash(bunx eslint:*)"]
+    "allow": [
+      "Bash(bun run check-types:*)",
+      "Bash(bun run lint:*)",
+      "Bash(bunx eslint:*)",
+      "Bash(bun test:*)",
+      "Bash(git stash:*)",
+      "Bash(ls:*)",
+      "Bash(bun run test)",
+      "Bash(npx vitest run)",
+      "Bash(bun install:*)",
+      "Bash(bun run tsc:*)",
+      "Bash(git show:*)",
+      "Bash(bun run check:*)"
+    ]
   }
 }
