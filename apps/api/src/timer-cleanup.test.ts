@@ -44,10 +44,10 @@ describe('Timer Cleanup', () => {
 
     clearTimers()
 
-    expect(timers.roundTimer).toBe(null)
-    expect(timers.tickTimer).toBe(null)
-    expect(timers.roundEndTimer).toBe(null)
-    expect(timers.gameEndTimer).toBe(null)
+    expect(timers.roundTimer).toBeNull()
+    expect(timers.tickTimer).toBeNull()
+    expect(timers.roundEndTimer).toBeNull()
+    expect(timers.gameEndTimer).toBeNull()
   })
 
   test('double clear does not cause errors', () => {
@@ -68,10 +68,10 @@ describe('Timer Cleanup', () => {
 
     clearTimers()
 
-    expect(timers.roundTimer).toBe(null)
-    expect(timers.tickTimer).toBe(null)
-    expect(timers.roundEndTimer).toBe(null)
-    expect(timers.gameEndTimer).toBe(null)
+    expect(timers.roundTimer).toBeNull()
+    expect(timers.tickTimer).toBeNull()
+    expect(timers.roundEndTimer).toBeNull()
+    expect(timers.gameEndTimer).toBeNull()
   })
 
   test('timers can be recreated after clearing', () => {
