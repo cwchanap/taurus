@@ -5,7 +5,7 @@
  * All functions are pure and side-effect free.
  */
 
-import { MIN_PLAYERS_TO_START } from './constants'
+import { MIN_PLAYERS_TO_START, ROUND_DURATION_MS, CORRECT_GUESS_BASE_SCORE } from './constants'
 import type { GameState } from './game-types'
 
 /**
@@ -31,6 +31,22 @@ export interface PlayerLeaveResult {
    * Index where the player was removed from drawerOrder (-1 if not in order)
    */
   removedFromDrawerIndex: number
+}
+
+/**
+ * Calculate score for a correct guess based on time remaining
+ *
+ * @param roundEndTime - The timestamp when the round will end
+ * @param currentTime - The current timestamp (defaults to Date.now())
+ * @returns The calculated score (base score + time bonus up to 50%)
+ */
+export function calculateCorrectGuessScore(
+  roundEndTime: number,
+  currentTime: number = Date.now()
+): number {
+  const timeRemaining = Math.max(0, roundEndTime - currentTime)
+  const timeRatio = timeRemaining / ROUND_DURATION_MS
+  return Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
 }
 
 /**
