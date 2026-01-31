@@ -46,6 +46,7 @@ bun run deploy        # Deploy to Cloudflare Workers
 - `apps/web` - SvelteKit frontend (Vite, Svelte 5, TailwindCSS v4, pixi.js for canvas)
 - `apps/api` - Hono API on Cloudflare Workers with Durable Objects
 - `packages/ui` - Shared Svelte component library (@repo/ui)
+- `packages/types` - Shared TypeScript types for frontend/backend (@repo/types)
 
 ### Backend (apps/api)
 
@@ -77,3 +78,45 @@ WebSocket messages use JSON with a `type` field. Message types:
 ### Shared UI (packages/ui)
 
 Exports Svelte components: `button.svelte`, `card.svelte`, `code.svelte`. Uses `clsx` and `tailwind-merge` for className utilities.
+
+### Shared Types (packages/types)
+
+Common TypeScript types shared between frontend and backend:
+
+- `@repo/types` - Wire-format types for WebSocket messages
+- Prevents type drift between client and server
+- Import from `@repo/types` instead of duplicating
+
+**Key types:**
+
+- `GameStateWire` - JSON-serializable game state (sent over WebSocket)
+- `ClientMessage` / `ServerMessage` - WebSocket message types (discriminated unions)
+- `Player`, `Stroke`, `ChatMessage` - Core domain types
+
+**Backend-specific:**
+
+- `GameState` (in `apps/api/src/game-types.ts`) - Internal state using `Map` / `Set` for efficiency
+- Use `gameStateToWire()` helper to convert internal state to wire format
+- Use `scoresToRecord()` to serialize Map<string, ScoreEntry> to JSON
+
+## Testing
+
+### Unit Tests
+
+Run: `bun test`
+
+- Game logic: `apps/api/src/game-logic.test.ts` - pure functions for testability
+- Validation: `apps/api/src/chat.test.ts` - message validation, sanitization
+- Vocabulary: `apps/api/src/game.test.ts` - word selection logic
+- Timer cleanup: `apps/api/src/timer-cleanup.test.ts` - timer management
+
+### E2E Tests (Playwright)
+
+Run: `cd apps/web && bun run e2e`
+
+- `apps/web/e2e/game.spec.ts` - multiplayer game flows
+- `apps/web/e2e/chat.spec.ts` - chat functionality
+
+**Testing Durable Objects:**
+
+Durable Objects are difficult to unit test. Extract business logic to pure functions in `game-logic.ts` for testability.
