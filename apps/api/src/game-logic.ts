@@ -5,7 +5,14 @@
  * All functions are pure and side-effect free.
  */
 
-import { MIN_PLAYERS_TO_START, ROUND_DURATION_MS, CORRECT_GUESS_BASE_SCORE } from './constants'
+import {
+  MIN_PLAYERS_TO_START,
+  ROUND_DURATION_MS,
+  CORRECT_GUESS_BASE_SCORE,
+  MAX_MESSAGES_PER_WINDOW,
+  MAX_STROKES_PER_WINDOW,
+  RATE_LIMIT_WINDOW,
+} from './constants'
 import type { GameState } from './game-types'
 
 /**
@@ -47,6 +54,75 @@ export function calculateCorrectGuessScore(
   const timeRemaining = Math.max(0, roundEndTime - currentTime)
   const timeRatio = timeRemaining / ROUND_DURATION_MS
   return Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
+}
+
+/**
+ * State for tracking rate limiting
+ */
+export interface RateLimitState {
+  timestamps: number[]
+}
+
+/**
+ * Check if an action should be rate limited based on recent timestamps
+ *
+ * @param state - Current rate limit state
+ * @param maxPerWindow - Maximum number of actions allowed in the window
+ * @param windowMs - Time window in milliseconds
+ * @param currentTime - Current timestamp (defaults to Date.now())
+ * @returns Object with allowed status and updated state
+ */
+export function checkRateLimit(
+  state: RateLimitState,
+  maxPerWindow: number,
+  windowMs: number,
+  currentTime: number = Date.now()
+): { allowed: boolean; updatedState: RateLimitState } {
+  // Remove timestamps outside the window
+  const cutoff = currentTime - windowMs
+  const recentTimestamps = state.timestamps.filter((ts) => ts > cutoff)
+
+  // Check if limit exceeded
+  if (recentTimestamps.length >= maxPerWindow) {
+    return {
+      allowed: false,
+      updatedState: { timestamps: recentTimestamps },
+    }
+  }
+
+  // Allow and add new timestamp
+  return {
+    allowed: true,
+    updatedState: { timestamps: [...recentTimestamps, currentTime] },
+  }
+}
+
+/**
+ * Check if a chat message should be rate limited
+ *
+ * @param state - Current rate limit state
+ * @param currentTime - Current timestamp (defaults to Date.now())
+ * @returns Object with allowed status and updated state
+ */
+export function checkMessageRateLimit(
+  state: RateLimitState,
+  currentTime?: number
+): ReturnType<typeof checkRateLimit> {
+  return checkRateLimit(state, MAX_MESSAGES_PER_WINDOW, RATE_LIMIT_WINDOW, currentTime)
+}
+
+/**
+ * Check if a stroke should be rate limited
+ *
+ * @param state - Current rate limit state
+ * @param currentTime - Current timestamp (defaults to Date.now())
+ * @returns Object with allowed status and updated state
+ */
+export function checkStrokeRateLimit(
+  state: RateLimitState,
+  currentTime?: number
+): ReturnType<typeof checkRateLimit> {
+  return checkRateLimit(state, MAX_STROKES_PER_WINDOW, RATE_LIMIT_WINDOW, currentTime)
 }
 
 /**

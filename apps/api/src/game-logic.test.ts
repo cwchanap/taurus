@@ -1,7 +1,19 @@
 import { describe, expect, test } from 'bun:test'
-import { handlePlayerLeaveInActiveGame, calculateCorrectGuessScore } from './game-logic'
+import {
+  handlePlayerLeaveInActiveGame,
+  calculateCorrectGuessScore,
+  checkRateLimit,
+  checkMessageRateLimit,
+  checkStrokeRateLimit,
+  type RateLimitState,
+} from './game-logic'
 import { createInitialGameState, type GameState } from './game-types'
-import { ROUND_DURATION_MS, CORRECT_GUESS_BASE_SCORE } from './constants'
+import {
+  ROUND_DURATION_MS,
+  CORRECT_GUESS_BASE_SCORE,
+  MAX_MESSAGES_PER_WINDOW,
+  MAX_STROKES_PER_WINDOW,
+} from './constants'
 
 describe('handlePlayerLeaveInActiveGame', () => {
   // Helper to create a basic playing game state
@@ -208,5 +220,115 @@ describe('calculateCorrectGuessScore', () => {
     const score = calculateCorrectGuessScore(roundEndTime, Date.now())
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
     expect(Number.isFinite(score)).toBe(true)
+  })
+})
+
+describe('Rate Limiting', () => {
+  describe('checkRateLimit', () => {
+    test('allows first message within window', () => {
+      const state: RateLimitState = { timestamps: [] }
+      const result = checkRateLimit(state, 5, 10000, 1000)
+
+      expect(result.allowed).toBe(true)
+      expect(result.updatedState.timestamps).toEqual([1000])
+    })
+
+    test('allows up to max messages within window', () => {
+      const now = Date.now()
+      const state: RateLimitState = {
+        timestamps: [now - 500, now - 400, now - 300, now - 200],
+      }
+      const result = checkRateLimit(state, 5, 10000, now)
+
+      expect(result.allowed).toBe(true)
+      expect(result.updatedState.timestamps).toHaveLength(5)
+    })
+
+    test('blocks when max messages reached', () => {
+      const now = Date.now()
+      const state: RateLimitState = {
+        timestamps: [now - 500, now - 400, now - 300, now - 200, now - 100],
+      }
+      const result = checkRateLimit(state, 5, 10000, now)
+
+      expect(result.allowed).toBe(false)
+      expect(result.updatedState.timestamps).toHaveLength(5)
+    })
+
+    test('allows message after window expires', () => {
+      const now = Date.now()
+      const state: RateLimitState = {
+        timestamps: [
+          now - 11000, // Outside 10s window
+          now - 10500, // Outside window
+          now - 500,
+          now - 400,
+          now - 300,
+        ],
+      }
+      const result = checkRateLimit(state, 5, 10000, now)
+
+      expect(result.allowed).toBe(true)
+      // Should have removed old timestamps + added new one
+      expect(result.updatedState.timestamps).toHaveLength(4)
+    })
+
+    test('cleans up old timestamps when blocking', () => {
+      const now = Date.now()
+      const state: RateLimitState = {
+        timestamps: [
+          now - 11000, // Should be removed
+          now - 500,
+          now - 400,
+          now - 300,
+          now - 200,
+          now - 100,
+        ],
+      }
+      const result = checkRateLimit(state, 5, 10000, now)
+
+      expect(result.allowed).toBe(false)
+      // Old timestamp should be cleaned
+      expect(result.updatedState.timestamps).toHaveLength(5)
+      expect(result.updatedState.timestamps[0]).toBeGreaterThan(now - 10000)
+    })
+  })
+
+  describe('checkMessageRateLimit', () => {
+    test('uses MAX_MESSAGES_PER_WINDOW constant', () => {
+      const state: RateLimitState = { timestamps: [] }
+      const now = Date.now()
+
+      // Fill up to limit
+      let currentState = state
+      for (let i = 0; i < MAX_MESSAGES_PER_WINDOW; i++) {
+        const result = checkMessageRateLimit(currentState, now + i)
+        expect(result.allowed).toBe(true)
+        currentState = result.updatedState
+      }
+
+      // Next one should be blocked
+      const result = checkMessageRateLimit(currentState, now + MAX_MESSAGES_PER_WINDOW)
+      expect(result.allowed).toBe(false)
+    })
+  })
+
+  describe('checkStrokeRateLimit', () => {
+    test('uses MAX_STROKES_PER_WINDOW constant', () => {
+      const state: RateLimitState = { timestamps: [] }
+      const now = Date.now()
+
+      // Fill up to limit
+      let currentState = state
+      for (let i = 0; i < MAX_STROKES_PER_WINDOW; i++) {
+        const result = checkStrokeRateLimit(currentState, now + i)
+        expect(result.allowed).toBe(true)
+        currentState = result.updatedState
+      }
+
+      // Next one should be blocked
+      const result = checkStrokeRateLimit(currentState, now + MAX_STROKES_PER_WINDOW)
+      expect(result.allowed).toBe(false)
+    })
   })
 })
