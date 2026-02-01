@@ -291,4 +291,161 @@ test.describe('Drawing Game Feature', () => {
       }
     })
   })
+
+  test.describe('Correct Guess Flow', () => {
+    test('should award points when player guesses correctly', async ({ browser }) => {
+      const context1 = await browser.newContext()
+      const context2 = await browser.newContext()
+
+      const hostPage = await context1.newPage()
+      const playerPage = await context2.newPage()
+
+      try {
+        // Host creates room
+        await hostPage.goto('/draw')
+        await hostPage.getByPlaceholder('Enter your name...').fill('Alice')
+        await hostPage.getByRole('button', { name: 'Create Room' }).click()
+
+        await expect(hostPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
+        const roomCode = await hostPage.locator('.room-code').textContent()
+
+        if (!roomCode) throw new Error('Failed to get room code')
+
+        // Player joins
+        await playerPage.goto('/draw')
+        await playerPage.getByPlaceholder('Enter your name...').fill('Bob')
+        await playerPage.getByPlaceholder('12-digit code').fill(roomCode)
+        await playerPage.getByRole('button', { name: 'Join' }).click()
+
+        await expect(playerPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
+
+        // Start the game
+        await hostPage.locator('.start-game-btn').click()
+
+        // Wait for game to start
+        await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
+        await expect(playerPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
+
+        // Determine who is drawer and who is guesser
+        const hostWordLabel = await hostPage.locator('.word-label').textContent()
+        const isHostDrawer = hostWordLabel === 'Draw:'
+
+        const drawerPage = isHostDrawer ? hostPage : playerPage
+        const guesserPage = isHostDrawer ? playerPage : hostPage
+
+        // Get the word from the drawer's view (the actual word, not masked)
+        const wordElement = drawerPage.locator('.word:not(.masked)')
+        await expect(wordElement).toBeVisible({ timeout: 5000 })
+        const word = await wordElement.textContent()
+
+        if (!word) throw new Error('Failed to get the word')
+
+        // Guesser types the correct word in chat
+        await guesserPage.locator('.chat-input').fill(word.trim())
+        await guesserPage.locator('.chat-input').press('Enter')
+
+        // Wait for correct guess notification to appear
+        await expect(guesserPage.locator('.correct-guess-notification')).toBeVisible({
+          timeout: 5000,
+        })
+
+        // Verify notification contains the guesser's name and score
+        const notification = await guesserPage.locator('.correct-guess-notification').textContent()
+        expect(notification).toContain('guessed correctly')
+        expect(notification).toMatch(/\+\d+/) // Should show score like "+150"
+
+        // Verify drawer also sees the notification
+        await expect(drawerPage.locator('.correct-guess-notification')).toBeVisible({
+          timeout: 5000,
+        })
+
+        // Verify the correct guess message is NOT shown in chat (it should be suppressed)
+        // Wait a moment for any messages to appear
+        await guesserPage.waitForTimeout(500)
+        const chatMessages = await guesserPage.locator('.message-content').allTextContents()
+        const wordAppearsInChat = chatMessages.some(
+          (msg) => msg.toLowerCase() === word.trim().toLowerCase()
+        )
+        expect(wordAppearsInChat).toBe(false)
+
+        // Verify scoreboard shows updated score for guesser
+        const guesserName = isHostDrawer ? 'Bob' : 'Alice'
+        const scoreRow = guesserPage.locator(`.score-row:has-text("${guesserName}")`)
+        await expect(scoreRow).toBeVisible()
+        const scoreText = await scoreRow.locator('.score').textContent()
+        const score = parseInt(scoreText || '0', 10)
+        expect(score).toBeGreaterThan(0)
+      } finally {
+        await context1.close()
+        await context2.close()
+      }
+    })
+  })
+
+  test.describe('Game Reset Flow', () => {
+    test('host can reset game and return to lobby', async ({ browser }) => {
+      // Use longer timeout for this test since we need to wait for game over
+      test.setTimeout(120000)
+
+      const context1 = await browser.newContext()
+      const context2 = await browser.newContext()
+
+      const hostPage = await context1.newPage()
+      const playerPage = await context2.newPage()
+
+      try {
+        // Host creates room
+        await hostPage.goto('/draw')
+        await hostPage.getByPlaceholder('Enter your name...').fill('Host')
+        await hostPage.getByRole('button', { name: 'Create Room' }).click()
+
+        await expect(hostPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
+        const roomCode = await hostPage.locator('.room-code').textContent()
+
+        if (!roomCode) throw new Error('Failed to get room code')
+
+        // Player joins
+        await playerPage.goto('/draw')
+        await playerPage.getByPlaceholder('Enter your name...').fill('Player')
+        await playerPage.getByPlaceholder('12-digit code').fill(roomCode)
+        await playerPage.getByRole('button', { name: 'Join' }).click()
+
+        await expect(playerPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
+
+        // Start the game
+        await hostPage.locator('.start-game-btn').click()
+
+        // Wait for game to start
+        await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
+
+        // Wait for game to end naturally (this may take a while depending on round duration)
+        // Or we can make both players guess correctly to speed up rounds
+        // For now, let's just wait for the game-over overlay with a longer timeout
+        await expect(hostPage.locator('.game-over-overlay')).toBeVisible({ timeout: 90000 })
+
+        // Verify game over content is shown
+        await expect(hostPage.locator('.game-over-content h2')).toContainText('Game Over')
+
+        // Host clicks Play Again
+        await hostPage.locator('.play-again-btn').click()
+
+        // Verify returned to lobby state
+        // The game-over overlay should disappear
+        await expect(hostPage.locator('.game-over-overlay')).not.toBeVisible({ timeout: 5000 })
+
+        // The start game section should be visible again
+        await expect(hostPage.locator('.start-game-section')).toBeVisible({ timeout: 5000 })
+
+        // The start game button should be visible (since we have 2 players)
+        await expect(hostPage.locator('.start-game-btn')).toBeVisible()
+
+        // Player should also see the lobby state
+        await expect(playerPage.locator('.game-over-overlay')).not.toBeVisible({ timeout: 5000 })
+        await expect(playerPage.locator('.waiting-text')).toContainText('Waiting for host')
+      } finally {
+        await context1.close()
+        await context2.close()
+      }
+    })
+  })
 })
