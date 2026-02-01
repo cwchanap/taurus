@@ -7,7 +7,7 @@ import {
   checkStrokeRateLimit,
   type RateLimitState,
 } from './game-logic'
-import { type PlayingState } from './game-types'
+import { type PlayingState, type RoundEndState } from './game-types'
 import {
   ROUND_DURATION_MS,
   CORRECT_GUESS_BASE_SCORE,
@@ -180,7 +180,7 @@ describe('handlePlayerLeaveInActiveGame', () => {
 
   describe('when player leaves during round-end status', () => {
     test('should handle same as during playing status', () => {
-      const state = createPlayingGameState(['p1', 'p2', 'p3'], 1)
+      const state = createPlayingGameState(['p1', 'p2', 'p3'], 1) as unknown as RoundEndState
       state.status = 'round-end'
       state.currentDrawerId = null
       state.currentWord = null
@@ -198,33 +198,35 @@ describe('handlePlayerLeaveInActiveGame', () => {
 })
 
 describe('calculateCorrectGuessScore', () => {
+  const FIXED_NOW = 1700000000000
+
   test('full time remaining gives 150% base score', () => {
-    const roundEndTime = Date.now() + ROUND_DURATION_MS
-    const score = calculateCorrectGuessScore(roundEndTime, Date.now())
+    const roundEndTime = FIXED_NOW + ROUND_DURATION_MS
+    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(Math.round(CORRECT_GUESS_BASE_SCORE * 1.5))
   })
 
   test('no time remaining gives base score', () => {
-    const roundEndTime = Date.now()
-    const score = calculateCorrectGuessScore(roundEndTime, Date.now())
+    const roundEndTime = FIXED_NOW
+    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
   })
 
   test('half time remaining gives 125% base score', () => {
-    const roundEndTime = Date.now() + ROUND_DURATION_MS / 2
-    const score = calculateCorrectGuessScore(roundEndTime, Date.now())
+    const roundEndTime = FIXED_NOW + ROUND_DURATION_MS / 2
+    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(Math.round(CORRECT_GUESS_BASE_SCORE * 1.25))
   })
 
   test('time already expired gives base score', () => {
-    const roundEndTime = Date.now() - 1000
-    const score = calculateCorrectGuessScore(roundEndTime, Date.now())
+    const roundEndTime = FIXED_NOW - 1000
+    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
   })
 
   test('handles very large negative time difference', () => {
-    const roundEndTime = Date.now() - 999999
-    const score = calculateCorrectGuessScore(roundEndTime, Date.now())
+    const roundEndTime = FIXED_NOW - 999999
+    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
     expect(Number.isFinite(score)).toBe(true)
   })

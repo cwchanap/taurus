@@ -234,7 +234,7 @@ describe('Chat Message Validation', () => {
       expect(isValidPlayerName('🎨')).toBe(true)
     })
 
-    test('rejects name with only special characters', () => {
+    test('accepts name with only special characters', () => {
       expect(isValidPlayerName('!!!')).toBe(true) // Actually valid - has content
     })
 

@@ -50,7 +50,7 @@ import {
   sanitizeMessage,
   isValidPlayerName as isValidPlayerNameUtil,
 } from './validation'
-import { calculateCorrectGuessScore } from './game-logic'
+import { calculateCorrectGuessScore, handlePlayerLeaveInActiveGame } from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
@@ -485,44 +485,20 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Handle game state when player leaves during active game
     if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {
-      // Ensure leavers don't count toward correct guess tracking
-      this.gameState.correctGuessers.delete(playerId)
-      const removedIndex = this.gameState.drawerOrder.indexOf(playerId)
-
-      // 1. Adjust drawer order if applicable
-      if (removedIndex !== -1) {
-        // If the player being removed has already drawn or is currently drawing,
-        // we need to decrement currentRound so the next round points to the correct player
-        if (removedIndex <= this.gameState.currentRound - 1) {
-          this.gameState.currentRound = Math.max(0, this.gameState.currentRound - 1)
-        }
-
-        // Remove player from drawer order
-        this.gameState.drawerOrder.splice(removedIndex, 1)
-
-        // Update total rounds to reflect the new player count
-        this.gameState.totalRounds = Math.max(1, this.gameState.drawerOrder.length)
-      }
-
-      // 2. Check if we have enough players to continue
-      // This applies to ANY player leaving (active participant or late joiner)
       const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
-      if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
+      const remainingPlayerIds = remainingPlayers.map((p) => p.id)
+
+      const result = handlePlayerLeaveInActiveGame(playerId, this.gameState, remainingPlayerIds)
+
+      this.gameState = result.updatedGameState
+
+      if (result.shouldEndGame) {
         this.endGame()
         return
       }
 
-      // 3. Handle specific state interruptions
-      if (this.gameState.status === 'playing' && playerId === this.gameState.currentDrawerId) {
-        // Current drawer left during active round -> end round immediately
+      if (result.shouldEndRound) {
         this.endRound(true)
-      } else if (removedIndex !== -1 && this.gameState.currentRound >= this.gameState.totalRounds) {
-        // Edge case: if the last player in order left, set flag to end after this round
-        this.gameState.endGameAfterCurrentRound = true
-      }
-
-      if (this.gameState.status === 'playing') {
-        this.gameState.roundGuessers.delete(playerId)
       }
     }
 
