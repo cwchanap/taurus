@@ -384,8 +384,8 @@ test.describe('Drawing Game Feature', () => {
 
   test.describe('Game Reset Flow', () => {
     test('host can reset game and return to lobby', async ({ browser }) => {
-      // Use longer timeout for this test since we need to wait for game over
-      test.setTimeout(120000)
+      // Use longer timeout for this test
+      test.setTimeout(60000)
 
       const context1 = await browser.newContext()
       const context2 = await browser.newContext()
@@ -417,11 +417,68 @@ test.describe('Drawing Game Feature', () => {
 
         // Wait for game to start
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
+        await expect(playerPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
 
-        // Wait for game to end naturally (this may take a while depending on round duration)
-        // Or we can make both players guess correctly to speed up rounds
-        // For now, let's just wait for the game-over overlay with a longer timeout
-        await expect(hostPage.locator('.game-over-overlay')).toBeVisible({ timeout: 90000 })
+        // Helper function to complete a round by having guesser guess correctly
+        const completeRound = async () => {
+          // Wait for round-end overlay to disappear (if present) and game to be in playing state
+          // This handles the transition between rounds
+          await hostPage
+            .locator('.round-overlay')
+            .waitFor({ state: 'hidden', timeout: 10000 })
+            .catch(() => {
+              // Round overlay might not be visible, that's fine
+            })
+
+          // Check if game is already over
+          const isOver = await hostPage.locator('.game-over-overlay').isVisible()
+          if (isOver) return false
+
+          // Determine who is drawer and who is guesser by checking for "Draw:" label
+          const hostWordLabel = await hostPage.locator('.word-label').textContent()
+          const isHostDrawer = hostWordLabel === 'Draw:'
+
+          const drawerPage = isHostDrawer ? hostPage : playerPage
+          const guesserPage = isHostDrawer ? playerPage : hostPage
+
+          // Wait for the drawer to see their word (not just "—")
+          const wordElement = drawerPage.locator('.word:not(.masked)')
+          await expect(wordElement).toBeVisible({ timeout: 5000 })
+
+          // Keep checking until we get an actual word, not "—"
+          let word = await wordElement.textContent()
+          let retries = 0
+          while ((!word || word === '—') && retries < 10) {
+            await hostPage.waitForTimeout(500)
+            word = await wordElement.textContent()
+            retries++
+          }
+
+          if (!word || word === '—') throw new Error('Failed to get the word')
+
+          // Guesser types the correct word in chat
+          await guesserPage.locator('.chat-input').fill(word.trim())
+          await guesserPage.locator('.chat-input').press('Enter')
+
+          // Wait for correct guess notification
+          await expect(guesserPage.locator('.correct-guess-notification')).toBeVisible({
+            timeout: 5000,
+          })
+
+          return true
+        }
+
+        // Complete round 1
+        await completeRound()
+
+        // Wait for round transition (round-end phase)
+        await hostPage.waitForTimeout(4000)
+
+        // Complete round 2 (if game isn't over)
+        await completeRound()
+
+        // Wait for game to end
+        await expect(hostPage.locator('.game-over-overlay')).toBeVisible({ timeout: 15000 })
 
         // Verify game over content is shown
         await expect(hostPage.locator('.game-over-content h2')).toContainText('Game Over')
