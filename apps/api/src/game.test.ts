@@ -117,7 +117,7 @@ describe('Game Types', () => {
       expect(state.roundGuessers.size).toBe(0)
       expect(state.roundGuesserScores.size).toBe(0)
       expect(state.usedWords.size).toBe(0)
-      expect(state.endGameAfterCurrentRound).toBe(false)
+      // Note: endGameAfterCurrentRound is only present on PlayingState and RoundEndState, not LobbyState
     })
 
     test('should initialize with null timestamps', () => {
@@ -263,7 +263,7 @@ describe('Game State Transitions', () => {
     expect(state.status).toBe('lobby')
     expect(state.currentRound).toBe(0)
     expect(state.scores.size).toBe(0)
-    expect(state.endGameAfterCurrentRound).toBe(false)
+    // Note: endGameAfterCurrentRound is only present on PlayingState and RoundEndState
   })
 })
 

@@ -39,7 +39,12 @@ import {
   DRAWER_BONUS_SCORE,
 } from './constants'
 import { getRandomWordExcluding } from './vocabulary'
-import { GameState, createInitialGameState, scoresToRecord, type RoundResult } from './game-types'
+import {
+  type GameState,
+  createInitialGameState,
+  scoresToRecord,
+  type RoundResult,
+} from './game-types'
 import {
   validateMessageContent,
   sanitizeMessage,

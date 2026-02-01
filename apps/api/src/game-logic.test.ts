@@ -7,7 +7,7 @@ import {
   checkStrokeRateLimit,
   type RateLimitState,
 } from './game-logic'
-import { createInitialGameState, type GameState } from './game-types'
+import { type PlayingState } from './game-types'
 import {
   ROUND_DURATION_MS,
   CORRECT_GUESS_BASE_SCORE,
@@ -17,25 +17,32 @@ import {
 
 describe('handlePlayerLeaveInActiveGame', () => {
   // Helper to create a basic playing game state
-  function createPlayingGameState(playerIds: string[], currentRoundIndex: number = 0): GameState {
-    const state = createInitialGameState()
-    state.status = 'playing'
-    state.drawerOrder = [...playerIds]
-    state.totalRounds = playerIds.length
-    state.currentRound = currentRoundIndex + 1 // currentRound is 1-indexed
-    state.currentDrawerId = playerIds[currentRoundIndex]
-    state.currentWord = 'testword'
-    state.wordLength = 8
-    state.roundStartTime = Date.now()
-    state.roundEndTime = Date.now() + 60000
+  function createPlayingGameState(
+    playerIds: string[],
+    currentRoundIndex: number = 0
+  ): PlayingState {
+    const now = Date.now()
+    const state: PlayingState = {
+      status: 'playing',
+      drawerOrder: [...playerIds],
+      totalRounds: playerIds.length,
+      currentRound: currentRoundIndex + 1, // currentRound is 1-indexed
+      currentDrawerId: playerIds[currentRoundIndex],
+      currentWord: 'testword',
+      wordLength: 8,
+      roundStartTime: now,
+      roundEndTime: now + 60000,
+      scores: new Map(),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(playerIds.filter((id) => id !== playerIds[currentRoundIndex])),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+    }
 
     // Initialize scores for all players
     for (const id of playerIds) {
       state.scores.set(id, { score: 0, name: `Player ${id}` })
     }
-
-    // Initialize round guessers (everyone except current drawer)
-    state.roundGuessers = new Set(playerIds.filter((id) => id !== playerIds[currentRoundIndex]))
 
     return state
   }
@@ -167,7 +174,7 @@ describe('handlePlayerLeaveInActiveGame', () => {
       expect(result.updatedGameState.totalRounds).toBe(2)
       expect(result.updatedGameState.currentRound).toBe(1)
       // currentRound (1) < totalRounds (2), so flag not needed (game ends naturally)
-      expect(result.updatedGameState.endGameAfterCurrentRound).toBe(false)
+      expect(result.updatedGameState.endGameAfterCurrentRound).toBeFalsy()
     })
   })
 
