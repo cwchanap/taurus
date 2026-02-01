@@ -13,7 +13,8 @@ import {
   MAX_STROKES_PER_WINDOW,
   RATE_LIMIT_WINDOW,
 } from './constants'
-import type { GameState } from './game-types'
+import type { PlayingState, RoundEndState } from './game-types'
+import { isPlayingState } from './game-types'
 
 /**
  * Result of handling a player leave during an active game
@@ -32,7 +33,7 @@ export interface PlayerLeaveResult {
   /**
    * The updated game state after handling the player leave
    */
-  updatedGameState: GameState
+  updatedGameState: PlayingState | RoundEndState
 
   /**
    * Index where the player was removed from drawerOrder (-1 if not in order)
@@ -135,12 +136,11 @@ export function checkStrokeRateLimit(
  */
 export function handlePlayerLeaveInActiveGame(
   leavingPlayerId: string,
-  gameState: GameState,
+  gameState: PlayingState | RoundEndState,
   remainingPlayerIds: string[]
 ): PlayerLeaveResult {
-  // Clone the game state to avoid mutations
-  const updatedState: GameState = {
-    ...gameState,
+  // Clone the base fields
+  const baseClone = {
     drawerOrder: [...gameState.drawerOrder],
     scores: new Map(gameState.scores),
     correctGuessers: new Set(gameState.correctGuessers),
@@ -150,25 +150,66 @@ export function handlePlayerLeaveInActiveGame(
   }
 
   // Remove from correct guessers and round guessers
-  updatedState.correctGuessers.delete(leavingPlayerId)
-  updatedState.roundGuessers.delete(leavingPlayerId)
+  baseClone.correctGuessers.delete(leavingPlayerId)
+  baseClone.roundGuessers.delete(leavingPlayerId)
 
   // Find the player's index in drawer order
-  const removedIndex = updatedState.drawerOrder.indexOf(leavingPlayerId)
+  const removedIndex = baseClone.drawerOrder.indexOf(leavingPlayerId)
+
+  // Track adjusted values
+  let currentRound = gameState.currentRound
+  let totalRounds = gameState.totalRounds
 
   // 1. Adjust drawer order if the player was in it
   if (removedIndex !== -1) {
     // If the player being removed has already drawn or is currently drawing,
     // we need to decrement currentRound so the next round points to the correct player
-    if (removedIndex <= updatedState.currentRound - 1) {
-      updatedState.currentRound = Math.max(0, updatedState.currentRound - 1)
+    if (removedIndex <= currentRound - 1) {
+      currentRound = Math.max(0, currentRound - 1)
     }
 
     // Remove player from drawer order
-    updatedState.drawerOrder.splice(removedIndex, 1)
+    baseClone.drawerOrder.splice(removedIndex, 1)
 
     // Update total rounds to reflect the new player count
-    updatedState.totalRounds = Math.max(1, updatedState.drawerOrder.length)
+    totalRounds = Math.max(1, baseClone.drawerOrder.length)
+  }
+
+  // Build the updated state based on current status
+  let updatedState: PlayingState | RoundEndState
+  let shouldEndAfterRound = false
+
+  // Check if we should end game after current round
+  if (removedIndex !== -1 && currentRound >= totalRounds) {
+    shouldEndAfterRound = true
+  }
+
+  if (isPlayingState(gameState)) {
+    updatedState = {
+      status: 'playing',
+      currentRound,
+      totalRounds,
+      currentDrawerId: gameState.currentDrawerId,
+      currentWord: gameState.currentWord,
+      wordLength: gameState.wordLength,
+      roundStartTime: gameState.roundStartTime,
+      roundEndTime: gameState.roundEndTime,
+      endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
+      ...baseClone,
+    }
+  } else {
+    updatedState = {
+      status: 'round-end',
+      currentRound,
+      totalRounds,
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: gameState.roundStartTime,
+      roundEndTime: gameState.roundEndTime,
+      endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
+      ...baseClone,
+    }
   }
 
   // 2. Check if we have enough players to continue
@@ -184,15 +225,9 @@ export function handlePlayerLeaveInActiveGame(
   // 3. Handle specific state interruptions
   let shouldEndRound = false
 
-  if (updatedState.status === 'playing' && leavingPlayerId === gameState.currentDrawerId) {
+  if (isPlayingState(gameState) && leavingPlayerId === gameState.currentDrawerId) {
     // Current drawer left during active round -> end round immediately
     shouldEndRound = true
-  }
-
-  // Check if we should end game after current round (regardless of whether round is ending now)
-  if (removedIndex !== -1 && updatedState.currentRound >= updatedState.totalRounds) {
-    // Edge case: if the last player in order left, set flag to end after this round
-    updatedState.endGameAfterCurrentRound = true
   }
 
   return {
