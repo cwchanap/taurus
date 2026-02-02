@@ -41,6 +41,8 @@ import {
 import { getRandomWordExcluding } from './vocabulary'
 import {
   type GameState,
+  type PlayingState,
+  type RoundEndState,
   createInitialGameState,
   scoresToRecord,
   type RoundResult,
@@ -317,9 +319,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       return null
     }
 
-    // Return validated stroke with server-generated ID
+    // Return validated stroke with ID (prefer client-provided ID if valid, otherwise generate one)
+    const clientStrokeId = data.id
+    const strokeId =
+      typeof clientStrokeId === 'string' && this.isValidStrokeId(clientStrokeId)
+        ? clientStrokeId
+        : crypto.randomUUID()
+
     return {
-      id: crypto.randomUUID(), // Server generates ID to prevent spoofing
+      id: strokeId,
       playerId,
       points,
       color: data.color,
@@ -410,6 +418,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     // If a game is in progress, add the player to the scores map so their name is captured
     if (this.gameState.status !== 'lobby' && !this.gameState.scores.has(playerId)) {
       this.gameState.scores.set(playerId, { score: 0, name: player.name })
+    }
+
+    // Add late joiners to roundGuessers to avoid early round end
+    if (this.gameState.status === 'playing') {
+      this.gameState.roundGuessers.add(playerId)
     }
 
     // Send current state to the new player (include existing players)
@@ -796,7 +809,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     const shuffledOrder = [...playerIds].sort(() => Math.random() - 0.5)
 
     this.gameState = {
-      status: 'playing',
+      status: 'lobby',
       currentRound: 0,
       totalRounds: shuffledOrder.length,
       currentDrawerId: null,
@@ -810,7 +823,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       roundGuessers: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
-      endGameAfterCurrentRound: false,
     }
 
     // Broadcast game started
@@ -890,18 +902,29 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Set round state
     const now = Date.now()
-    this.gameState.currentDrawerId = drawerId
-    this.gameState.currentWord = word
-    this.gameState.wordLength = word.length
-    this.gameState.roundStartTime = now
-    this.gameState.roundEndTime = now + ROUND_DURATION_MS
-    this.gameState.correctGuessers = new Set()
-    this.gameState.roundGuessers = new Set(
-      this.getPlayers()
-        .map((p) => p.id)
-        .filter((id) => id !== drawerId)
-    )
-    this.gameState.roundGuesserScores = new Map()
+
+    // Transition to PlayingState
+    // We cast to PlayingState because we are providing all required fields
+    this.gameState = {
+      ...this.gameState,
+      status: 'playing',
+      currentDrawerId: drawerId,
+      currentWord: word,
+      wordLength: word.length,
+      roundStartTime: now,
+      roundEndTime: now + ROUND_DURATION_MS,
+      correctGuessers: new Set(),
+      roundGuessers: new Set(
+        this.getPlayers()
+          .map((p) => p.id)
+          .filter((id) => id !== drawerId)
+      ),
+      roundGuesserScores: new Map(),
+      endGameAfterCurrentRound:
+        'endGameAfterCurrentRound' in this.gameState
+          ? this.gameState.endGameAfterCurrentRound
+          : false,
+    } as PlayingState
 
     // Clear canvas for new round
     this.strokes = []
@@ -1004,16 +1027,21 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     })
 
     // Update status temporarily
-    this.gameState.status = 'round-end'
-    this.gameState.currentDrawerId = null
-    this.gameState.currentWord = null
-    this.gameState.wordLength = null
+    // Update status temporarily
+    this.gameState = {
+      ...this.gameState,
+      status: 'round-end',
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+    } as RoundEndState
 
     // Check if game should end
-    if (
+    const shouldEnd =
       this.gameState.currentRound >= this.gameState.totalRounds ||
-      this.gameState.endGameAfterCurrentRound
-    ) {
+      ('endGameAfterCurrentRound' in this.gameState && this.gameState.endGameAfterCurrentRound)
+
+    if (shouldEnd) {
       // Give a short delay before showing final results
       if (this.gameEndTimer) {
         clearTimeout(this.gameEndTimer)
@@ -1024,7 +1052,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Start next round after delay (unless skipping)
     if (skipToNext) {
-      this.gameState.status = 'playing'
       this.startRound()
     } else {
       if (this.roundEndTimer) {
@@ -1032,7 +1059,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       }
       this.roundEndTimer = setTimeout(() => {
         if (this.gameState.status === 'round-end') {
-          this.gameState.status = 'playing'
           this.startRound()
         }
       }, 5000) // 5 second break between rounds
