@@ -49,7 +49,7 @@
   let scores = $state<Record<string, ScoreEntry>>({})
   let lastRevealedWord = $state('')
   let lastRoundResult = $state<RoundResult | null>(null)
-  let gameWinner = $state<Winner | null>(null)
+  let gameWinners = $state<Winner[]>([])
   let correctGuessNotification = $state<{ playerName: string; score: number } | null>(null)
 
   let color = $state('#4ECDC4')
@@ -207,10 +207,12 @@
         scores = newScores
         gameStatus = 'round-end'
         currentWord = undefined
+        currentDrawerId = null
+        currentDrawerName = ''
       },
-      onGameOver: (finalScores, winner) => {
+      onGameOver: (finalScores, winners) => {
         scores = finalScores
-        gameWinner = winner
+        gameWinners = winners
         gameStatus = 'game-over'
         currentDrawerId = null
         currentWord = undefined
@@ -232,7 +234,7 @@
       onGameReset: () => {
         // Reset local game state to lobby
         gameStatus = 'lobby'
-        gameWinner = null
+        gameWinners = []
         lastRoundResult = null
         scores = {}
         currentDrawerId = null
@@ -361,10 +363,15 @@
       <div class="game-over-overlay">
         <div class="game-over-content">
           <h2>🎉 Game Over!</h2>
-          {#if gameWinner}
-            <p class="winner">
-              Winner: <strong>{gameWinner.playerName}</strong> with {gameWinner.score} points!
-            </p>
+          {#if gameWinners.length > 0}
+            <div class="winners-list">
+              <h3>{gameWinners.length > 1 ? 'Winners' : 'Winner'}</h3>
+              {#each gameWinners as winner}
+                <p class="winner">
+                  <strong>{winner.playerName}</strong> with {winner.score} points!
+                </p>
+              {/each}
+            </div>
           {:else}
             <p>No winner this time.</p>
           {/if}

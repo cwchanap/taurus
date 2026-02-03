@@ -75,7 +75,7 @@ export type MessageType =
   | {
       type: 'game-over'
       finalScores: Record<string, ScoreEntry>
-      winner: Winner | null
+      winners: Winner[]
     }
   | {
       type: 'correct-guess'

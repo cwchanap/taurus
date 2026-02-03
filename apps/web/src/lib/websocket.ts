@@ -44,7 +44,7 @@ export type GameEventHandler = {
     endTime: number
   ) => void
   onRoundEnd?: (word: string, result: RoundResult, scores: Record<string, ScoreEntry>) => void
-  onGameOver?: (finalScores: Record<string, ScoreEntry>, winner: Winner | null) => void
+  onGameOver?: (finalScores: Record<string, ScoreEntry>, winners: Winner[]) => void
   onCorrectGuess?: (
     playerId: string,
     playerName: string,
@@ -164,7 +164,7 @@ export class GameWebSocket {
         this.handlers.onRoundEnd?.(data.word, data.result, data.scores)
         break
       case 'game-over':
-        this.handlers.onGameOver?.(data.finalScores, data.winner)
+        this.handlers.onGameOver?.(data.finalScores, data.winners)
         break
       case 'correct-guess':
         this.handlers.onCorrectGuess?.(
