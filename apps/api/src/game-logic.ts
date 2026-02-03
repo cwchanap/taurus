@@ -237,3 +237,37 @@ export function handlePlayerLeaveInActiveGame(
     removedFromDrawerIndex: removedIndex,
   }
 }
+
+/**
+ * Finds the next valid drawer starting from currentRound + 1
+ *
+ * @param currentRound The current round number
+ * @param drawerOrder The ordered list of player IDs for drawing
+ * @param connectedPlayers Set of currently connected player IDs
+ * @returns Object containing the next drawerId (or null) and the new round number
+ */
+export function findNextDrawer(
+  currentRound: number,
+  drawerOrder: string[],
+  connectedPlayers: Set<string>
+): { drawerId: string | null; roundNumber: number } {
+  // Start search from the NEXT round
+  let nextRound = currentRound + 1
+
+  while (nextRound <= drawerOrder.length) {
+    const drawerIndex = nextRound - 1
+    // Safety check for index
+    if (drawerIndex < 0) {
+      nextRound++
+      continue
+    }
+
+    const candidateId = drawerOrder[drawerIndex]
+    if (connectedPlayers.has(candidateId)) {
+      return { drawerId: candidateId, roundNumber: nextRound }
+    }
+    nextRound++
+  }
+
+  return { drawerId: null, roundNumber: nextRound }
+}
