@@ -6,6 +6,7 @@ import {
   checkMessageRateLimit,
   checkStrokeRateLimit,
   type RateLimitState,
+  findNextDrawer,
 } from './game-logic'
 import { type PlayingState, type RoundEndState } from './game-types'
 import {
@@ -339,5 +340,52 @@ describe('Rate Limiting', () => {
       const result = checkStrokeRateLimit(currentState, now + MAX_STROKES_PER_WINDOW)
       expect(result.allowed).toBe(false)
     })
+  })
+})
+
+describe('findNextDrawer', () => {
+  test('should advance to next round and drawer', () => {
+    const currentRound = 0
+    const drawerOrder = ['p1', 'p2', 'p3']
+    const connectedPlayers = new Set(['p1', 'p2', 'p3'])
+
+    const result = findNextDrawer(currentRound, drawerOrder, connectedPlayers)
+
+    expect(result.roundNumber).toBe(1)
+    expect(result.drawerId).toBe('p1')
+  })
+
+  test('should skip disconnected players', () => {
+    const currentRound = 1
+    const drawerOrder = ['p1', 'p2', 'p3']
+    const connectedPlayers = new Set(['p1', 'p3']) // p2 is disconnected
+
+    const result = findNextDrawer(currentRound, drawerOrder, connectedPlayers)
+
+    // Should skip p2 (round 2) and go to p3 (round 3)
+    expect(result.roundNumber).toBe(3)
+    expect(result.drawerId).toBe('p3')
+  })
+
+  test('should return null if no more drawers available', () => {
+    const currentRound = 3
+    const drawerOrder = ['p1', 'p2', 'p3']
+    const connectedPlayers = new Set(['p1', 'p2', 'p3'])
+
+    const result = findNextDrawer(currentRound, drawerOrder, connectedPlayers)
+
+    expect(result.drawerId).toBeNull()
+    expect(result.roundNumber).toBeGreaterThan(3)
+  })
+
+  test('should correctly handle transition from round 1 to round 2', () => {
+    const currentRound = 1
+    const drawerOrder = ['p1', 'p2', 'p3']
+    const connectedPlayers = new Set(['p1', 'p2', 'p3'])
+
+    const result = findNextDrawer(currentRound, drawerOrder, connectedPlayers)
+
+    expect(result.roundNumber).toBe(2)
+    expect(result.drawerId).toBe('p2')
   })
 })

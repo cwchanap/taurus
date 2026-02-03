@@ -52,7 +52,11 @@ import {
   sanitizeMessage,
   isValidPlayerName as isValidPlayerNameUtil,
 } from './validation'
-import { calculateCorrectGuessScore, handlePlayerLeaveInActiveGame } from './game-logic'
+import {
+  calculateCorrectGuessScore,
+  handlePlayerLeaveInActiveGame,
+  findNextDrawer,
+} from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
   private strokes: Stroke[] = []
@@ -884,18 +888,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     let drawerName = ''
     const connectedPlayers = new Set(this.getPlayers().map((p) => p.id))
 
-    // Find next valid drawer without mutating currentRound yet
-    let nextRound = this.gameState.currentRound
-    while (nextRound <= this.gameState.drawerOrder.length) {
-      const drawerIndex = nextRound - 1
-      const candidateId = this.gameState.drawerOrder[drawerIndex]
-      if (connectedPlayers.has(candidateId)) {
-        drawerId = candidateId
-        drawerName = this.getPlayerName(candidateId)
-        this.gameState.currentRound = nextRound
-        break
-      }
-      nextRound++
+    // Find next valid drawer
+    const { drawerId: nextDrawerId, roundNumber } = findNextDrawer(
+      this.gameState.currentRound,
+      this.gameState.drawerOrder,
+      connectedPlayers
+    )
+
+    if (nextDrawerId) {
+      drawerId = nextDrawerId
+      drawerName = this.getPlayerName(nextDrawerId)
+      this.gameState.currentRound = roundNumber
     }
 
     if (!drawerId) {
