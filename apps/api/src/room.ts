@@ -708,7 +708,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     // Check for correct guess during active game
     if (this.gameState.status === 'playing' && this.gameState.currentWord) {
       const isCorrectWord =
-        sanitizedContent.toLowerCase().trim() === this.gameState.currentWord.toLowerCase()
+        sanitizedContent.toLowerCase() === this.gameState.currentWord.toLowerCase()
 
       if (isCorrectWord) {
         // If drawer or already correct, suppress message to avoid leaking word
@@ -806,7 +806,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     // Initialize game state
     const playerIds = players.map((p) => p.id)
     // Shuffle player order for drawing
-    const shuffledOrder = [...playerIds].sort(() => Math.random() - 0.5)
+    // Shuffle player order for drawing (Fisher-Yates)
+    const shuffledOrder = [...playerIds]
+    for (let i = shuffledOrder.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[shuffledOrder[i], shuffledOrder[j]] = [shuffledOrder[j], shuffledOrder[i]]
+    }
 
     this.gameState = {
       status: 'lobby',
@@ -874,21 +879,23 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
    * Start a new round
    */
   private startRound() {
-    this.gameState.currentRound++
-
     // Get next connected drawer
     let drawerId: string | null = null
     let drawerName = ''
     const connectedPlayers = new Set(this.getPlayers().map((p) => p.id))
-    while (this.gameState.currentRound <= this.gameState.drawerOrder.length) {
-      const drawerIndex = this.gameState.currentRound - 1
+
+    // Find next valid drawer without mutating currentRound yet
+    let nextRound = this.gameState.currentRound
+    while (nextRound <= this.gameState.drawerOrder.length) {
+      const drawerIndex = nextRound - 1
       const candidateId = this.gameState.drawerOrder[drawerIndex]
       if (connectedPlayers.has(candidateId)) {
         drawerId = candidateId
         drawerName = this.getPlayerName(candidateId)
+        this.gameState.currentRound = nextRound
         break
       }
-      this.gameState.currentRound++
+      nextRound++
     }
 
     if (!drawerId) {
@@ -1072,21 +1079,31 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     this.clearTimers()
 
     // Find winner
-    let winner: { playerId: string; playerName: string; score: number } | null = null
-    let highestScore = 0
+    // Find winners (handle ties)
+    let winners: { playerId: string; playerName: string; score: number }[] = []
+    let highestScore = -1
     const activePlayerIds = new Set(this.getPlayers().map((player) => player.id))
 
     for (const [playerId, scoreInfo] of this.gameState.scores) {
       if (!activePlayerIds.has(playerId)) {
         continue
       }
+
       if (scoreInfo.score > highestScore) {
         highestScore = scoreInfo.score
-        winner = {
+        winners = [
+          {
+            playerId,
+            playerName: scoreInfo.name,
+            score: scoreInfo.score,
+          },
+        ]
+      } else if (scoreInfo.score === highestScore) {
+        winners.push({
           playerId,
           playerName: scoreInfo.name,
           score: scoreInfo.score,
-        }
+        })
       }
     }
 
@@ -1094,7 +1111,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     this.broadcast({
       type: 'game-over',
       finalScores: scoresToRecord(this.gameState.scores),
-      winner,
+      winners,
     })
 
     // Reset to lobby state

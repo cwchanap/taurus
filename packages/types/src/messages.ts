@@ -29,13 +29,12 @@ export interface GameStateWire {
 // Client-to-Server Messages
 export type ClientMessage =
   | { type: 'join'; name: string }
-  | { type: 'chat-message'; content: string }
+  | { type: 'chat'; content: string }
   | { type: 'stroke'; stroke: Stroke }
-  | { type: 'stroke-point'; strokeId: string; point: { x: number; y: number } }
-  | { type: 'stroke-complete'; strokeId: string }
+  | { type: 'stroke-update'; strokeId: string; point: { x: number; y: number } }
+  | { type: 'clear' }
   | { type: 'start-game' }
   | { type: 'reset-game' }
-  | { type: 'clear-canvas' }
 
 // Server-to-Client Messages
 export type ServerMessage =
@@ -45,33 +44,53 @@ export type ServerMessage =
       player: Player
       players: Player[]
       strokes: Stroke[]
-      gameState: GameStateWire
       chatHistory: ChatMessage[]
       isHost: boolean
+      gameState: GameStateWire
     }
   | { type: 'player-joined'; player: Player }
+  | { type: 'host-change'; newHostId: string }
   | { type: 'player-left'; playerId: string }
   | { type: 'stroke'; stroke: Stroke }
   | { type: 'stroke-update'; strokeId: string; point: { x: number; y: number } }
-  | { type: 'stroke-complete'; strokeId: string }
-  | { type: 'clear'; initiatorId?: string }
-  | { type: 'chat-message'; message: ChatMessage }
-  | { type: 'chat-history'; messages: ChatMessage[] }
-  | { type: 'game-state'; gameState: GameStateWire }
-  | { type: 'game-started'; gameState: GameStateWire }
+  | { type: 'clear' }
+  | { type: 'chat'; message: ChatMessage }
+  | {
+      type: 'game-started'
+      totalRounds: number
+      drawerOrder: string[]
+      scores: Record<string, ScoreEntry>
+    }
   | {
       type: 'round-start'
-      round: number
+      roundNumber: number
+      totalRounds: number
       drawerId: string
       drawerName: string
+      word?: string
       wordLength: number
-      currentWord?: string
+      endTime: number
     }
-  | { type: 'correct-guess'; playerId: string; playerName: string; score: number }
-  | { type: 'round-end'; result: RoundResult; nextRound: number | null }
-  | { type: 'game-over'; winners: Winner[]; finalScores: Record<string, ScoreEntry> }
-  | { type: 'host-change'; newHostId: string }
-  | { type: 'game-terminated'; reason: string }
+  | {
+      type: 'round-end'
+      word: string
+      result: RoundResult
+      scores: Record<string, ScoreEntry>
+    }
+  | {
+      type: 'game-over'
+      finalScores: Record<string, ScoreEntry>
+      winners: Winner[]
+    }
+  | {
+      type: 'correct-guess'
+      playerId: string
+      playerName: string
+      score: number
+      timeRemaining: number
+    }
+  | { type: 'tick'; timeRemaining: number }
+  | { type: 'game-reset' }
   | { type: 'error'; message: string }
 
 // Combined for convenience
