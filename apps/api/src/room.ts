@@ -55,6 +55,8 @@ import {
   calculateCorrectGuessScore,
   handlePlayerLeaveInActiveGame,
   findNextDrawer,
+  clearTimers,
+  type TimerContainer,
 } from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> {
@@ -1049,22 +1051,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
    * Clear all game-related timers
    */
   private clearTimers() {
-    if (this.roundTimer) {
-      clearTimeout(this.roundTimer)
-      this.roundTimer = null
-    }
-    if (this.tickTimer) {
-      clearInterval(this.tickTimer)
-      this.tickTimer = null
-    }
-    if (this.roundEndTimer) {
-      clearTimeout(this.roundEndTimer)
-      this.roundEndTimer = null
-    }
-    if (this.gameEndTimer) {
-      clearTimeout(this.gameEndTimer)
-      this.gameEndTimer = null
-    }
+    clearTimers(this as unknown as TimerContainer)
   }
 
   /**

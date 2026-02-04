@@ -5,7 +5,12 @@ import {
   MAX_CHAT_HISTORY,
   MAX_COORDINATE_VALUE,
 } from './constants'
-import { validateMessageContent, sanitizeMessage, isValidPlayerName } from './validation'
+import {
+  validateMessageContent,
+  sanitizeMessage,
+  isValidPlayerName,
+  isValidPoint,
+} from './validation'
 import { ChatHistory } from './chat-history'
 
 // Test ChatMessage validation constants and logic (extracted from room.ts)
@@ -260,16 +265,7 @@ describe('Chat Message Validation', () => {
   })
 
   describe('Point validation edge cases', () => {
-    function isValidPoint(p: { x: number; y: number }): boolean {
-      return (
-        typeof p.x === 'number' &&
-        Number.isFinite(p.x) &&
-        Math.abs(p.x) <= MAX_COORDINATE_VALUE &&
-        typeof p.y === 'number' &&
-        Number.isFinite(p.y) &&
-        Math.abs(p.y) <= MAX_COORDINATE_VALUE
-      )
-    }
+    // isValidPoint imported from validation.ts
 
     test('rejects NaN coordinates', () => {
       const point = { x: NaN, y: 100 }

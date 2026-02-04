@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { clearTimers, type TimerContainer } from './game-logic'
 
 describe('Timer Cleanup', () => {
   let timers: {
@@ -25,16 +26,7 @@ describe('Timer Cleanup', () => {
     if (timers.gameEndTimer) clearTimeout(timers.gameEndTimer)
   })
 
-  function clearTimers() {
-    if (timers.roundTimer) clearTimeout(timers.roundTimer)
-    if (timers.tickTimer) clearInterval(timers.tickTimer)
-    if (timers.roundEndTimer) clearTimeout(timers.roundEndTimer)
-    if (timers.gameEndTimer) clearTimeout(timers.gameEndTimer)
-    timers.roundTimer = null
-    timers.tickTimer = null
-    timers.roundEndTimer = null
-    timers.gameEndTimer = null
-  }
+  // clearTimers is imported from game-logic
 
   test('clearTimers clears all four timer types', () => {
     timers.roundTimer = setTimeout(() => {}, 1000)
@@ -42,7 +34,9 @@ describe('Timer Cleanup', () => {
     timers.roundEndTimer = setTimeout(() => {}, 5000)
     timers.gameEndTimer = setTimeout(() => {}, 10000)
 
-    clearTimers()
+    timers.gameEndTimer = setTimeout(() => {}, 10000)
+
+    clearTimers(timers as TimerContainer)
 
     expect(timers.roundTimer).toBeNull()
     expect(timers.tickTimer).toBeNull()
@@ -53,12 +47,12 @@ describe('Timer Cleanup', () => {
   test('double clear does not cause errors', () => {
     timers.roundTimer = setTimeout(() => {}, 1000)
 
-    clearTimers()
-    expect(() => clearTimers()).not.toThrow()
+    clearTimers(timers as TimerContainer)
+    expect(() => clearTimers(timers as TimerContainer)).not.toThrow()
   })
 
   test('clearing null timers does not cause errors', () => {
-    expect(() => clearTimers()).not.toThrow()
+    expect(() => clearTimers(timers as TimerContainer)).not.toThrow()
   })
 
   test('clearing only some timers works', () => {
@@ -66,7 +60,9 @@ describe('Timer Cleanup', () => {
     timers.tickTimer = setInterval(() => {}, 100)
     // roundEndTimer and gameEndTimer remain null
 
-    clearTimers()
+    // roundEndTimer and gameEndTimer remain null
+
+    clearTimers(timers as TimerContainer)
 
     expect(timers.roundTimer).toBeNull()
     expect(timers.tickTimer).toBeNull()
@@ -76,11 +72,11 @@ describe('Timer Cleanup', () => {
 
   test('timers can be recreated after clearing', () => {
     timers.roundTimer = setTimeout(() => {}, 1000)
-    clearTimers()
+    clearTimers(timers as TimerContainer)
 
     timers.roundTimer = setTimeout(() => {}, 1000)
     expect(timers.roundTimer).not.toBe(null)
 
-    clearTimers()
+    clearTimers(timers as TimerContainer)
   })
 })

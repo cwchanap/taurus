@@ -1,12 +1,25 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
+
+// Mock cloudflare:workers module
+mock.module('cloudflare:workers', () => ({
+  DurableObject: class {
+    constructor(state: unknown, env: unknown) {
+      // @ts-expect-error - Mocking DurableObject constructor
+      this.state = state
+      // @ts-expect-error - Mocking DurableObject constructor
+      this.env = env
+    }
+  },
+}))
+
 import type { DurableObjectState } from '@cloudflare/workers-types'
+import { DrawingRoom } from './room'
 
 describe('DrawingRoom - Player Leave During Game', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let room: any
+  let room: DrawingRoom
   let mockState: Partial<DurableObjectState>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let mockEnv: any
+
+  let mockEnv: unknown
 
   beforeEach(() => {
     // Mock Durable Object state
@@ -31,22 +44,27 @@ describe('DrawingRoom - Player Leave During Game', () => {
     mockEnv = {}
 
     // Suppress unused variable warnings for setup variables
-    void room
-    void mockState
     void mockEnv
+
+    void room
+
+    // Create actual DrawingRoom instance for future test implementation
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoom(mockState as any, mockEnv as any)
   })
 
   afterEach(() => {
     // Bun test doesn't need explicit mock cleanup
   })
 
-  test('placeholder - setup verified', () => {
+  test.skip('placeholder - setup verified', () => {
+    // TODO: Implement actual setup verification
     expect(true).toBe(true)
   })
 
-  test('player who already drew leaves - adjusts drawerOrder and totalRounds', () => {
-    // This test will require significant mocking of DrawingRoom internal state
-    // We need to create a helper factory function first
-    expect(true).toBe(true) // Placeholder until we can instantiate DrawingRoom
+  test.skip('player who already drew leaves - adjusts drawerOrder and totalRounds', () => {
+    // TODO: Implement using helper factory and DrawingRoom instance
+    // This requires significant mocking of internal state which is hard to reach from outside
+    expect(true).toBe(true)
   })
 })
