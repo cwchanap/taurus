@@ -17,6 +17,33 @@ import type { PlayingState, RoundEndState } from './game-types'
 import { isPlayingState } from './game-types'
 
 /**
+ * Interface for object containing game timers
+ */
+export interface TimerContainer {
+  roundTimer: ReturnType<typeof setTimeout> | null
+  tickTimer: ReturnType<typeof setInterval> | null
+  roundEndTimer: ReturnType<typeof setTimeout> | null
+  gameEndTimer: ReturnType<typeof setTimeout> | null
+}
+
+/**
+ * Clears all game timers and resets them to null
+ *
+ * @param container - Object containing the timers
+ */
+export function clearTimers(container: TimerContainer) {
+  if (container.roundTimer) clearTimeout(container.roundTimer)
+  if (container.tickTimer) clearInterval(container.tickTimer)
+  if (container.roundEndTimer) clearTimeout(container.roundEndTimer)
+  if (container.gameEndTimer) clearTimeout(container.gameEndTimer)
+
+  container.roundTimer = null
+  container.tickTimer = null
+  container.roundEndTimer = null
+  container.gameEndTimer = null
+}
+
+/**
  * Result of handling a player leave during an active game
  */
 export interface PlayerLeaveResult {

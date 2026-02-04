@@ -54,8 +54,33 @@ describe('validateStroke', () => {
     expect(result?.id.length).toBeGreaterThan(0)
   })
 
-  test('should handle collision for generated IDs (unlikely but logic check)', () => {
-    // This is hard to test deterministically without mocking crypto.randomUUID
-    // but we can trust the logic flow if the collision test passes
+  test('should handle collision for generated IDs', () => {
+    // Spy on crypto.randomUUID to return a collision first, then a unique ID
+    const originalRandomUUID = crypto.randomUUID
+    let callCount = 0
+
+    crypto.randomUUID = () => {
+      callCount++
+      if (callCount === 1) return 'stroke-1' // Collision
+      return 'unique-id' // Success
+    }
+
+    try {
+      const existingIds = new Set(['stroke-1'])
+      // Input has no ID, so it will generate one
+      const noIdData = {
+        points: validStrokeData.points,
+        color: validStrokeData.color,
+        size: validStrokeData.size,
+      }
+
+      const result = validateStroke(noIdData, playerId, existingIds)
+
+      expect(callCount).toBe(2) // Should have called twice (collision, then retry)
+      expect(result).not.toBeNull()
+      expect(result?.id).toBe('unique-id')
+    } finally {
+      crypto.randomUUID = originalRandomUUID
+    }
   })
 })

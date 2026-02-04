@@ -1,4 +1,5 @@
 import { Stroke } from '@repo/types'
+import { randomUUID } from 'node:crypto'
 import {
   MAX_CHAT_MESSAGE_LENGTH,
   MAX_PLAYER_NAME_LENGTH,
@@ -70,7 +71,8 @@ export function isValidColor(color: unknown): color is string {
   if (typeof color !== 'string') {
     return false
   }
-  return color.length > 0 && color.length <= MAX_COLOR_LENGTH
+  const trimmed = color.trim()
+  return trimmed.length > 0 && color.length <= MAX_COLOR_LENGTH
 }
 
 /**
@@ -147,14 +149,22 @@ export function validateStroke(
 
   // Return validated stroke with ID (prefer client-provided ID if valid, otherwise generate one)
   const clientStrokeId = data.id
-  let strokeId =
-    typeof clientStrokeId === 'string' && isValidStrokeId(clientStrokeId)
-      ? clientStrokeId
-      : crypto.randomUUID()
 
-  // Ensure uniqueness if existing IDs are provided
-  if (existingStrokeIds && existingStrokeIds.has(strokeId)) {
-    strokeId = crypto.randomUUID()
+  // Use client ID if valid, otherwise generate one
+  let strokeId: string
+  if (typeof clientStrokeId === 'string' && isValidStrokeId(clientStrokeId)) {
+    strokeId = clientStrokeId
+  } else {
+    // Basic generation wrapped in a helper if we were reusing it, but inline is fine here
+    // Use globalThis.crypto if available (Cloudflare), fallback to node:crypto
+    strokeId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : randomUUID()
+  }
+
+  // Ensure uniqueness: keep regenerating if we collide with existing IDs
+  if (existingStrokeIds) {
+    while (existingStrokeIds.has(strokeId)) {
+      strokeId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : randomUUID()
+    }
   }
 
   return {

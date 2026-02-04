@@ -67,7 +67,7 @@ describe('handlePlayerLeaveInActiveGame', () => {
 
     test('should end game if remaining players < MIN_PLAYERS_TO_START', () => {
       const state = createPlayingGameState(['p1', 'p2'], 0)
-      const remainingPlayers = ['p1'] // Only 1 player left (p2 is the late joiner leaving)
+      const remainingPlayers = ['p1'] // Only 1 player left (p3 is the late joiner leaving)
 
       const result = handlePlayerLeaveInActiveGame('p3', state, remainingPlayers)
 
