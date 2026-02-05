@@ -1,5 +1,5 @@
 import { Stroke } from '@repo/types'
-import { randomUUID } from 'node:crypto'
+
 import {
   MAX_CHAT_MESSAGE_LENGTH,
   MAX_PLAYER_NAME_LENGTH,
@@ -156,14 +156,14 @@ export function validateStroke(
     strokeId = clientStrokeId
   } else {
     // Basic generation wrapped in a helper if we were reusing it, but inline is fine here
-    // Use globalThis.crypto if available (Cloudflare), fallback to node:crypto
-    strokeId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : randomUUID()
+    // Use standard Web Crypto API (available in Workers and modern Node/browsers)
+    strokeId = crypto.randomUUID()
   }
 
   // Ensure uniqueness: keep regenerating if we collide with existing IDs
   if (existingStrokeIds) {
     while (existingStrokeIds.has(strokeId)) {
-      strokeId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : randomUUID()
+      strokeId = crypto.randomUUID()
     }
   }
 
