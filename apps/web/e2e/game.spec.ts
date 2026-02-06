@@ -426,8 +426,12 @@ test.describe('Drawing Game Feature', () => {
           await hostPage
             .locator('.round-overlay')
             .waitFor({ state: 'hidden', timeout: 10000 })
-            .catch(() => {
-              // Round overlay might not be visible, that's fine
+            .catch((e: Error) => {
+              if (e.message.includes('Timeout')) {
+                console.warn('Round overlay waitFor timed out, continuing:', e.message)
+              } else {
+                throw e
+              }
             })
 
           // Check if game is already over
@@ -469,13 +473,15 @@ test.describe('Drawing Game Feature', () => {
         }
 
         // Complete round 1
-        await completeRound()
+        const round1Continues = await completeRound()
 
-        // Wait for round transition (round-end phase)
-        await hostPage.waitForTimeout(4000)
+        // Complete round 2 only if the game hasn't ended
+        if (round1Continues) {
+          // Wait for round transition (round-end phase)
+          await hostPage.waitForTimeout(4000)
 
-        // Complete round 2 (if game isn't over)
-        await completeRound()
+          await completeRound()
+        }
 
         // Wait for game to end
         await expect(hostPage.locator('.game-over-overlay')).toBeVisible({ timeout: 15000 })

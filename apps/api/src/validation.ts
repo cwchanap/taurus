@@ -72,7 +72,7 @@ export function isValidColor(color: unknown): color is string {
     return false
   }
   const trimmed = color.trim()
-  return trimmed.length > 0 && color.length <= MAX_COLOR_LENGTH
+  return trimmed.length > 0 && trimmed.length <= MAX_COLOR_LENGTH
 }
 
 /**

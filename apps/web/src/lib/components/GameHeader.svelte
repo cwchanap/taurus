@@ -28,8 +28,9 @@
 
   // Format time as MM:SS
   const formattedTime = $derived.by(() => {
-    const mins = Math.floor(timeRemaining / 60)
-    const secs = timeRemaining % 60
+    const t = Math.max(timeRemaining, 0)
+    const mins = Math.floor(t / 60)
+    const secs = t % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
   })
 

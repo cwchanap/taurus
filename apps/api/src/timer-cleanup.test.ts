@@ -34,8 +34,6 @@ describe('Timer Cleanup', () => {
     timers.roundEndTimer = setTimeout(() => {}, 5000)
     timers.gameEndTimer = setTimeout(() => {}, 10000)
 
-    timers.gameEndTimer = setTimeout(() => {}, 10000)
-
     clearTimers(timers as TimerContainer)
 
     expect(timers.roundTimer).toBeNull()
