@@ -80,7 +80,7 @@ export function calculateCorrectGuessScore(
   currentTime: number = Date.now()
 ): number {
   const timeRemaining = Math.max(0, roundEndTime - currentTime)
-  const timeRatio = timeRemaining / ROUND_DURATION_MS
+  const timeRatio = Math.min(1, Math.max(0, timeRemaining / ROUND_DURATION_MS))
   return Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
 }
 

@@ -7,6 +7,7 @@ import {
   CORRECT_GUESS_BASE_SCORE,
   DRAWER_BONUS_SCORE,
 } from './constants'
+import { calculateCorrectGuessScore } from './game-logic'
 
 describe('Vocabulary', () => {
   describe('VOCABULARY list', () => {
@@ -193,42 +194,50 @@ describe('Game Constants', () => {
 })
 
 describe('Scoring Algorithm', () => {
-  // Test the scoring formula: score = base * (1 + timeRatio * 0.5)
-  // where timeRatio = timeRemaining / ROUND_DURATION_MS
+  // Test the real scoring function: calculateCorrectGuessScore(roundEndTime, currentTime)
+  // score = base * (1 + clamp(timeRemaining / ROUND_DURATION_MS, 0, 1) * 0.5)
 
-  function calculateScore(timeRemaining: number): number {
-    const remaining = Math.max(0, timeRemaining)
-    const timeRatio = remaining / ROUND_DURATION_MS
-    return Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
+  // Helper: call the real function with a specific timeRemaining
+  function scoreWithTimeRemaining(timeRemaining: number): number {
+    const now = 100000
+    const roundEndTime = now + timeRemaining
+    return calculateCorrectGuessScore(roundEndTime, now)
   }
 
   test('should award base score when time is up', () => {
-    const score = calculateScore(0)
+    const score = scoreWithTimeRemaining(0)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
   })
 
   test('should award maximum score at start of round', () => {
-    const score = calculateScore(ROUND_DURATION_MS)
+    const score = scoreWithTimeRemaining(ROUND_DURATION_MS)
     // At full time: base * (1 + 1 * 0.5) = base * 1.5
     expect(score).toBe(Math.round(CORRECT_GUESS_BASE_SCORE * 1.5))
   })
 
   test('should award intermediate score at half time', () => {
-    const score = calculateScore(ROUND_DURATION_MS / 2)
+    const score = scoreWithTimeRemaining(ROUND_DURATION_MS / 2)
     // At half time: base * (1 + 0.5 * 0.5) = base * 1.25
     expect(score).toBe(Math.round(CORRECT_GUESS_BASE_SCORE * 1.25))
   })
 
   test('should award higher score for faster guesses', () => {
-    const fastScore = calculateScore(ROUND_DURATION_MS * 0.8)
-    const slowScore = calculateScore(ROUND_DURATION_MS * 0.2)
+    const fastScore = scoreWithTimeRemaining(ROUND_DURATION_MS * 0.8)
+    const slowScore = scoreWithTimeRemaining(ROUND_DURATION_MS * 0.2)
     expect(fastScore).toBeGreaterThan(slowScore)
   })
 
   test('should cap at base score for negative time (edge case)', () => {
     // Edge case: if timeRemaining is negative, it should be treated as 0
-    const score = calculateScore(-1000)
+    const score = scoreWithTimeRemaining(-1000)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
+  })
+
+  test('should clamp score when timeRemaining exceeds ROUND_DURATION_MS', () => {
+    // Edge case: roundEndTime is far in the future, timeRatio would be > 1
+    const score = scoreWithTimeRemaining(ROUND_DURATION_MS * 2)
+    // Should be capped at base * 1.5, not base * 2.0
+    expect(score).toBe(Math.round(CORRECT_GUESS_BASE_SCORE * 1.5))
   })
 })
 

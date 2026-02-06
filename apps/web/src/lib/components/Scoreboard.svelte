@@ -27,7 +27,7 @@
   <h3 class="title">🏆 Scoreboard</h3>
 
   <div class="scores">
-    {#each rankedPlayers as player, index}
+    {#each rankedPlayers as player, index (player.id)}
       <div class="score-row" class:is-drawing={player.isDrawing} class:is-you={player.isYou}>
         <span class="rank">
           {#if index === 0}
