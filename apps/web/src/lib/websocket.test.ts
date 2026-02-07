@@ -173,6 +173,72 @@ describe('Chat Message Types', () => {
     })
   })
 
+  describe('Init message game state for non-drawer reconnect', () => {
+    it('should omit currentWord and wordLength for non-drawer players', () => {
+      const initMessage = {
+        type: 'init',
+        playerId: 'p2',
+        player: { id: 'p2', name: 'Guesser', color: '#4ECDC4' },
+        players: [
+          { id: 'p1', name: 'Drawer', color: '#FF6B6B' },
+          { id: 'p2', name: 'Guesser', color: '#4ECDC4' },
+        ],
+        strokes: [],
+        chatHistory: [],
+        isHost: false,
+        gameState: {
+          status: 'playing' as const,
+          currentRound: 1,
+          totalRounds: 2,
+          currentDrawerId: 'p1',
+          // currentWord and wordLength intentionally omitted for non-drawers
+          roundEndTime: Date.now() + 60000,
+          scores: {},
+        },
+      }
+
+      const serialized = JSON.stringify(initMessage)
+      const parsed = JSON.parse(serialized)
+
+      // Server omits currentWord for non-drawers; wordLength may also be omitted
+      expect(parsed.gameState.currentWord).toBeUndefined()
+      // Use nullish coalescing to reset stale state (as the component should do)
+      expect(parsed.gameState.currentWord ?? '').toBe('')
+      expect(parsed.gameState.wordLength ?? 0).toBe(0)
+    })
+
+    it('should include currentWord for drawer player', () => {
+      const initMessage = {
+        type: 'init',
+        playerId: 'p1',
+        player: { id: 'p1', name: 'Drawer', color: '#FF6B6B' },
+        players: [
+          { id: 'p1', name: 'Drawer', color: '#FF6B6B' },
+          { id: 'p2', name: 'Guesser', color: '#4ECDC4' },
+        ],
+        strokes: [],
+        chatHistory: [],
+        isHost: true,
+        gameState: {
+          status: 'playing' as const,
+          currentRound: 1,
+          totalRounds: 2,
+          currentDrawerId: 'p1',
+          currentWord: 'elephant',
+          wordLength: 8,
+          roundEndTime: Date.now() + 60000,
+          scores: {},
+        },
+      }
+
+      const serialized = JSON.stringify(initMessage)
+      const parsed = JSON.parse(serialized)
+
+      expect(parsed.gameState.currentWord).toBe('elephant')
+      expect(parsed.gameState.wordLength).toBe(8)
+    })
+  })
+
   describe('Chat content validation', () => {
     const MAX_CHAT_MESSAGE_LENGTH = 500
 
