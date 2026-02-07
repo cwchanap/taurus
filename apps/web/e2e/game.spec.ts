@@ -434,6 +434,18 @@ test.describe('Drawing Game Feature', () => {
               }
             })
 
+          // Verify overlay is actually hidden after catch to avoid silently swallowing failures
+          const overlayVisible = await hostPage.locator('.round-overlay').isVisible()
+          if (overlayVisible) {
+            // Check if game ended instead of round transitioning
+            const gameOver = await hostPage.locator('.game-over-overlay').isVisible()
+            if (!gameOver) {
+              throw new Error(
+                'Round overlay is still visible and game has not ended — round transition may have stalled'
+              )
+            }
+          }
+
           // Check if game is already over
           const isOver = await hostPage.locator('.game-over-overlay').isVisible()
           if (isOver) return false

@@ -1,8 +1,9 @@
 /**
- * Pure game logic functions for testability
+ * Game logic functions for testability
  *
  * This module contains game logic extracted from DrawingRoom for unit testing.
- * All functions are pure and side-effect free.
+ * All functions are pure and side-effect free, except clearTimers which mutates
+ * its container argument in place for performance.
  */
 
 import {

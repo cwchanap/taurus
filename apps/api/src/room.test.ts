@@ -25,10 +25,10 @@ describe('DrawingRoom - Player Leave During Game', () => {
     // Mock Durable Object state
     mockState = {
       storage: {
-        get: mock(() => {}),
-        put: mock(() => {}),
-        delete: mock(() => {}),
-        list: mock(() => {}),
+        get: mock(() => Promise.resolve(undefined)),
+        put: mock(() => Promise.resolve()),
+        delete: mock(() => Promise.resolve()),
+        list: mock(() => Promise.resolve(new Map())),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
       id: {

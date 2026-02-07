@@ -197,6 +197,5 @@
   .size-btn:disabled,
   .clear-btn:disabled {
     cursor: not-allowed;
-    opacity: 0.5;
   }
 </style>

@@ -28,7 +28,7 @@ describe('validateStroke', () => {
 
     expect(result).not.toBeNull()
     expect(result?.id).not.toBe('stroke-1')
-    expect(result?.id.length).toBeGreaterThan(0) // UUID
+    expect(result?.id?.length).toBeGreaterThan(0) // UUID
   })
 
   test('should allow same ID if not in existing IDs', () => {
@@ -51,7 +51,7 @@ describe('validateStroke', () => {
 
     expect(result).not.toBeNull()
     expect(result?.id).toBeDefined()
-    expect(result?.id.length).toBeGreaterThan(0)
+    expect(result?.id?.length).toBeGreaterThan(0)
   })
 
   test('should handle collision for generated IDs', () => {
