@@ -171,7 +171,7 @@ export function validateStroke(
     id: strokeId,
     playerId,
     points: points as Point[],
-    color: data.color as string,
+    color: (data.color as string).trim(),
     size: data.size as number,
   }
 }

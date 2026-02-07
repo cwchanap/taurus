@@ -62,7 +62,7 @@ bun run deploy        # Deploy to Cloudflare Workers
 - **Canvas**: pixi.js for drawing
 - **Key paths**:
   - `src/lib/websocket.ts` - `GameWebSocket` class for server communication
-  - `src/lib/types.ts` - Shared TypeScript types (Player, Stroke, MessageType)
+  - `src/lib/types.ts` - Re-exports shared types from `@repo/types` and defines local types (Point, Room, MessageType). Import `Player`, `Stroke`, etc. from `@repo/types` for wire-format types.
   - `src/lib/components/` - UI components (Canvas, Lobby, PlayerList, Toolbar)
   - `src/routes/draw/+page.svelte` - Main drawing room page
 

@@ -394,6 +394,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
       this.gameState = result.updatedGameState
 
+      // Always clean up the flag after a short delay (in case socket is reused)
+      setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
+
       if (result.shouldEndGame) {
         this.endGame()
         return
@@ -402,10 +405,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
       if (result.shouldEndRound) {
         this.endRound(true)
       }
+    } else {
+      // Clean up the flag after a short delay (in case socket is reused)
+      setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
     }
-
-    // Clean up the flag after a short delay (in case socket is reused)
-    setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
   }
 
   /**

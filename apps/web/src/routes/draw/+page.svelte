@@ -146,7 +146,7 @@
         }
 
         wordLength = initialGameState.wordLength ?? 0
-        currentWord = initialGameState.currentWord ?? ''
+        currentWord = initialGameState.currentWord ?? undefined
 
         pageState = 'game'
         isLoading = false
