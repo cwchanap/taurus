@@ -923,7 +923,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     })
 
     // Update status temporarily
-    // Update status temporarily
     this.gameState = {
       ...this.gameState,
       status: 'round-end',
