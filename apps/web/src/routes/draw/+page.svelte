@@ -145,13 +145,8 @@
           }
         }
 
-        if (initialGameState.wordLength) {
-          wordLength = initialGameState.wordLength
-        }
-
-        if (initialGameState.currentWord) {
-          currentWord = initialGameState.currentWord
-        }
+        wordLength = initialGameState.wordLength ?? 0
+        currentWord = initialGameState.currentWord ?? ''
 
         pageState = 'game'
         isLoading = false

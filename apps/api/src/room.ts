@@ -832,21 +832,39 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
     // Broadcast round start to all players
     // Note: Send word only to the drawer
+    const deadSockets: WebSocket[] = []
     for (const ws of this.ctx.getWebSockets()) {
       const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
       if (attachment?.playerId) {
-        ws.send(
-          JSON.stringify({
-            type: 'round-start',
-            roundNumber: this.gameState.currentRound,
-            totalRounds: this.gameState.totalRounds,
-            drawerId,
-            drawerName,
-            word: attachment.playerId === drawerId ? word : undefined,
-            wordLength: word.length,
-            endTime: this.gameState.roundEndTime,
-          })
-        )
+        try {
+          ws.send(
+            JSON.stringify({
+              type: 'round-start',
+              roundNumber: this.gameState.currentRound,
+              totalRounds: this.gameState.totalRounds,
+              drawerId,
+              drawerName,
+              word: attachment.playerId === drawerId ? word : undefined,
+              wordLength: word.length,
+              endTime: this.gameState.roundEndTime,
+            })
+          )
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'InvalidStateError') {
+            deadSockets.push(ws)
+            continue
+          }
+          console.error('Unexpected round-start send error:', error)
+        }
+      }
+    }
+
+    // Close dead connections to prevent accumulation
+    for (const deadWs of deadSockets) {
+      try {
+        deadWs.close()
+      } catch {
+        // Ignore errors when closing
       }
     }
 
