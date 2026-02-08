@@ -70,6 +70,17 @@ export interface PlayerLeaveResult {
 }
 
 /**
+ * Check if a guess matches the target word (case-insensitive, trimmed)
+ *
+ * @param guess - The player's guessed word
+ * @param word - The target word to match against
+ * @returns true if the guess matches the word
+ */
+export function isCorrectGuess(guess: string, word: string): boolean {
+  return guess.toLowerCase().trim() === word.toLowerCase()
+}
+
+/**
  * Calculate score for a correct guess based on time remaining
  *
  * @param roundEndTime - The timestamp when the round will end

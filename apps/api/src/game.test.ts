@@ -7,7 +7,7 @@ import {
   CORRECT_GUESS_BASE_SCORE,
   DRAWER_BONUS_SCORE,
 } from './constants'
-import { calculateCorrectGuessScore } from './game-logic'
+import { calculateCorrectGuessScore, isCorrectGuess } from './game-logic'
 
 describe('Vocabulary', () => {
   describe('VOCABULARY list', () => {
@@ -277,11 +277,7 @@ describe('Game State Transitions', () => {
 })
 
 describe('Correct Guess Detection', () => {
-  // Simulates the check in room.ts handleChat
-
-  function isCorrectGuess(guess: string, word: string): boolean {
-    return guess.toLowerCase().trim() === word.toLowerCase()
-  }
+  // Uses the real isCorrectGuess function from game-logic.ts (also used by room.ts)
 
   test('should detect exact match', () => {
     expect(isCorrectGuess('cat', 'cat')).toBe(true)
