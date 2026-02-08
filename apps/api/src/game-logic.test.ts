@@ -51,7 +51,7 @@ describe('handlePlayerLeaveInActiveGame', () => {
   describe('when player leaving is not in drawer order (late joiner)', () => {
     test('should not affect drawer order or round count', () => {
       const state = createPlayingGameState(['p1', 'p2', 'p3'], 0)
-      const remainingPlayers = ['p1', 'p2', 'p3', 'p4'] // p4 is late joiner
+      const remainingPlayers = ['p1', 'p2', 'p3'] // p4 was late joiner, now leaving
 
       const result = handlePlayerLeaveInActiveGame('p4', state, remainingPlayers)
 

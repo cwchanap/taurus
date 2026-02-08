@@ -26,9 +26,9 @@
 
   // Format time as MM:SS
   const formattedTime = $derived.by(() => {
-    const t = Math.max(timeRemaining, 0)
-    const mins = Math.floor(t / 60)
-    const secs = t % 60
+    const totalSeconds = Math.floor(Math.max(timeRemaining, 0))
+    const mins = Math.floor(totalSeconds / 60)
+    const secs = totalSeconds % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
   })
 
@@ -48,8 +48,10 @@
         <span class="word">{currentWord || '—'}</span>
       {:else}
         <span class="word-label">Guess:</span>
-        <span class="word masked">{maskedWord}</span>
-        <span class="word-hint">({wordLength} letters)</span>
+        {#if wordLength > 0}
+          <span class="word masked">{maskedWord}</span>
+          <span class="word-hint">({wordLength} letters)</span>
+        {/if}
       {/if}
     </div>
 

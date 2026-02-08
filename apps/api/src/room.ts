@@ -56,6 +56,7 @@ import {
   handlePlayerLeaveInActiveGame,
   findNextDrawer,
   clearTimers,
+  isCorrectGuess,
   type TimerContainer,
 } from './game-logic'
 
@@ -598,10 +599,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Check for correct guess during active game
     if (this.gameState.status === 'playing' && this.gameState.currentWord) {
-      const isCorrectWord =
-        sanitizedContent.toLowerCase() === this.gameState.currentWord.toLowerCase()
-
-      if (isCorrectWord) {
+      if (isCorrectGuess(sanitizedContent, this.gameState.currentWord)) {
         // If drawer or already correct, suppress message to avoid leaking word
         if (
           playerId === this.gameState.currentDrawerId ||

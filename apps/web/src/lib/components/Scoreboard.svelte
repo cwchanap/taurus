@@ -99,6 +99,10 @@
     background: rgb(255 255 255 / 0.08);
   }
 
+  .score-row.is-drawing.is-you {
+    background: linear-gradient(135deg, rgb(78 205 196 / 0.15), rgb(69 183 209 / 0.15));
+  }
+
   .rank {
     min-width: 24px;
     text-align: center;
