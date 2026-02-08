@@ -59,7 +59,7 @@ import {
   type TimerContainer,
 } from './game-logic'
 
-export class DrawingRoom extends DurableObject<CloudflareBindings> {
+export class DrawingRoom extends DurableObject<CloudflareBindings> implements TimerContainer {
   private strokes: Stroke[] = []
   private initialized = false
   private created = false
@@ -84,10 +84,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
 
   // Game state
   private gameState: GameState = createInitialGameState()
-  private roundTimer: ReturnType<typeof setTimeout> | null = null
-  private tickTimer: ReturnType<typeof setInterval> | null = null
-  private roundEndTimer: ReturnType<typeof setTimeout> | null = null
-  private gameEndTimer: ReturnType<typeof setTimeout> | null = null
+  roundTimer: ReturnType<typeof setTimeout> | null = null
+  tickTimer: ReturnType<typeof setInterval> | null = null
+  roundEndTimer: ReturnType<typeof setTimeout> | null = null
+  gameEndTimer: ReturnType<typeof setTimeout> | null = null
 
   private async ensureInitialized() {
     if (!this.initialized) {
@@ -707,7 +707,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
     }
 
     this.gameState = {
-      status: 'lobby',
+      status: 'starting',
       currentRound: 0,
       totalRounds: shuffledOrder.length,
       currentDrawerId: null,
@@ -1071,7 +1071,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> {
    * Clear all game-related timers
    */
   private clearTimers() {
-    clearTimers(this as unknown as TimerContainer)
+    clearTimers(this)
   }
 
   /**

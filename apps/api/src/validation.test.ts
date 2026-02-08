@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { validateStroke } from './validation'
+import { validateStroke, isValidStrokeId } from './validation'
+
+describe('isValidStrokeId', () => {
+  test('should reject whitespace-only strings', () => {
+    expect(isValidStrokeId('   ')).toBe(false)
+    expect(isValidStrokeId('\t\n')).toBe(false)
+    expect(isValidStrokeId('  \n  ')).toBe(false)
+  })
+
+  test('should accept valid IDs after trimming', () => {
+    expect(isValidStrokeId('  valid-id  ')).toBe(true)
+    expect(isValidStrokeId('\ttrimmed\n')).toBe(true)
+  })
+})
 
 describe('validateStroke', () => {
   const validStrokeData = {
@@ -20,15 +33,13 @@ describe('validateStroke', () => {
     expect(result?.playerId).toBe(playerId)
   })
 
-  test('should generate new ID if client ID is collision', () => {
+  test('should reject stroke if client ID collides with existing ID', () => {
     const existingIds = new Set(['stroke-1'])
 
-    // Input has ID 'stroke-1' which is in existingIds
+    // Input has ID 'stroke-1' which is in existingIds - should be rejected
     const result = validateStroke(validStrokeData, playerId, existingIds)
 
-    expect(result).not.toBeNull()
-    expect(result?.id).not.toBe('stroke-1')
-    expect(result?.id?.length).toBeGreaterThan(0) // UUID
+    expect(result).toBeNull()
   })
 
   test('should allow same ID if not in existing IDs', () => {

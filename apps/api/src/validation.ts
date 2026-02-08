@@ -92,7 +92,8 @@ export function isValidStrokeId(strokeId: unknown): strokeId is string {
   if (typeof strokeId !== 'string') {
     return false
   }
-  return strokeId.length > 0 && strokeId.length <= 100
+  const trimmed = strokeId.trim()
+  return trimmed.length > 0 && trimmed.length <= 100
 }
 
 /**
@@ -147,15 +148,19 @@ export function validateStroke(
     return null
   }
 
-  // Return validated stroke with ID (prefer client-provided ID if valid, otherwise generate one)
+  // Return validated stroke with ID (reject client-provided ID if it collides with existing)
   const clientStrokeId = data.id
 
-  // Use client ID if valid, otherwise generate one
+  // Use client ID if valid and not colliding, otherwise reject
   let strokeId: string
   if (typeof clientStrokeId === 'string' && isValidStrokeId(clientStrokeId)) {
+    if (existingStrokeIds?.has(clientStrokeId)) {
+      // Reject collision - client ID already exists
+      console.warn('Invalid stroke data: client-provided ID collides with existing stroke')
+      return null
+    }
     strokeId = clientStrokeId
   } else {
-    // Basic generation wrapped in a helper if we were reusing it, but inline is fine here
     // Use standard Web Crypto API (available in Workers and modern Node/browsers)
     strokeId = crypto.randomUUID()
   }
@@ -170,7 +175,7 @@ export function validateStroke(
   return {
     id: strokeId,
     playerId,
-    points: points as Point[],
+    points: points.map((p) => ({ x: Number(p.x), y: Number(p.y) })),
     color: (data.color as string).trim(),
     size: data.size as number,
   }

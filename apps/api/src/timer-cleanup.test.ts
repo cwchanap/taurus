@@ -58,8 +58,6 @@ describe('Timer Cleanup', () => {
     timers.tickTimer = setInterval(() => {}, 100)
     // roundEndTimer and gameEndTimer remain null
 
-    // roundEndTimer and gameEndTimer remain null
-
     clearTimers(timers as TimerContainer)
 
     expect(timers.roundTimer).toBeNull()
