@@ -21,10 +21,8 @@
     totalRounds,
   }: Props = $props()
 
-  // Generate masked word (underscores with spaces)
-  const maskedWord = $derived(
-    currentWord ? currentWord : wordLength > 0 ? Array(wordLength).fill('_').join(' ') : ''
-  )
+  // Generate masked word (underscores with spaces) - always mask, never reveal
+  const maskedWord = $derived(wordLength > 0 ? Array(wordLength).fill('_').join(' ') : '')
 
   // Format time as MM:SS
   const formattedTime = $derived.by(() => {
@@ -73,7 +71,7 @@
       {#if isCurrentDrawer}
         <span class="drawer-badge you">🎨 You're drawing!</span>
       {:else}
-        <span class="drawer-badge">🎨 {currentDrawerName} is drawing</span>
+        <span class="drawer-badge">🎨 {currentDrawerName || 'Someone'} is drawing</span>
       {/if}
     </div>
   </div>

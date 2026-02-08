@@ -1,4 +1,4 @@
-export type GameStatus = 'lobby' | 'playing' | 'round-end' | 'game-over'
+export type GameStatus = 'lobby' | 'starting' | 'playing' | 'round-end' | 'game-over'
 
 export interface ScoreEntry {
   score: number

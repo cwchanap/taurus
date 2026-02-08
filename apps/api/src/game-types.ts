@@ -28,6 +28,18 @@ export type LobbyState = BaseGameState & {
   roundEndTime: null
 }
 
+// Starting state - game initialized but round not yet started
+export type StartingState = BaseGameState & {
+  status: 'starting'
+  currentRound: 0
+  totalRounds: number
+  currentDrawerId: null
+  currentWord: null
+  wordLength: null
+  roundStartTime: null
+  roundEndTime: null
+}
+
 // Playing state - active round in progress
 export type PlayingState = BaseGameState & {
   status: 'playing'
@@ -67,11 +79,15 @@ export type GameOverState = BaseGameState & {
 }
 
 // Discriminated union of all game states
-export type GameState = LobbyState | PlayingState | RoundEndState | GameOverState
+export type GameState = LobbyState | StartingState | PlayingState | RoundEndState | GameOverState
 
 // Type guards for narrowing GameState
 export function isLobbyState(state: GameState): state is LobbyState {
   return state.status === 'lobby'
+}
+
+export function isStartingState(state: GameState): state is StartingState {
+  return state.status === 'starting'
 }
 
 export function isPlayingState(state: GameState): state is PlayingState {
