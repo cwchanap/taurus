@@ -205,6 +205,7 @@
         currentWord = undefined
         currentDrawerId = null
         currentDrawerName = ''
+        wordLength = 0 // Reset to avoid showing stale masked word
       },
       onGameOver: (finalScores, winners) => {
         scores = finalScores

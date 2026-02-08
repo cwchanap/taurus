@@ -42,6 +42,7 @@ import {
   createInitialGameState,
   scoresToRecord,
   type RoundResult,
+  isPlayingState,
 } from './game-types'
 import {
   validateMessageContent,
@@ -58,6 +59,9 @@ import {
   clearTimers,
   isCorrectGuess,
   type TimerContainer,
+  checkMessageRateLimit,
+  checkStrokeRateLimit,
+  type RateLimitState,
 } from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> implements TimerContainer {
@@ -68,14 +72,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private storageWriteTimer: ReturnType<typeof setTimeout> | null = null
   private storageWriteDelay = 1000 // Reduced to 1 second for stroke data
 
-  // Rate limiting
-  private playerLastMessageTime: Map<string, number> = new Map()
-  private playerMessageCount: Map<string, number> = new Map()
-  private readonly RATE_LIMIT_WINDOW = 1000 // 1 second
-  private readonly MAX_MESSAGES_PER_WINDOW = 30
-  private readonly MAX_STROKES_PER_WINDOW = 5
-  private playerStrokeCount: Map<string, number> = new Map()
-  private playerLastStrokeWindowTime: Map<string, number> = new Map()
+  // Rate limiting - using timestamp array approach from game-logic.ts
+  private playerMessageTimestamps: Map<string, RateLimitState> = new Map()
+  private playerStrokeTimestamps: Map<string, RateLimitState> = new Map()
 
   // Track players being cleaned up to prevent duplicate leave broadcasts
   private cleanedPlayers = new Set<string>()
@@ -379,10 +378,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     })
 
     // Clean up rate limiting data
-    this.playerLastMessageTime.delete(playerId)
-    this.playerMessageCount.delete(playerId)
-    this.playerStrokeCount.delete(playerId)
-    this.playerLastStrokeWindowTime.delete(playerId)
+    this.playerMessageTimestamps.delete(playerId)
+    this.playerStrokeTimestamps.delete(playerId)
 
     // Handle game state when player leaves during active game
     if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {
@@ -404,6 +401,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       if (result.shouldEndRound) {
         this.endRound(true)
       }
+
+      // Check if all remaining guessers have guessed correctly (early round end)
+      if (!result.shouldEndRound && isPlayingState(this.gameState)) {
+        if (this.gameState.correctGuessers.size >= this.gameState.roundGuessers.size) {
+          this.endRound(false)
+        }
+      }
     } else {
       // Clean up the flag after a short delay (in case socket is reused)
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
@@ -411,7 +415,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   }
 
   /**
-   * Checks and updates rate limits for a player.
+   * Checks and updates rate limits for a player using tested pure functions.
    * @param playerId The player ID
    * @param isNewStroke Whether this message counts as a new stroke
    * @returns true if allowed, false if rate limited
@@ -419,34 +423,35 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private checkRateLimit(playerId: string, isNewStroke: boolean): boolean {
     const now = Date.now()
 
-    // 1. Total message rate limit (all types: join, stroke, update, chat, clear)
-    const lastMsgWindowStart = this.playerLastMessageTime.get(playerId) || 0
-    if (now - lastMsgWindowStart > this.RATE_LIMIT_WINDOW) {
-      this.playerLastMessageTime.set(playerId, now)
-      this.playerMessageCount.set(playerId, 1)
-    } else {
-      const currentMessageCount = this.playerMessageCount.get(playerId) || 0
-      if (currentMessageCount >= this.MAX_MESSAGES_PER_WINDOW) {
-        return false
-      }
-      this.playerMessageCount.set(playerId, currentMessageCount + 1)
+    // Get or initialize message rate limit state
+    let messageState = this.playerMessageTimestamps.get(playerId)
+    if (!messageState) {
+      messageState = { timestamps: [] }
     }
 
-    // 2. Stroke-specific rate limit (only for NEW strokes)
+    // Check message rate limit
+    const messageResult = checkMessageRateLimit(messageState, now)
+    if (!messageResult.allowed) {
+      return false
+    }
+
+    // Update message state
+    this.playerMessageTimestamps.set(playerId, messageResult.updatedState)
+
+    // Check stroke-specific rate limit (only for NEW strokes)
     if (isNewStroke) {
-      const lastStrokeWindowStart = this.playerLastStrokeWindowTime.get(playerId) || 0
-      if (now - lastStrokeWindowStart > this.RATE_LIMIT_WINDOW) {
-        this.playerLastStrokeWindowTime.set(playerId, now)
-        this.playerStrokeCount.set(playerId, 1)
-      } else {
-        const currentStrokeCount = this.playerStrokeCount.get(playerId) || 0
-        if (currentStrokeCount >= this.MAX_STROKES_PER_WINDOW) {
-          // If we block the stroke, we should probably "refund" the message count
-          // but for simplicity and strictness we treat the blocked attempt as a message
-          return false
-        }
-        this.playerStrokeCount.set(playerId, currentStrokeCount + 1)
+      let strokeState = this.playerStrokeTimestamps.get(playerId)
+      if (!strokeState) {
+        strokeState = { timestamps: [] }
       }
+
+      const strokeResult = checkStrokeRateLimit(strokeState, now)
+      if (!strokeResult.allowed) {
+        return false
+      }
+
+      // Update stroke state
+      this.playerStrokeTimestamps.set(playerId, strokeResult.updatedState)
     }
 
     return true
@@ -1074,8 +1079,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
    * Get player name by ID
    */
   private getPlayerName(playerId: string): string {
+    // Check connected players first
     const players = this.getPlayers()
     const player = players.find((p) => p.id === playerId)
-    return player?.name || 'Unknown'
+    if (player) return player.name
+
+    // Fallback to scores map (stores name at time of score entry)
+    return this.gameState.scores.get(playerId)?.name || 'Unknown'
   }
 }

@@ -1,13 +1,5 @@
 import { MAX_CHAT_HISTORY } from './constants'
-
-export interface ChatMessage {
-  id: string
-  playerId: string
-  playerName: string
-  playerColor: string
-  content: string
-  timestamp: number
-}
+import type { ChatMessage } from '@repo/types'
 
 export class ChatHistory {
   private messages: ChatMessage[] = []

@@ -142,7 +142,7 @@ export interface RoundEndMessage {
 export interface GameOverMessage {
   type: 'game-over'
   finalScores: Record<string, { score: number; name: string }>
-  winner: { playerId: string; playerName: string; score: number } | null
+  winners: { playerId: string; playerName: string; score: number }[]
 }
 
 export interface CorrectGuessMessage {
