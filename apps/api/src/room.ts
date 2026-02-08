@@ -96,8 +96,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       const storedChatHistory = (await this.ctx.storage.get<ChatMessage[]>('chatHistory')) || []
       this.chatHistory.setMessages(storedChatHistory)
 
-      // Migration: If we have strokes but no created flag, assume it's a legacy room
-      if (!this.created && this.strokes.length > 0) {
+      // Migration: If we have strokes or chat history but no created flag, assume it's a legacy room
+      if (!this.created && (this.strokes.length > 0 || this.chatHistory.getMessages().length > 0)) {
         this.created = true
         await this.storagePutWithRetry('created', true)
       }
@@ -175,9 +175,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // Let's check `created` in WS connection.
 
       if (!this.created) {
-        // Should we support handling join for legacy rooms that might be empty?
-        // We did the migration check in ensureInitialized.
-        // If strokes are empty and created is false, it's truly a non-existent room.
+        // Legacy rooms with strokes or chat history are preserved via migration in ensureInitialized
         return new Response('Room not found', { status: 404 })
       }
 
