@@ -699,7 +699,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Initialize game state
     const playerIds = players.map((p) => p.id)
-    // Shuffle player order for drawing
     // Shuffle player order for drawing (Fisher-Yates)
     const shuffledOrder = [...playerIds]
     for (let i = shuffledOrder.length - 1; i > 0; i--) {
