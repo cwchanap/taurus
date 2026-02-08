@@ -141,7 +141,7 @@
           if (drawer) {
             currentDrawerName = drawer.name
           } else {
-            currentDrawerName = 'Unknown'
+            currentDrawerName = scores[currentDrawerId]?.name || 'Unknown'
           }
         }
 
