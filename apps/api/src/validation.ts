@@ -149,17 +149,17 @@ export function validateStroke(
   }
 
   // Return validated stroke with ID (reject client-provided ID if it collides with existing)
-  const clientStrokeId = data.id
+  const trimmedClientId = typeof data.id === 'string' ? data.id.trim() : data.id
 
   // Use client ID if valid and not colliding, otherwise reject
   let strokeId: string
-  if (typeof clientStrokeId === 'string' && isValidStrokeId(clientStrokeId)) {
-    if (existingStrokeIds?.has(clientStrokeId)) {
+  if (typeof trimmedClientId === 'string' && isValidStrokeId(trimmedClientId)) {
+    if (existingStrokeIds?.has(trimmedClientId)) {
       // Reject collision - client ID already exists
       console.warn('Invalid stroke data: client-provided ID collides with existing stroke')
       return null
     }
-    strokeId = clientStrokeId
+    strokeId = trimmedClientId
   } else {
     // Use standard Web Crypto API (available in Workers and modern Node/browsers)
     strokeId = crypto.randomUUID()

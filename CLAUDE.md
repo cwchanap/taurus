@@ -106,7 +106,8 @@ Common TypeScript types shared between frontend and backend:
 Run: `bun test`
 
 - Game logic: `apps/api/src/game-logic.test.ts` - pure functions for testability
-- Validation: `apps/api/src/chat.test.ts` - message validation, sanitization
+- Validation: `apps/api/src/validation.test.ts` - stroke validation, ID collision handling
+- Chat: `apps/api/src/chat.test.ts` - message validation, sanitization
 - Vocabulary: `apps/api/src/game.test.ts` - word selection logic
 - Timer cleanup: `apps/api/src/timer-cleanup.test.ts` - timer management
 
