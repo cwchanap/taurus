@@ -77,7 +77,7 @@ export interface PlayerLeaveResult {
  * @returns true if the guess matches the word
  */
 export function isCorrectGuess(guess: string, word: string): boolean {
-  return guess.toLowerCase().trim() === word.toLowerCase()
+  return guess.toLowerCase().trim() === word.toLowerCase().trim()
 }
 
 /**

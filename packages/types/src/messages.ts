@@ -68,7 +68,7 @@ export type ServerMessage =
       drawerId: string
       drawerName: string
       word?: string
-      wordLength: number
+      wordLength?: number
       endTime: number
     }
   | {
