@@ -448,8 +448,8 @@ describe('WebSocket reconnection', () => {
       // Disconnect intentionally
       gameWs.disconnect()
 
-      // The close handler will be called since we set readyState to CLOSED
-      // But no reconnection should happen
+      // Must call simulateClose() to trigger the onclose handler since disconnect() only closes from client side
+      mockWebSocketInstances[0].simulateClose()
 
       vi.advanceTimersByTime(100000)
       expect(mockWebSocketInstances).toHaveLength(1)

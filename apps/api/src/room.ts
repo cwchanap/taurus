@@ -174,10 +174,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // If WS allows connection, client thinks it works.
       // Let's check `created` in WS connection.
 
-      if (!this.created) {
-        // Legacy rooms with strokes or chat history are preserved via migration in ensureInitialized
-        return new Response('Room not found', { status: 404 })
-      }
+      // Allow WebSocket connections even if !this.created
+      // Pre-existing empty rooms (created before the `created` flag) should still accept players
+      // When the first player joins via handleJoin, ensureInitialized() will set this.created = true
+      // The migration in ensureInitialized() handles legacy rooms with strokes/chat history
 
       const upgradeHeader = request.headers.get('Upgrade')
       if (!upgradeHeader || upgradeHeader !== 'websocket') {
