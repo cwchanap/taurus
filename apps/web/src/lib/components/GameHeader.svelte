@@ -1,6 +1,8 @@
 <script lang="ts">
+  import type { GameStatus } from '$lib/types'
+
   interface Props {
-    status: 'lobby' | 'playing' | 'round-end' | 'game-over'
+    status: GameStatus
     currentWord: string | undefined
     wordLength: number
     timeRemaining: number

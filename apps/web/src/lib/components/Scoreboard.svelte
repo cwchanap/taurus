@@ -1,6 +1,15 @@
 <script lang="ts">
   import type { Player, ScoreEntry } from '$lib/types'
 
+  interface RankedPlayer {
+    id: string
+    name: string
+    color: string
+    score: number
+    isDrawing: boolean
+    isYou: boolean
+  }
+
   interface Props {
     scores: Record<string, ScoreEntry>
     players: Player[]
@@ -10,17 +19,37 @@
 
   let { scores, players, currentDrawerId, currentPlayerId }: Props = $props()
 
-  // Sort players by score (descending)
-  const rankedPlayers = $derived(
-    [...players]
-      .map((p) => ({
-        ...p,
+  // Merge scores with players to show all participants (including disconnected)
+  const rankedPlayers = $derived.by(() => {
+    // Create a map of all players from scores
+    const allPlayers = new Map<string, RankedPlayer>()
+
+    // Add all scored players first
+    for (const [id, scoreInfo] of Object.entries(scores)) {
+      allPlayers.set(id, {
+        id,
+        name: scoreInfo.name,
+        color: '#888888', // Default gray for disconnected players
+        score: scoreInfo.score,
+        isDrawing: id === currentDrawerId,
+        isYou: id === currentPlayerId,
+      })
+    }
+
+    // Override with connected players (they have color info)
+    for (const p of players) {
+      allPlayers.set(p.id, {
+        id: p.id,
+        name: p.name,
+        color: p.color,
         score: scores[p.id]?.score ?? 0,
         isDrawing: p.id === currentDrawerId,
         isYou: p.id === currentPlayerId,
-      }))
-      .sort((a, b) => b.score - a.score)
-  )
+      })
+    }
+
+    return Array.from(allPlayers.values()).sort((a, b) => b.score - a.score)
+  })
 </script>
 
 <div class="scoreboard">
