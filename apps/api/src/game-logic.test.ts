@@ -64,7 +64,9 @@ describe('handlePlayerLeaveInActiveGame', () => {
       expect(result.updatedGameState.correctGuessers.has('p4')).toBe(false)
       expect(result.updatedGameState.roundGuessers.has('p4')).toBe(false)
     })
+  })
 
+  describe('when non-drawer participant leaves', () => {
     test('should end game if remaining players < MIN_PLAYERS_TO_START', () => {
       const state = createPlayingGameState(['p1', 'p2'], 0)
       const remainingPlayers = ['p1'] // Only 1 player left after p2 leaves
@@ -74,9 +76,7 @@ describe('handlePlayerLeaveInActiveGame', () => {
       expect(result.shouldEndGame).toBe(true)
       expect(result.shouldEndRound).toBe(false)
     })
-  })
 
-  describe('when non-drawer participant leaves', () => {
     test('should remove player from drawer order and adjust rounds', () => {
       const state = createPlayingGameState(['p1', 'p2', 'p3'], 0)
       const remainingPlayers = ['p1', 'p2'] // p3 leaving

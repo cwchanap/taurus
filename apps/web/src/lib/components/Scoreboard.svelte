@@ -86,6 +86,7 @@
     gap: 8px;
     padding: 8px 10px;
     background: rgb(255 255 255 / 0.05);
+    border: 1px solid transparent;
     border-radius: 8px;
     transition: all 0.2s ease;
   }

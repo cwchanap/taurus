@@ -188,9 +188,10 @@ export function handlePlayerLeaveInActiveGame(
     usedWords: new Set(gameState.usedWords),
   }
 
-  // Remove from correct guessers and round guessers
+  // Remove from correct guessers, round guessers, and round guesser scores
   baseClone.correctGuessers.delete(leavingPlayerId)
   baseClone.roundGuessers.delete(leavingPlayerId)
+  baseClone.roundGuesserScores.delete(leavingPlayerId)
 
   // Find the player's index in drawer order
   const removedIndex = baseClone.drawerOrder.indexOf(leavingPlayerId)
