@@ -183,7 +183,7 @@
       onGameStarted: (rounds, drawerOrder, initialScores) => {
         totalRounds = rounds
         scores = initialScores
-        gameStatus = 'playing'
+        gameStatus = 'starting'
       },
       onRoundStart: (round, rounds, drawerId, drawerNameVal, word, wordLen, endTime) => {
         roundNumber = round

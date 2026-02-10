@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import type { Player, Stroke, ChatMessage } from '@repo/types'
 import { ChatHistory } from './chat-history'
+import { gameStateToWire } from './game-types'
 
 interface Point {
   x: number
@@ -174,10 +175,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // If WS allows connection, client thinks it works.
       // Let's check `created` in WS connection.
 
-      // Allow WebSocket connections even if !this.created
-      // Pre-existing empty rooms (created before the `created` flag) should still accept players
-      // When the first player joins via handleJoin, ensureInitialized() will set this.created = true
-      // The migration in ensureInitialized() handles legacy rooms with strokes/chat history
+      // Check if room was created via API before allowing WebSocket connections
+      // This prevents users from 'activating' random room codes just by joining
+      if (!this.created) {
+        return new Response('Room not found', { status: 404 })
+      }
+
+      // Note: Legacy migration is now complete. Rooms must be created via POST /api/rooms
+      // before WebSocket connections are accepted.
 
       const upgradeHeader = request.headers.get('Upgrade')
       if (!upgradeHeader || upgradeHeader !== 'websocket') {
@@ -324,17 +329,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         strokes: this.strokes,
         chatHistory: this.chatHistory.getMessages(),
         isHost: playerId === this.hostPlayerId,
-        gameState: {
-          status: this.gameState.status,
-          currentRound: this.gameState.currentRound,
-          totalRounds: this.gameState.totalRounds,
-          currentDrawerId: this.gameState.currentDrawerId,
-          roundEndTime: this.gameState.roundEndTime,
-          currentWord:
-            playerId === this.gameState.currentDrawerId ? this.gameState.currentWord : undefined,
-          wordLength: this.gameState.wordLength ?? undefined,
-          scores: scoresToRecord(this.gameState.scores),
-        },
+        gameState: gameStateToWire(this.gameState, playerId === this.gameState.currentDrawerId),
       })
     )
 
@@ -527,7 +522,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     await this.ensureInitialized()
 
-    const stroke = this.strokes.find((s) => s.id === data.strokeId && s.playerId === playerId)
+    const trimmedStrokeId = data.strokeId.trim()
+    const stroke = this.strokes.find((s) => s.id === trimmedStrokeId && s.playerId === playerId)
     if (stroke) {
       // Check if stroke has reached maximum points
       if (stroke.points.length >= MAX_STROKE_POINTS) {
@@ -610,6 +606,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           playerId === this.gameState.currentDrawerId ||
           this.gameState.correctGuessers.has(playerId)
         ) {
+          // Send feedback to drawer/early guesser that their message was suppressed
+          try {
+            ws.send(
+              JSON.stringify({
+                type: 'system-message',
+                content: 'Your message was suppressed to prevent revealing the answer word.',
+              })
+            )
+          } catch {
+            // Ignore send errors
+          }
           return
         }
 
@@ -745,6 +752,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Only host can reset the game
     if (playerId !== this.hostPlayerId) {
       console.warn(`Player ${playerId} attempted to reset game but is not the host`)
+      return
+    }
+
+    // Only allow reset from game-over or lobby state
+    if (this.gameState.status !== 'game-over' && this.gameState.status !== 'lobby') {
+      console.warn(`Cannot reset game: game is currently in ${this.gameState.status} status`)
       return
     }
 
@@ -968,7 +981,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Start next round after delay (unless skipping)
     if (skipToNext) {
-      this.startRound()
+      // Give a short delay so clients can see round results even when skipping
+      if (this.roundEndTimer) {
+        clearTimeout(this.roundEndTimer)
+      }
+      this.roundEndTimer = setTimeout(() => {
+        if (this.gameState.status === 'round-end' || this.gameState.status === 'playing') {
+          this.startRound()
+        }
+      }, 2000) // 2 second break even when skipping (drawer left)
     } else {
       if (this.roundEndTimer) {
         clearTimeout(this.roundEndTimer)
@@ -987,14 +1008,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private endGame() {
     this.clearTimers()
 
-    // Find winner
-    // Find winners (handle ties)
+    // Capture snapshot of scores and player IDs at game end time
+    // to prevent disconnected players from being excluded during the delay
+    const scoreSnapshot = new Map(this.gameState.scores)
+    const playerIdsSnapshot = new Set(scoreSnapshot.keys())
+
+    // Find winners (handle ties) using the snapshot
     let winners: { playerId: string; playerName: string; score: number }[] = []
     let highestScore = -1
-    const activePlayerIds = new Set(this.getPlayers().map((player) => player.id))
 
-    for (const [playerId, scoreInfo] of this.gameState.scores) {
-      if (!activePlayerIds.has(playerId)) {
+    for (const [playerId, scoreInfo] of scoreSnapshot) {
+      if (!playerIdsSnapshot.has(playerId)) {
         continue
       }
 
@@ -1016,12 +1040,20 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       }
     }
 
-    // Broadcast game over
+    // Broadcast game over using the snapshot
     this.broadcast({
       type: 'game-over',
-      finalScores: scoresToRecord(this.gameState.scores),
+      finalScores: scoresToRecord(scoreSnapshot),
       winners,
     })
+
+    // Clear strokes to prevent stale canvas on next game
+    this.strokes = []
+    if (this.storageWriteTimer) {
+      clearTimeout(this.storageWriteTimer)
+      this.storageWriteTimer = null
+    }
+    this.ctx.waitUntil(this.storageDeleteWithRetry('strokes'))
 
     // Reset to lobby state
     this.gameState = createInitialGameState()

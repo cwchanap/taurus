@@ -119,6 +119,17 @@ describe('handlePlayerLeaveInActiveGame', () => {
   })
 
   describe('when current drawer leaves', () => {
+    test('should decrement currentRound to 0 when first drawer leaves in round 1', () => {
+      const state = createPlayingGameState(['p1', 'p2', 'p3'], 0) // p1 is current drawer (round 1)
+      const remainingPlayers = ['p2', 'p3'] // p1 leaving (first drawer)
+
+      const result = handlePlayerLeaveInActiveGame('p1', state, remainingPlayers)
+
+      // currentRound should be 0, not 1, so findNextDrawer starts from round 1 (index 0 = p2)
+      expect(result.updatedGameState.currentRound).toBe(0)
+      expect(result.updatedGameState.drawerOrder).toEqual(['p2', 'p3'])
+    })
+
     test('should end round immediately', () => {
       const state = createPlayingGameState(['p1', 'p2', 'p3'], 1) // p2 is current drawer
       const remainingPlayers = ['p1', 'p3'] // p2 leaving
