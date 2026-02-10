@@ -107,7 +107,7 @@ describe('handlePlayerLeaveInActiveGame', () => {
       expect(result.updatedGameState.currentRound).toBe(2) // Decremented from 3 to 2
     })
 
-    test('should end game if remaining players < MIN_PLAYERS_TO_START', () => {
+    test('should end game when only one player remains after non-drawer leaves', () => {
       const state = createPlayingGameState(['p1', 'p2', 'p3'], 0)
       const remainingPlayers = ['p1'] // Only 1 player left
 
