@@ -181,10 +181,12 @@ test.describe('Drawing Game Feature', () => {
         // Guesser should see masked word with underscores
         if (playerWordLabel === 'Guess:') {
           const guesserWord = await playerPage.locator('.word.masked').textContent()
+          expect(guesserWord).not.toBeNull()
           expect(guesserWord).toMatch(/^[_ ]+$/) // Only underscores and spaces
         } else {
           const guesserWord = await hostPage.locator('.word.masked').textContent()
-          expect(guesserWord).toMatch(/^[_ ]+$/)
+          expect(guesserWord).not.toBeNull()
+          expect(guesserWord).toMatch(/^[_ ]+$/) // Only underscores and spaces
         }
       } finally {
         await context1.close()
