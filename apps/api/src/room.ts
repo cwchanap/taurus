@@ -527,7 +527,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     if (stroke) {
       // Check if stroke has reached maximum points
       if (stroke.points.length >= MAX_STROKE_POINTS) {
-        console.warn(`Stroke ${data.strokeId} has reached maximum points limit`)
+        console.warn(`Stroke ${trimmedStrokeId} has reached maximum points limit`)
         return
       }
 
@@ -539,7 +539,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.broadcast(
         {
           type: 'stroke-update',
-          strokeId: data.strokeId,
+          strokeId: trimmedStrokeId,
           point: data.point,
         },
         ws
