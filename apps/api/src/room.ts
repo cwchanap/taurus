@@ -1008,20 +1008,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private endGame() {
     this.clearTimers()
 
-    // Capture snapshot of scores and player IDs at game end time
-    // to prevent disconnected players from being excluded during the delay
+    // Capture snapshot of scores at game end time
+    // to preserve disconnected players' scores in final results
     const scoreSnapshot = new Map(this.gameState.scores)
-    const playerIdsSnapshot = new Set(scoreSnapshot.keys())
 
     // Find winners (handle ties) using the snapshot
     let winners: { playerId: string; playerName: string; score: number }[] = []
     let highestScore = -1
 
     for (const [playerId, scoreInfo] of scoreSnapshot) {
-      if (!playerIdsSnapshot.has(playerId)) {
-        continue
-      }
-
       if (scoreInfo.score > highestScore) {
         highestScore = scoreInfo.score
         winners = [

@@ -61,7 +61,7 @@
 
   // Derived state
   const isCurrentDrawer = $derived(playerId === currentDrawerId)
-  const canDraw = $derived(gameStatus !== 'playing' || isCurrentDrawer)
+  const canDraw = $derived(gameStatus === 'lobby' || (gameStatus === 'playing' && isCurrentDrawer))
   const canStartGame = $derived(isHost && gameStatus === 'lobby' && players.length >= 2)
 
   async function createRoom() {
@@ -229,6 +229,13 @@
         timeRemaining = remaining
       },
       onGameReset: () => {
+        // Clear correct-guess notification and timeout
+        correctGuessNotification = null
+        if (correctGuessTimeoutId) {
+          clearTimeout(correctGuessTimeoutId)
+          correctGuessTimeoutId = null
+        }
+
         // Reset local game state to lobby
         gameStatus = 'lobby'
         gameWinners = []
