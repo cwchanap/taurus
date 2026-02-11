@@ -62,6 +62,7 @@ import {
   type TimerContainer,
   checkMessageRateLimit,
   checkStrokeRateLimit,
+  checkStrokeUpdateRateLimit,
   type RateLimitState,
 } from './game-logic'
 
@@ -76,6 +77,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   // Rate limiting - using timestamp array approach from game-logic.ts
   private playerMessageTimestamps: Map<string, RateLimitState> = new Map()
   private playerStrokeTimestamps: Map<string, RateLimitState> = new Map()
+  private playerStrokeUpdateTimestamps: Map<string, RateLimitState> = new Map()
 
   // Track players being cleaned up to prevent duplicate leave broadcasts
   private cleanedPlayers = new Set<string>()
@@ -502,11 +504,19 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       return
     }
 
-    // Rate limiting check
-    if (!this.checkRateLimit(playerId, false)) {
-      console.warn(`Rate limit exceeded for player ${playerId}`)
+    // Stroke-update specific rate limiting check (higher limit than general messages)
+    let strokeUpdateState = this.playerStrokeUpdateTimestamps.get(playerId)
+    if (!strokeUpdateState) {
+      strokeUpdateState = { timestamps: [] }
+    }
+    const now = Date.now()
+    const strokeUpdateResult = checkStrokeUpdateRateLimit(strokeUpdateState, now)
+    if (!strokeUpdateResult.allowed) {
+      console.warn(`Stroke update rate limit exceeded for player ${playerId}`)
       return
     }
+    // Update stroke update state
+    this.playerStrokeUpdateTimestamps.set(playerId, strokeUpdateResult.updatedState)
 
     // Validate strokeId
     if (!isValidStrokeId(data.strokeId)) {

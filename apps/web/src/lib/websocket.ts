@@ -28,6 +28,7 @@ export type GameEventHandler = {
   onChat?: (message: ChatMessage) => void
   onConnectionChange?: (connected: boolean) => void
   onConnectionFailed?: (reason: string) => void
+  onSystemMessage?: (content: string) => void
   // Game event handlers
   onGameStarted?: (
     totalRounds: number,
@@ -145,6 +146,9 @@ export class GameWebSocket {
         break
       case 'chat':
         this.handlers.onChat?.(data.message)
+        break
+      case 'system-message':
+        this.handlers.onSystemMessage?.(data.content)
         break
       case 'game-started':
         this.handlers.onGameStarted?.(data.totalRounds, data.drawerOrder, data.scores)

@@ -5,6 +5,7 @@ import {
   checkRateLimit,
   checkMessageRateLimit,
   checkStrokeRateLimit,
+  checkStrokeUpdateRateLimit,
   type RateLimitState,
   findNextDrawer,
 } from './game-logic'
@@ -14,6 +15,7 @@ import {
   CORRECT_GUESS_BASE_SCORE,
   MAX_MESSAGES_PER_WINDOW,
   MAX_STROKES_PER_WINDOW,
+  MAX_STROKE_UPDATES_PER_WINDOW,
 } from './constants'
 
 describe('handlePlayerLeaveInActiveGame', () => {
@@ -350,6 +352,44 @@ describe('Rate Limiting', () => {
       // Next one should be blocked
       const result = checkStrokeRateLimit(currentState, now + MAX_STROKES_PER_WINDOW)
       expect(result.allowed).toBe(false)
+    })
+  })
+
+  describe('checkStrokeUpdateRateLimit', () => {
+    test('uses MAX_STROKE_UPDATES_PER_WINDOW constant', () => {
+      const state: RateLimitState = { timestamps: [] }
+      const now = Date.now()
+
+      // Fill up to limit
+      let currentState = state
+      for (let i = 0; i < MAX_STROKE_UPDATES_PER_WINDOW; i++) {
+        const result = checkStrokeUpdateRateLimit(currentState, now + i)
+        expect(result.allowed).toBe(true)
+        currentState = result.updatedState
+      }
+
+      // Next one should be blocked
+      const result = checkStrokeUpdateRateLimit(currentState, now + MAX_STROKE_UPDATES_PER_WINDOW)
+      expect(result.allowed).toBe(false)
+    })
+
+    test('allows much higher rate than message rate limit', () => {
+      const state: RateLimitState = { timestamps: [] }
+      const now = Date.now()
+
+      // Stroke updates should allow 600 per window vs 50 for messages
+      let currentState = state
+      for (let i = 0; i < MAX_MESSAGES_PER_WINDOW; i++) {
+        const result = checkStrokeUpdateRateLimit(currentState, now + i)
+        expect(result.allowed).toBe(true)
+        currentState = result.updatedState
+      }
+      // Should still be allowed since stroke update limit is much higher
+      const additionalResult = checkStrokeUpdateRateLimit(
+        currentState,
+        now + MAX_MESSAGES_PER_WINDOW
+      )
+      expect(additionalResult.allowed).toBe(true)
     })
   })
 })

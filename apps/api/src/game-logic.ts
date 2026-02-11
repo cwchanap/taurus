@@ -12,6 +12,7 @@ import {
   CORRECT_GUESS_BASE_SCORE,
   MAX_MESSAGES_PER_WINDOW,
   MAX_STROKES_PER_WINDOW,
+  MAX_STROKE_UPDATES_PER_WINDOW,
   RATE_LIMIT_WINDOW,
 } from './constants'
 import type { PlayingState, RoundEndState } from './game-types'
@@ -163,6 +164,23 @@ export function checkStrokeRateLimit(
   currentTime?: number
 ): ReturnType<typeof checkRateLimit> {
   return checkRateLimit(state, MAX_STROKES_PER_WINDOW, RATE_LIMIT_WINDOW, currentTime)
+}
+
+/**
+ * Check if a stroke update should be rate limited
+ *
+ * Stroke updates happen much more frequently than new strokes (30-60 per second during active drawing),
+ * so this uses a much higher rate limit.
+ *
+ * @param state - Current rate limit state
+ * @param currentTime - Current timestamp (defaults to Date.now())
+ * @returns Object with allowed status and updated state
+ */
+export function checkStrokeUpdateRateLimit(
+  state: RateLimitState,
+  currentTime?: number
+): ReturnType<typeof checkRateLimit> {
+  return checkRateLimit(state, MAX_STROKE_UPDATES_PER_WINDOW, RATE_LIMIT_WINDOW, currentTime)
 }
 
 /**

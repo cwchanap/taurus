@@ -51,6 +51,8 @@
   let lastRoundResult = $state<RoundResult | null>(null)
   let gameWinners = $state<Winner[]>([])
   let correctGuessNotification = $state<{ playerName: string; score: number } | null>(null)
+  let systemNotification = $state<string | null>(null)
+  let systemNotificationTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   let color = $state('#4ECDC4')
   let brushSize = $state(8)
@@ -179,6 +181,17 @@
       onChat: (message) => {
         chatMessages = [...chatMessages, message]
       },
+      onSystemMessage: (content) => {
+        systemNotification = content
+        if (systemNotificationTimeoutId) {
+          clearTimeout(systemNotificationTimeoutId)
+        }
+        // Clear notification after a few seconds
+        systemNotificationTimeoutId = setTimeout(() => {
+          systemNotification = null
+          systemNotificationTimeoutId = null
+        }, 4000)
+      },
       // Game event handlers
       onGameStarted: (rounds, drawerOrder, initialScores) => {
         totalRounds = rounds
@@ -235,6 +248,12 @@
           clearTimeout(correctGuessTimeoutId)
           correctGuessTimeoutId = null
         }
+        // Clear system notification and timeout
+        systemNotification = null
+        if (systemNotificationTimeoutId) {
+          clearTimeout(systemNotificationTimeoutId)
+          systemNotificationTimeoutId = null
+        }
 
         // Reset local game state to lobby
         gameStatus = 'lobby'
@@ -258,6 +277,9 @@
     ws?.disconnect()
     if (correctGuessTimeoutId) {
       clearTimeout(correctGuessTimeoutId)
+    }
+    if (systemNotificationTimeoutId) {
+      clearTimeout(systemNotificationTimeoutId)
     }
   })
 
@@ -349,6 +371,11 @@
         ✅ {correctGuessNotification.playerName} guessed correctly! +{correctGuessNotification.score}
         pts
       </div>
+    {/if}
+
+    <!-- System notification -->
+    {#if systemNotification}
+      <div class="system-notification">{systemNotification}</div>
     {/if}
 
     <!-- Round end overlay -->
@@ -587,6 +614,19 @@
     transform: translateX(-50%);
     padding: 12px 24px;
     background: linear-gradient(135deg, rgb(78 205 196 / 0.9), rgb(69 183 209 / 0.9));
+    border-radius: 12px;
+    font-weight: 600;
+    z-index: 100;
+    animation: slideDown 0.3s ease;
+  }
+
+  .system-notification {
+    position: fixed;
+    top: 160px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 24px;
+    background: linear-gradient(135deg, rgb(255 193 7 / 0.9), rgb(255 152 0 / 0.9));
     border-radius: 12px;
     font-weight: 600;
     z-index: 100;
