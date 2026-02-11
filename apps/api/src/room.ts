@@ -377,6 +377,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Clean up rate limiting data
     this.playerMessageTimestamps.delete(playerId)
     this.playerStrokeTimestamps.delete(playerId)
+    this.playerStrokeUpdateTimestamps.delete(playerId)
 
     // Handle game state when player leaves during active game
     if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {

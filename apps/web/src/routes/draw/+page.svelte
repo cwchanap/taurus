@@ -424,6 +424,7 @@
           onBrushSizeChange={(s) => (brushSize = s)}
           onClear={handleClear}
           disabled={!canDraw}
+          clearDisabled={!isHost}
         />
 
         <!-- Start Game button for host -->
