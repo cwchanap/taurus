@@ -87,3 +87,4 @@ export type MessageType =
   | { type: 'tick'; timeRemaining: number }
   | { type: 'reset-game' }
   | { type: 'game-reset' }
+  | { type: 'system-message'; content: string }

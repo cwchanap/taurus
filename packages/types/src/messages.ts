@@ -91,6 +91,7 @@ export type ServerMessage =
     }
   | { type: 'tick'; timeRemaining: number }
   | { type: 'game-reset' }
+  | { type: 'system-message'; content: string }
   | { type: 'error'; message: string }
 
 // Combined for convenience
