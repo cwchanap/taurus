@@ -40,10 +40,14 @@ import {
   type GameState,
   type PlayingState,
   type RoundEndState,
+  type GameOverState,
   createInitialGameState,
   scoresToRecord,
   type RoundResult,
   isPlayingState,
+  gameStateToStorage,
+  gameStateFromStorage,
+  type StoredGameState,
 } from './game-types'
 import {
   validateMessageContent,
@@ -99,6 +103,20 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       const storedChatHistory = (await this.ctx.storage.get<ChatMessage[]>('chatHistory')) || []
       this.chatHistory.setMessages(storedChatHistory)
 
+      // Restore hostPlayerId (may be null if no host assigned yet)
+      this.hostPlayerId = (await this.ctx.storage.get<string>('hostPlayerId')) || null
+
+      // Restore gameState if it was persisted
+      const storedGameState = await this.ctx.storage.get<StoredGameState>('gameState')
+      if (storedGameState) {
+        try {
+          this.gameState = gameStateFromStorage(storedGameState)
+        } catch (e) {
+          console.error('Failed to restore gameState from storage:', e)
+          this.gameState = createInitialGameState()
+        }
+      }
+
       // Migration: If we have strokes or chat history but no created flag, assume it's a legacy room
       if (!this.created && (this.strokes.length > 0 || this.chatHistory.getMessages().length > 0)) {
         this.created = true
@@ -120,6 +138,18 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         }
         await new Promise((resolve) => setTimeout(resolve, Math.pow(2, i) * 100))
       }
+    }
+  }
+
+  private async persistGameState(): Promise<void> {
+    await this.storagePutWithRetry('gameState', gameStateToStorage(this.gameState))
+  }
+
+  private async persistHost(): Promise<void> {
+    if (this.hostPlayerId) {
+      await this.storagePutWithRetry('hostPlayerId', this.hostPlayerId)
+    } else {
+      await this.storageDeleteWithRetry('hostPlayerId')
     }
   }
 
@@ -230,6 +260,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    // Ensure state is restored from storage after potential hibernation
+    await this.ensureInitialized()
+
     // Parse message - client error if this fails
     let data: Message
     try {
@@ -307,6 +340,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // First player becomes the host
     if (this.hostPlayerId === null) {
       this.hostPlayerId = playerId
+      await this.persistHost()
     }
 
     // If a game is in progress, add the player to the scores map so their name is captured
@@ -367,6 +401,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           newHostId: this.hostPlayerId,
         })
       }
+      // Persist host change to storage (fire and forget via waitUntil)
+      this.ctx.waitUntil(
+        this.persistHost().catch((e) => console.error('Failed to persist host:', e))
+      )
     }
 
     this.broadcast({
@@ -741,6 +779,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       usedWords: new Set(),
     }
 
+    // Persist game state
+    await this.persistGameState()
+
     // Broadcast game started
     this.broadcast({
       type: 'game-started',
@@ -777,6 +818,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Reset to lobby state
     this.gameState = createInitialGameState()
+
+    // Persist reset game state
+    await this.persistGameState()
 
     // Clear strokes and storage to prevent stale canvas on next game
     this.strokes = []
@@ -852,6 +896,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           ? this.gameState.endGameAfterCurrentRound
           : false,
     } as PlayingState
+
+    // Persist game state at round start
+    this.ctx.waitUntil(
+      this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+    )
 
     // Clear canvas for new round
     this.strokes = []
@@ -984,6 +1033,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       wordLength: null,
     } as RoundEndState
 
+    // Persist round-end state
+    this.ctx.waitUntil(
+      this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+    )
+
     // Check if game should end
     const shouldEnd =
       this.gameState.currentRound >= this.gameState.totalRounds ||
@@ -1073,8 +1127,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       )
     )
 
-    // Reset to lobby state
-    this.gameState = createInitialGameState()
+    // Set status to game-over (don't reset immediately) so new/reconnecting players see results
+    // handleResetGame will be the sole path back to lobby
+    this.gameState = {
+      ...this.gameState,
+      status: 'game-over',
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+    } as GameOverState
+
+    // Persist game-over state to storage
+    this.ctx.waitUntil(
+      this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+    )
   }
 
   /**

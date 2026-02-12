@@ -144,26 +144,41 @@ export class GameWebSocket {
       case 'clear':
         this.handlers.onClear?.()
         break
-      case 'chat':
-        this.handlers.onChat?.(data.message)
+      case 'chat': {
+        // Narrow type: server sends 'chat' with message, client sends with content
+        const chatData = data as { type: 'chat'; message: ChatMessage }
+        this.handlers.onChat?.(chatData.message)
         break
+      }
       case 'system-message':
         this.handlers.onSystemMessage?.(data.content)
         break
       case 'game-started':
         this.handlers.onGameStarted?.(data.totalRounds, data.drawerOrder, data.scores)
         break
-      case 'round-start':
+      case 'round-start': {
+        // Narrow type to ServerMessage's round-start
+        const roundData = data as {
+          type: 'round-start'
+          roundNumber: number
+          totalRounds: number
+          drawerId: string
+          drawerName: string
+          word: string | undefined
+          wordLength: number | undefined
+          endTime: number
+        }
         this.handlers.onRoundStart?.(
-          data.roundNumber,
-          data.totalRounds,
-          data.drawerId,
-          data.drawerName,
-          data.word,
-          data.wordLength,
-          data.endTime
+          roundData.roundNumber,
+          roundData.totalRounds,
+          roundData.drawerId,
+          roundData.drawerName,
+          roundData.word,
+          roundData.wordLength ?? 0,
+          roundData.endTime
         )
         break
+      }
       case 'round-end':
         this.handlers.onRoundEnd?.(data.word, data.result, data.scores)
         break
@@ -184,6 +199,13 @@ export class GameWebSocket {
       case 'game-reset':
         this.handlers.onGameReset?.()
         break
+      case 'error': {
+        // Log server errors and optionally notify user
+        const errorData = data as { type: 'error'; message: string }
+        console.error('Server error:', errorData.message)
+        // Could add a handler callback here if needed
+        break
+      }
     }
   }
 

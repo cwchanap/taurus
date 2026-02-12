@@ -193,6 +193,138 @@ export function scoresToRecord(scores: Map<string, ScoreEntry>): Record<string, 
 }
 
 /**
+ * Serializable version of GameState for storage (converts Maps/Sets to arrays)
+ */
+export interface StoredGameState {
+  status: GameStatus
+  currentRound: number
+  totalRounds: number
+  currentDrawerId: string | null
+  currentWord: string | null
+  wordLength: number | null
+  roundStartTime: number | null
+  roundEndTime: number | null
+  drawerOrder: string[]
+  scores: [string, ScoreEntry][]
+  correctGuessers: string[]
+  roundGuessers: string[]
+  roundGuesserScores: [string, number][]
+  usedWords: string[]
+  endGameAfterCurrentRound?: boolean
+}
+
+/**
+ * Convert GameState to storage-friendly format
+ */
+export function gameStateToStorage(state: GameState): StoredGameState {
+  const stored: StoredGameState = {
+    status: state.status,
+    currentRound: state.currentRound,
+    totalRounds: state.totalRounds,
+    currentDrawerId: state.currentDrawerId,
+    currentWord: state.currentWord,
+    wordLength: state.wordLength,
+    roundStartTime: state.roundStartTime,
+    roundEndTime: state.roundEndTime,
+    drawerOrder: state.drawerOrder,
+    scores: Array.from(state.scores.entries()),
+    correctGuessers: Array.from(state.correctGuessers),
+    roundGuessers: Array.from(state.roundGuessers),
+    roundGuesserScores: Array.from(state.roundGuesserScores.entries()),
+    usedWords: Array.from(state.usedWords),
+  }
+
+  // Only include endGameAfterCurrentRound for states that have it
+  if (isPlayingState(state) || isRoundEndState(state)) {
+    stored.endGameAfterCurrentRound = state.endGameAfterCurrentRound
+  }
+
+  return stored
+}
+
+/**
+ * Restore GameState from storage format
+ */
+export function gameStateFromStorage(stored: StoredGameState): GameState {
+  const baseState = {
+    currentRound: stored.currentRound,
+    totalRounds: stored.totalRounds,
+    drawerOrder: stored.drawerOrder,
+    scores: new Map(stored.scores),
+    correctGuessers: new Set(stored.correctGuessers),
+    roundGuessers: new Set(stored.roundGuessers),
+    roundGuesserScores: new Map(stored.roundGuesserScores),
+    usedWords: new Set(stored.usedWords),
+  }
+
+  switch (stored.status) {
+    case 'lobby':
+      return {
+        ...baseState,
+        status: 'lobby',
+        currentDrawerId: null,
+        currentWord: null,
+        wordLength: null,
+        roundStartTime: null,
+        roundEndTime: null,
+      } as LobbyState
+    case 'starting':
+      return {
+        ...baseState,
+        status: 'starting',
+        currentDrawerId: null,
+        currentWord: null,
+        wordLength: null,
+        roundStartTime: null,
+        roundEndTime: null,
+      } as StartingState
+    case 'playing': {
+      const playingState: PlayingState = {
+        ...baseState,
+        status: 'playing',
+        currentDrawerId: stored.currentDrawerId!,
+        currentWord: stored.currentWord!,
+        wordLength: stored.wordLength!,
+        roundStartTime: stored.roundStartTime!,
+        roundEndTime: stored.roundEndTime!,
+      }
+      if (stored.endGameAfterCurrentRound) {
+        playingState.endGameAfterCurrentRound = stored.endGameAfterCurrentRound
+      }
+      return playingState
+    }
+    case 'round-end': {
+      const roundEndState: RoundEndState = {
+        ...baseState,
+        status: 'round-end',
+        currentDrawerId: null,
+        currentWord: null,
+        wordLength: null,
+        roundStartTime: stored.roundStartTime!,
+        roundEndTime: stored.roundEndTime!,
+      }
+      if (stored.endGameAfterCurrentRound) {
+        roundEndState.endGameAfterCurrentRound = stored.endGameAfterCurrentRound
+      }
+      return roundEndState
+    }
+    case 'game-over':
+      return {
+        ...baseState,
+        status: 'game-over',
+        currentDrawerId: null,
+        currentWord: null,
+        wordLength: null,
+        roundStartTime: null,
+        roundEndTime: null,
+      } as GameOverState
+    default:
+      // Fallback to lobby for unknown states
+      return createInitialGameState()
+  }
+}
+
+/**
  * Helper to convert internal state to wire format
  */
 export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateWire {

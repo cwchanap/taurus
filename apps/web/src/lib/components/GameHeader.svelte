@@ -57,19 +57,25 @@
       {/if}
     </div>
 
-    <div class="timer-display {timerClass}">
-      <svg
-        class="timer-icon"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 6v6l4 2" />
-      </svg>
-      <span class="time">{formattedTime}</span>
-    </div>
+    {#if status === 'playing'}
+      <div class="timer-display {timerClass}">
+        <svg
+          class="timer-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 6v6l4 2" />
+        </svg>
+        <span class="time">{formattedTime}</span>
+      </div>
+    {:else if status === 'round-end'}
+      <div class="timer-display round-over">
+        <span class="round-over-text">Round Over</span>
+      </div>
+    {/if}
 
     <div class="drawer-info">
       {#if isCurrentDrawer}
@@ -156,6 +162,16 @@
     background: rgb(255 107 107 / 0.2);
     color: #ff6b6b;
     animation: pulse 1s ease-in-out infinite;
+  }
+
+  .timer-display.round-over {
+    background: rgb(78 205 196 / 0.2);
+    color: #4ecdc4;
+  }
+
+  .round-over-text {
+    font-size: 14px;
+    font-weight: 600;
   }
 
   @keyframes pulse {
