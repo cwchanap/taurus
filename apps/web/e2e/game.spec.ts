@@ -1,4 +1,15 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Locator } from '@playwright/test'
+
+/**
+ * Helper to get non-empty text from a locator with explicit wait.
+ * This prevents flaky tests by ensuring the element has text before reading.
+ */
+async function getNonEmptyText(locator: Locator, timeout = 10000): Promise<string> {
+  await expect(locator).not.toBeEmpty({ timeout })
+  const text = await locator.textContent()
+  if (!text) throw new Error('Element text content is null')
+  return text
+}
 
 test.describe('Drawing Game Feature', () => {
   test.describe('Game Lobby', () => {
@@ -29,9 +40,7 @@ test.describe('Drawing Game Feature', () => {
         await hostPage.getByRole('button', { name: 'Create Room' }).click()
 
         await expect(hostPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
-        const roomCode = await hostPage.locator('.room-code').textContent()
-
-        if (!roomCode) throw new Error('Failed to get room code')
+        const roomCode = await getNonEmptyText(hostPage.locator('.room-code'))
 
         // Player joins
         await playerPage.goto('/draw')
@@ -103,9 +112,7 @@ test.describe('Drawing Game Feature', () => {
         await hostPage.getByRole('button', { name: 'Create Room' }).click()
 
         await expect(hostPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
-        const roomCode = await hostPage.locator('.room-code').textContent()
-
-        if (!roomCode) throw new Error('Failed to get room code')
+        const roomCode = await getNonEmptyText(hostPage.locator('.room-code'))
 
         // Player joins
         await playerPage.goto('/draw')
@@ -149,9 +156,7 @@ test.describe('Drawing Game Feature', () => {
         await hostPage.getByRole('button', { name: 'Create Room' }).click()
 
         await expect(hostPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
-        const roomCode = await hostPage.locator('.room-code').textContent()
-
-        if (!roomCode) throw new Error('Failed to get room code')
+        const roomCode = await getNonEmptyText(hostPage.locator('.room-code'))
 
         // Player joins
         await playerPage.goto('/draw')
@@ -169,8 +174,9 @@ test.describe('Drawing Game Feature', () => {
 
         // Check word display - one player gets "Draw:" label, other gets "Guess:"
         // We don't know who is drawer first, so check both possibilities
-        const hostWordLabel = await hostPage.locator('.word-label').textContent()
-        const playerWordLabel = await playerPage.locator('.word-label').textContent()
+        // Use explicit Playwright assertions to wait for stable text
+        const hostWordLabel = await getNonEmptyText(hostPage.locator('.word-label'))
+        const playerWordLabel = await getNonEmptyText(playerPage.locator('.word-label'))
 
         // One should be drawer, one should be guesser
         expect(
@@ -208,9 +214,7 @@ test.describe('Drawing Game Feature', () => {
         await hostPage.getByRole('button', { name: 'Create Room' }).click()
 
         await expect(hostPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
-        const roomCode = await hostPage.locator('.room-code').textContent()
-
-        if (!roomCode) throw new Error('Failed to get room code')
+        const roomCode = await getNonEmptyText(hostPage.locator('.room-code'))
 
         // Player joins
         await playerPage.goto('/draw')
@@ -227,7 +231,7 @@ test.describe('Drawing Game Feature', () => {
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
 
         // Check which page is the guesser (non-drawer)
-        const hostWordLabel = await hostPage.locator('.word-label').textContent()
+        const hostWordLabel = await getNonEmptyText(hostPage.locator('.word-label'))
 
         if (hostWordLabel === 'Guess:') {
           // Host is guesser, should see disabled indicator
@@ -309,9 +313,7 @@ test.describe('Drawing Game Feature', () => {
         await hostPage.getByRole('button', { name: 'Create Room' }).click()
 
         await expect(hostPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
-        const roomCode = await hostPage.locator('.room-code').textContent()
-
-        if (!roomCode) throw new Error('Failed to get room code')
+        const roomCode = await getNonEmptyText(hostPage.locator('.room-code'))
 
         // Player joins
         await playerPage.goto('/draw')
@@ -329,7 +331,7 @@ test.describe('Drawing Game Feature', () => {
         await expect(playerPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
 
         // Determine who is drawer and who is guesser
-        const hostWordLabel = await hostPage.locator('.word-label').textContent()
+        const hostWordLabel = await getNonEmptyText(hostPage.locator('.word-label'))
         const isHostDrawer = hostWordLabel === 'Draw:'
 
         const drawerPage = isHostDrawer ? hostPage : playerPage
@@ -402,9 +404,7 @@ test.describe('Drawing Game Feature', () => {
         await hostPage.getByRole('button', { name: 'Create Room' }).click()
 
         await expect(hostPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
-        const roomCode = await hostPage.locator('.room-code').textContent()
-
-        if (!roomCode) throw new Error('Failed to get room code')
+        const roomCode = await getNonEmptyText(hostPage.locator('.room-code'))
 
         // Player joins
         await playerPage.goto('/draw')
@@ -453,7 +453,7 @@ test.describe('Drawing Game Feature', () => {
           if (isOver) return false
 
           // Determine who is drawer and who is guesser by checking for "Draw:" label
-          const hostWordLabel = await hostPage.locator('.word-label').textContent()
+          const hostWordLabel = await getNonEmptyText(hostPage.locator('.word-label'))
           const isHostDrawer = hostWordLabel === 'Draw:'
 
           const drawerPage = isHostDrawer ? hostPage : playerPage
