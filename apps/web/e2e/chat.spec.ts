@@ -1,4 +1,15 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Locator } from '@playwright/test'
+
+/**
+ * Helper to get non-empty text from a locator with explicit wait.
+ * This prevents flaky tests by ensuring the element has text before reading.
+ */
+async function getNonEmptyText(locator: Locator, timeout = 10000): Promise<string> {
+  await expect(locator).not.toBeEmpty({ timeout })
+  const text = await locator.textContent()
+  if (!text) throw new Error('Element text content is null')
+  return text
+}
 
 test.describe('Chat Room Feature', () => {
   test.beforeEach(async ({ page }) => {
@@ -132,11 +143,7 @@ test.describe('Chat Multi-Player Broadcast', () => {
       // Wait for game view and get room code
       await expect(player1Page.locator('.game-container')).toBeVisible({ timeout: 10000 })
 
-      const roomCode = await player1Page.locator('.room-code').textContent()
-
-      if (!roomCode) {
-        throw new Error('Failed to retrieve room code from Player 1')
-      }
+      const roomCode = await getNonEmptyText(player1Page.locator('.room-code'))
 
       // Player 2 joins the room
       await player2Page.goto('/draw')

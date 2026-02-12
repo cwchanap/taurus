@@ -784,7 +784,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
-    this.ctx.waitUntil(this.storageDeleteWithRetry('strokes'))
+    this.ctx.waitUntil(
+      this.storageDeleteWithRetry('strokes').catch((e) =>
+        console.error('Failed to delete strokes from storage:', e)
+      )
+    )
 
     // Broadcast reset to all players
     this.broadcast({
@@ -855,7 +859,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
-    this.ctx.waitUntil(this.storageDeleteWithRetry('strokes'))
+    this.ctx.waitUntil(
+      this.storageDeleteWithRetry('strokes').catch((e) =>
+        console.error('Failed to delete strokes from storage:', e)
+      )
+    )
 
     // Broadcast round start to all players
     // Note: Send word only to the drawer
@@ -1059,7 +1067,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
-    this.ctx.waitUntil(this.storageDeleteWithRetry('strokes'))
+    this.ctx.waitUntil(
+      this.storageDeleteWithRetry('strokes').catch((e) =>
+        console.error('Failed to delete strokes from storage:', e)
+      )
+    )
 
     // Reset to lobby state
     this.gameState = createInitialGameState()
