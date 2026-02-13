@@ -269,12 +269,40 @@ describe('Chat Message Types', () => {
 
 describe('WebSocket reconnection', () => {
   let originalWebSocket: typeof globalThis.WebSocket
+  let originalSetTimeout: typeof globalThis.setTimeout
+  let originalClearTimeout: typeof globalThis.clearTimeout
   let mockWebSocketInstances: MockWebSocket[]
+  let scheduledTimeoutCallbacks: Array<() => void>
+  let scheduledTimeoutDelays: number[]
+
+  const runNextScheduledTimeout = () => {
+    const next = scheduledTimeoutCallbacks.shift()
+    if (!next) {
+      throw new Error('Expected a scheduled timeout callback, but none was found')
+    }
+    next()
+  }
 
   beforeEach(() => {
-    vi.useFakeTimers()
     originalWebSocket = globalThis.WebSocket
+    originalSetTimeout = globalThis.setTimeout
+    originalClearTimeout = globalThis.clearTimeout
     mockWebSocketInstances = []
+    scheduledTimeoutCallbacks = []
+    scheduledTimeoutDelays = []
+
+    globalThis.setTimeout = ((callback: TimerHandler, delay?: number) => {
+      if (typeof callback !== 'function') {
+        throw new Error('Expected function callback in test timeout shim')
+      }
+      scheduledTimeoutCallbacks.push(callback as () => void)
+      scheduledTimeoutDelays.push(Number(delay ?? 0))
+      return scheduledTimeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>
+    }) as unknown as typeof setTimeout
+
+    globalThis.clearTimeout = (() => {
+      // no-op for deterministic timeout shim in tests
+    }) as unknown as typeof clearTimeout
 
     // Create a mock WebSocket class that tracks instances
     class TrackedMockWebSocket extends MockWebSocket {
@@ -296,8 +324,9 @@ describe('WebSocket reconnection', () => {
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     globalThis.WebSocket = originalWebSocket
+    globalThis.setTimeout = originalSetTimeout
+    globalThis.clearTimeout = originalClearTimeout
   })
 
   describe('backoff delay calculation', () => {
@@ -322,45 +351,40 @@ describe('WebSocket reconnection', () => {
 
       // First reconnect: 1000ms delay (2^0 * 1000)
       expect(mockWebSocketInstances).toHaveLength(1)
-      vi.advanceTimersByTime(999)
-      expect(mockWebSocketInstances).toHaveLength(1)
-      vi.advanceTimersByTime(1)
+      expect(scheduledTimeoutDelays[0]).toBe(1000)
+      runNextScheduledTimeout()
       expect(mockWebSocketInstances).toHaveLength(2)
 
       // Close again
       mockWebSocketInstances[1].simulateClose()
 
       // Second reconnect: 2000ms delay (2^1 * 1000)
-      vi.advanceTimersByTime(1999)
-      expect(mockWebSocketInstances).toHaveLength(2)
-      vi.advanceTimersByTime(1)
+      expect(scheduledTimeoutDelays[1]).toBe(2000)
+      runNextScheduledTimeout()
       expect(mockWebSocketInstances).toHaveLength(3)
 
       // Close again
       mockWebSocketInstances[2].simulateClose()
 
       // Third reconnect: 4000ms delay (2^2 * 1000)
-      vi.advanceTimersByTime(3999)
-      expect(mockWebSocketInstances).toHaveLength(3)
-      vi.advanceTimersByTime(1)
+      expect(scheduledTimeoutDelays[2]).toBe(4000)
+      runNextScheduledTimeout()
       expect(mockWebSocketInstances).toHaveLength(4)
 
       // Close again
       mockWebSocketInstances[3].simulateClose()
 
       // Fourth reconnect: 8000ms delay (2^3 * 1000)
-      vi.advanceTimersByTime(7999)
-      expect(mockWebSocketInstances).toHaveLength(4)
-      vi.advanceTimersByTime(1)
+      expect(scheduledTimeoutDelays[3]).toBe(8000)
+      runNextScheduledTimeout()
       expect(mockWebSocketInstances).toHaveLength(5)
 
       // Close again
       mockWebSocketInstances[4].simulateClose()
 
       // Fifth reconnect: 16000ms delay (2^4 * 1000)
-      vi.advanceTimersByTime(15999)
-      expect(mockWebSocketInstances).toHaveLength(5)
-      vi.advanceTimersByTime(1)
+      expect(scheduledTimeoutDelays[4]).toBe(16000)
+      runNextScheduledTimeout()
       expect(mockWebSocketInstances).toHaveLength(6)
     })
   })
@@ -378,8 +402,8 @@ describe('WebSocket reconnection', () => {
 
       // Fail 5 reconnection attempts
       for (let i = 0; i < 5; i++) {
-        const delay = Math.pow(2, i) * 1000
-        vi.advanceTimersByTime(delay)
+        expect(scheduledTimeoutDelays[i]).toBe(Math.pow(2, i) * 1000)
+        runNextScheduledTimeout()
         expect(mockWebSocketInstances).toHaveLength(i + 2)
         mockWebSocketInstances[i + 1].simulateClose()
       }
@@ -391,7 +415,7 @@ describe('WebSocket reconnection', () => {
       )
 
       // No more reconnection attempts should be made
-      vi.advanceTimersByTime(100000)
+      expect(scheduledTimeoutCallbacks).toHaveLength(0)
       expect(mockWebSocketInstances).toHaveLength(6)
     })
 
@@ -407,8 +431,8 @@ describe('WebSocket reconnection', () => {
 
       // Fail 4 reconnection attempts (one less than max)
       for (let i = 0; i < 4; i++) {
-        const delay = Math.pow(2, i) * 1000
-        vi.advanceTimersByTime(delay)
+        expect(scheduledTimeoutDelays[i]).toBe(Math.pow(2, i) * 1000)
+        runNextScheduledTimeout()
         mockWebSocketInstances[i + 1].simulateClose()
       }
 
@@ -432,7 +456,7 @@ describe('WebSocket reconnection', () => {
       gameWs.disconnect()
 
       // Wait for any potential reconnection attempts
-      vi.advanceTimersByTime(100000)
+      expect(scheduledTimeoutCallbacks).toHaveLength(0)
 
       // Should only have the original connection, no reconnection attempts
       expect(mockWebSocketInstances).toHaveLength(1)
@@ -451,7 +475,7 @@ describe('WebSocket reconnection', () => {
       // Must call simulateClose() to trigger the onclose handler since disconnect() only closes from client side
       mockWebSocketInstances[0].simulateClose()
 
-      vi.advanceTimersByTime(100000)
+      expect(scheduledTimeoutCallbacks).toHaveLength(0)
       expect(mockWebSocketInstances).toHaveLength(1)
     })
   })
@@ -470,13 +494,14 @@ describe('WebSocket reconnection', () => {
 
       // Fail 3 reconnection attempts
       for (let i = 0; i < 3; i++) {
-        const delay = Math.pow(2, i) * 1000
-        vi.advanceTimersByTime(delay)
+        expect(scheduledTimeoutDelays[i]).toBe(Math.pow(2, i) * 1000)
+        runNextScheduledTimeout()
         mockWebSocketInstances[i + 1].simulateClose()
       }
 
       // 4th attempt succeeds
-      vi.advanceTimersByTime(8000)
+      expect(scheduledTimeoutDelays[3]).toBe(8000)
+      runNextScheduledTimeout()
       expect(mockWebSocketInstances).toHaveLength(5)
       mockWebSocketInstances[4].simulateOpen()
 
@@ -484,9 +509,8 @@ describe('WebSocket reconnection', () => {
       mockWebSocketInstances[4].simulateClose()
 
       // Should start from 1000ms delay again (counter reset)
-      vi.advanceTimersByTime(999)
-      expect(mockWebSocketInstances).toHaveLength(5)
-      vi.advanceTimersByTime(1)
+      expect(scheduledTimeoutDelays[4]).toBe(1000)
+      runNextScheduledTimeout()
       expect(mockWebSocketInstances).toHaveLength(6)
 
       // And we should be able to fail 5 more times before onConnectionFailed
@@ -524,7 +548,8 @@ describe('WebSocket reconnection', () => {
       mockWebSocketInstances[0].simulateClose()
 
       // Wait for reconnect
-      vi.advanceTimersByTime(1000)
+      expect(scheduledTimeoutDelays[0]).toBe(1000)
+      runNextScheduledTimeout()
       mockWebSocketInstances[1].simulateOpen()
 
       expect(connectionStates).toEqual([true, false, true])

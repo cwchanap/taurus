@@ -122,7 +122,62 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         this.created = true
         await this.storagePutWithRetry('created', true)
       }
+
+      // If this instance woke from hibernation with active sockets, reconstruct timers
+      // from persisted game state so rounds can continue/end as expected.
+      if (this.ctx.getWebSockets().length > 0) {
+        this.resumeGameFlowFromState()
+      }
+
       this.initialized = true
+    }
+  }
+
+  private resumeGameFlowFromState() {
+    if (this.gameState.status === 'playing') {
+      const endTime = this.gameState.roundEndTime ?? 0
+      const remainingMs = endTime - Date.now()
+
+      if (remainingMs <= 0) {
+        this.endRound(false)
+        return
+      }
+
+      this.clearTimers()
+
+      this.roundTimer = setTimeout(() => {
+        this.endRound(false)
+      }, remainingMs)
+
+      this.tickTimer = setInterval(() => {
+        const remaining = Math.max(0, (this.gameState.roundEndTime || 0) - Date.now())
+        if (remaining > 0) {
+          this.broadcast({
+            type: 'tick',
+            timeRemaining: Math.ceil(remaining / 1000),
+          })
+        }
+      }, 1000)
+
+      return
+    }
+
+    if (this.gameState.status === 'round-end') {
+      const shouldEnd =
+        this.gameState.currentRound >= this.gameState.totalRounds ||
+        this.gameState.endGameAfterCurrentRound === true
+
+      this.clearTimers()
+
+      if (shouldEnd) {
+        this.gameEndTimer = setTimeout(() => this.endGame(), 1000)
+      } else {
+        this.roundEndTimer = setTimeout(() => {
+          if (this.gameState.status === 'round-end') {
+            this.startRound()
+          }
+        }, 1000)
+      }
     }
   }
 
