@@ -174,7 +174,7 @@ describe('Chat Message Types', () => {
   })
 
   describe('Init message game state for non-drawer reconnect', () => {
-    it('should omit currentWord and wordLength for non-drawer players', () => {
+    it('should omit currentWord but include wordLength for non-drawer players', () => {
       const initMessage = {
         type: 'init',
         playerId: 'p2',
@@ -191,7 +191,9 @@ describe('Chat Message Types', () => {
           currentRound: 1,
           totalRounds: 2,
           currentDrawerId: 'p1',
-          // currentWord and wordLength intentionally omitted for non-drawers
+          // currentWord is omitted for non-drawers (security)
+          // wordLength is included for all players (needed for UI to render masked word)
+          wordLength: 8,
           roundEndTime: Date.now() + 60000,
           scores: {},
         },
@@ -200,14 +202,15 @@ describe('Chat Message Types', () => {
       const serialized = JSON.stringify(initMessage)
       const parsed = JSON.parse(serialized)
 
-      // Server omits currentWord for non-drawers; wordLength may also be omitted
+      // Server omits currentWord for non-drawers (security - don't reveal the word)
       expect(parsed.gameState.currentWord).toBeUndefined()
       // Use nullish coalescing to reset stale state (as the component should do)
       expect(parsed.gameState.currentWord ?? '').toBe('')
-      expect(parsed.gameState.wordLength ?? 0).toBe(0)
+      // Server includes wordLength for all players (needed for UI to render masked word)
+      expect(parsed.gameState.wordLength).toBe(8)
     })
 
-    it('should include currentWord for drawer player', () => {
+    it('should include currentWord and wordLength for drawer player', () => {
       const initMessage = {
         type: 'init',
         playerId: 'p1',
@@ -224,6 +227,8 @@ describe('Chat Message Types', () => {
           currentRound: 1,
           totalRounds: 2,
           currentDrawerId: 'p1',
+          // currentWord is included for the drawer (they need to know what to draw)
+          // wordLength is included for all players (needed for UI)
           currentWord: 'elephant',
           wordLength: 8,
           roundEndTime: Date.now() + 60000,
@@ -234,6 +239,7 @@ describe('Chat Message Types', () => {
       const serialized = JSON.stringify(initMessage)
       const parsed = JSON.parse(serialized)
 
+      // Drawer receives both the actual word and its length
       expect(parsed.gameState.currentWord).toBe('elephant')
       expect(parsed.gameState.wordLength).toBe(8)
     })

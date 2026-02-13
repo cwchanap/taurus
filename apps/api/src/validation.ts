@@ -1,4 +1,4 @@
-import { Stroke } from '@repo/types'
+import type { Stroke } from '@repo/types'
 
 import {
   MAX_CHAT_MESSAGE_LENGTH,
