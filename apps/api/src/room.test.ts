@@ -5,7 +5,7 @@ mock.module('cloudflare:workers', () => ({
   DurableObject: class {
     constructor(state: unknown, env: unknown) {
       // @ts-expect-error - Mocking DurableObject constructor
-      this.state = state
+      this.ctx = state
       // @ts-expect-error - Mocking DurableObject constructor
       this.env = env
     }
@@ -13,19 +13,26 @@ mock.module('cloudflare:workers', () => ({
 }))
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
-import { DrawingRoom } from './room'
 
 describe('DrawingRoom - Player Leave During Game', () => {
-  let room: DrawingRoom
+  let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+  let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
   let mockState: Partial<DurableObjectState>
+  let mockStorageGet: ReturnType<typeof mock>
+  let mockGetWebSockets: ReturnType<typeof mock>
 
   let mockEnv: unknown
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+    mockStorageGet = mock(() => Promise.resolve(undefined))
+    mockGetWebSockets = mock(() => [])
+
     // Mock Durable Object state
     mockState = {
       storage: {
-        get: mock(() => Promise.resolve(undefined)),
+        get: mockStorageGet,
         put: mock(() => Promise.resolve()),
         delete: mock(() => Promise.resolve()),
         list: mock(() => Promise.resolve(new Map())),
@@ -39,6 +46,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
       } as any,
       waitUntil: mock(() => {}),
       blockConcurrencyWhile: mock(async (fn) => await fn()),
+      getWebSockets: mockGetWebSockets,
     }
 
     mockEnv = {}
@@ -50,7 +58,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
 
     // Create actual DrawingRoom instance for future test implementation
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    room = new DrawingRoom(mockState as any, mockEnv as any)
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
   })
 
   afterEach(() => {
@@ -66,5 +74,110 @@ describe('DrawingRoom - Player Leave During Game', () => {
     // TODO: Implement using helper factory and DrawingRoom instance
     // This requires significant mocking of internal state which is hard to reach from outside
     expect(true).toBe(true)
+  })
+
+  test('rehydrates playing state timers after hibernation when sockets are active', async () => {
+    const roundEndTime = Date.now() + 10_000
+    mockStorageGet.mockImplementation((key: string) => {
+      switch (key) {
+        case 'strokes':
+          return Promise.resolve([])
+        case 'created':
+          return Promise.resolve(true)
+        case 'chatHistory':
+          return Promise.resolve([])
+        case 'hostPlayerId':
+          return Promise.resolve('host-1')
+        case 'gameState':
+          return Promise.resolve({
+            status: 'playing',
+            currentRound: 1,
+            totalRounds: 2,
+            currentDrawerId: 'drawer-1',
+            currentWord: 'cat',
+            wordLength: 3,
+            roundStartTime: Date.now(),
+            roundEndTime,
+            drawerOrder: ['drawer-1', 'guesser-1'],
+            scores: [
+              ['drawer-1', { score: 0, name: 'Drawer' }],
+              ['guesser-1', { score: 0, name: 'Guesser' }],
+            ],
+            correctGuessers: [],
+            roundGuessers: ['guesser-1'],
+            roundGuesserScores: [],
+            usedWords: ['cat'],
+            endGameAfterCurrentRound: false,
+          })
+        default:
+          return Promise.resolve(undefined)
+      }
+    })
+
+    mockGetWebSockets.mockReturnValue([
+      {
+        send: mock(() => {}),
+        close: mock(() => {}),
+      },
+    ])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).ensureInitialized()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).roundTimer).not.toBeNull()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).tickTimer).not.toBeNull()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).clearTimers()
+  })
+
+  test('does not rehydrate timers when no active sockets exist', async () => {
+    mockStorageGet.mockImplementation((key: string) => {
+      switch (key) {
+        case 'strokes':
+          return Promise.resolve([])
+        case 'created':
+          return Promise.resolve(true)
+        case 'chatHistory':
+          return Promise.resolve([])
+        case 'hostPlayerId':
+          return Promise.resolve('host-1')
+        case 'gameState':
+          return Promise.resolve({
+            status: 'playing',
+            currentRound: 1,
+            totalRounds: 2,
+            currentDrawerId: 'drawer-1',
+            currentWord: 'cat',
+            wordLength: 3,
+            roundStartTime: Date.now(),
+            roundEndTime: Date.now() + 10_000,
+            drawerOrder: ['drawer-1', 'guesser-1'],
+            scores: [
+              ['drawer-1', { score: 0, name: 'Drawer' }],
+              ['guesser-1', { score: 0, name: 'Guesser' }],
+            ],
+            correctGuessers: [],
+            roundGuessers: ['guesser-1'],
+            roundGuesserScores: [],
+            usedWords: ['cat'],
+            endGameAfterCurrentRound: false,
+          })
+        default:
+          return Promise.resolve(undefined)
+      }
+    })
+
+    mockGetWebSockets.mockReturnValue([])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).ensureInitialized()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).roundTimer).toBeNull()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).tickTimer).toBeNull()
   })
 })
