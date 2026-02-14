@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { validateStroke, isValidStrokeId } from './validation'
+import { validateStroke, isValidStrokeId, isValidColor, isValidSize } from './validation'
+import { MAX_STROKE_SIZE, MIN_STROKE_SIZE, MAX_COLOR_LENGTH } from './constants'
 
 describe('isValidStrokeId', () => {
   test('should reject whitespace-only strings', () => {
@@ -93,5 +94,82 @@ describe('validateStroke', () => {
     } finally {
       crypto.randomUUID = originalRandomUUID
     }
+  })
+
+  test('should reject null input', () => {
+    expect(validateStroke(null, 'player-1')).toBeNull()
+  })
+
+  test('should reject non-object input', () => {
+    expect(validateStroke('not-an-object', 'player-1')).toBeNull()
+    expect(validateStroke(42, 'player-1')).toBeNull()
+  })
+
+  test('should reject stroke with empty points', () => {
+    const data = { points: [], color: '#000000', size: 5 }
+    expect(validateStroke(data, 'player-1')).toBeNull()
+  })
+
+  test('should reject stroke with invalid color', () => {
+    const data = { points: [{ x: 0, y: 0 }], color: '', size: 5 }
+    expect(validateStroke(data, 'player-1')).toBeNull()
+  })
+
+  test('should reject stroke with invalid size', () => {
+    const data = { points: [{ x: 0, y: 0 }], color: '#000', size: -1 }
+    expect(validateStroke(data, 'player-1')).toBeNull()
+  })
+})
+
+describe('isValidColor', () => {
+  test('accepts valid color strings', () => {
+    expect(isValidColor('#000000')).toBe(true)
+    expect(isValidColor('red')).toBe(true)
+    expect(isValidColor('rgb(0,0,0)')).toBe(true)
+  })
+
+  test('rejects non-string values', () => {
+    expect(isValidColor(null)).toBe(false)
+    expect(isValidColor(undefined)).toBe(false)
+    expect(isValidColor(42)).toBe(false)
+  })
+
+  test('rejects empty or whitespace-only strings', () => {
+    expect(isValidColor('')).toBe(false)
+    expect(isValidColor('   ')).toBe(false)
+  })
+
+  test('rejects strings exceeding max length', () => {
+    expect(isValidColor('a'.repeat(MAX_COLOR_LENGTH + 1))).toBe(false)
+  })
+
+  test('accepts string at max length', () => {
+    expect(isValidColor('a'.repeat(MAX_COLOR_LENGTH))).toBe(true)
+  })
+})
+
+describe('isValidSize', () => {
+  test('accepts valid sizes', () => {
+    expect(isValidSize(5)).toBe(true)
+    expect(isValidSize(MIN_STROKE_SIZE)).toBe(true)
+    expect(isValidSize(MAX_STROKE_SIZE)).toBe(true)
+  })
+
+  test('rejects non-number values', () => {
+    expect(isValidSize(null)).toBe(false)
+    expect(isValidSize('5')).toBe(false)
+    expect(isValidSize(undefined)).toBe(false)
+  })
+
+  test('rejects out-of-range sizes', () => {
+    expect(isValidSize(0)).toBe(false)
+    expect(isValidSize(MIN_STROKE_SIZE - 0.01)).toBe(false)
+    expect(isValidSize(MAX_STROKE_SIZE + 1)).toBe(false)
+  })
+
+  test('rejects non-finite numbers', () => {
+    expect(isValidSize(NaN)).toBe(false)
+    expect(isValidSize(Infinity)).toBe(false)
+    expect(isValidSize(-Infinity)).toBe(false)
   })
 })

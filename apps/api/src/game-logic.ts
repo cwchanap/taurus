@@ -2,8 +2,8 @@
  * Game logic functions for testability
  *
  * This module contains game logic extracted from DrawingRoom for unit testing.
- * All functions are pure and side-effect free, except clearTimers which mutates
- * its container argument in place for performance.
+ * Functions are side-effect free (except clearTimers which mutates its argument).
+ * Some accept an optional `currentTime` parameter that defaults to `Date.now()`.
  */
 
 import {
@@ -82,11 +82,23 @@ export function isCorrectGuess(guess: string, word: string): boolean {
 }
 
 /**
+ * Check if a message contains the current word as a substring (case-insensitive).
+ * Used for suppressing messages that might leak the answer.
+ *
+ * @param message - The chat message to check
+ * @param word - The current word to match against
+ * @returns true if the message contains the word
+ */
+export function containsCurrentWord(message: string, word: string): boolean {
+  return message.toLowerCase().includes(word.toLowerCase())
+}
+
+/**
  * Calculate score for a correct guess based on time remaining
  *
  * @param roundEndTime - The timestamp when the round will end
  * @param currentTime - The current timestamp (defaults to Date.now())
- * @returns The calculated score (base score + time bonus up to 50%)
+ * @returns The calculated score: 100 (base) to 150 (with full time bonus)
  */
 export function calculateCorrectGuessScore(
   roundEndTime: number,

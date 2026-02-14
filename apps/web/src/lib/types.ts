@@ -1,4 +1,5 @@
 // Re-export shared types
+// Note: GameStateWire is re-exported as GameState for frontend convenience
 export type {
   GameStatus,
   ScoreEntry,
@@ -7,19 +8,12 @@ export type {
   ChatMessage,
   Player,
   Stroke,
+  Point,
   GameStateWire as GameState,
 } from '@repo/types'
 
-// Re-export MessageType from shared types to ensure consistency
-export type { MessageType } from '@repo/types'
-
 // Import types used locally
 import type { Player, Stroke } from '@repo/types'
-
-export interface Point {
-  x: number
-  y: number
-}
 
 export interface Room {
   roomId: string

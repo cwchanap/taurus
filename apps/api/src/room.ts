@@ -63,6 +63,7 @@ import {
   findNextDrawer,
   clearTimers,
   isCorrectGuess,
+  containsCurrentWord,
   type TimerContainer,
   checkMessageRateLimit,
   checkStrokeRateLimit,
@@ -76,9 +77,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private created = false
   private hostPlayerId: string | null = null
   private storageWriteTimer: ReturnType<typeof setTimeout> | null = null
-  private storageWriteDelay = 1000 // Reduced to 1 second for stroke data
+  private storageWriteDelay = 1000 // 1s debounce balances persistence reliability with write frequency
 
-  // Rate limiting - using timestamp array approach from game-logic.ts
+  // Sliding window rate limiting
   private playerMessageTimestamps: Map<string, RateLimitState> = new Map()
   private playerStrokeTimestamps: Map<string, RateLimitState> = new Map()
   private playerStrokeUpdateTimestamps: Map<string, RateLimitState> = new Map()
@@ -117,7 +118,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         }
       }
 
-      // Migration: If we have strokes or chat history but no created flag, assume it's a legacy room
+      // Defensive: auto-set created flag if orphaned data exists without it
       if (!this.created && (this.strokes.length > 0 || this.chatHistory.getMessages().length > 0)) {
         this.created = true
         await this.storagePutWithRetry('created', true)
@@ -133,6 +134,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
   }
 
+  /**
+   * Reconstruct game timers from persisted state after Durable Object hibernation.
+   * Called when the DO wakes with active WebSocket connections. Resumes round timers
+   * based on stored roundEndTime so rounds can continue or end as expected.
+   */
   private resumeGameFlowFromState() {
     if (this.gameState.status === 'playing') {
       const endTime = this.gameState.roundEndTime ?? 0
@@ -230,7 +236,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     this.storageWriteTimer = setTimeout(() => {
       this.storageWriteTimer = null
-      // Using ctx.waitUntil to ensure the promise completes even if the DO is evicted
       this.ctx.waitUntil(
         this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
           console.error('Background storage save failed:', e)
@@ -250,29 +255,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
 
     if (url.pathname === '/ws') {
-      // Optional: Reject WebSocket if room not created?
-      // For now we allow it but maybe we should auto-create on join?
-      // Or strict: if not created, 404.
-      // The issue specifically mentioned the info endpoint, but consistency suggests strictness.
-      // However, making /ws strict might break direct joins if the create flow fails or if we want to allow "join to create"?
-      // The prompt suggests: "prevent users from 'activating' a random room just by joining".
-      // Let's enforce strictness for WS too, but effectively handleJoin does initialization.
-      // Actually, let's stick to the minimal scope requested: Fix the INFO endpoint 404s.
-      // But verify if we should block WS. Logic: "clients cannot detect bad/expired room codes".
-      // If WS allows connection, client thinks it works.
-      // Let's check `created` in WS connection.
-
-      // Check if room was created via API before allowing WebSocket connections
-      // This prevents users from 'activating' random room codes just by joining
+      // Rooms must be created via POST /api/rooms before WebSocket connections are accepted
       if (!this.created) {
         return new Response('Room not found', { status: 404 })
       }
 
-      // Note: Legacy migration is now complete. Rooms must be created via POST /api/rooms
-      // before WebSocket connections are accepted.
-
       const upgradeHeader = request.headers.get('Upgrade')
-      if (!upgradeHeader || upgradeHeader !== 'websocket') {
+      if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
         return new Response('Expected WebSocket', { status: 426 })
       }
 
@@ -330,44 +319,90 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       data = JSON.parse(messageStr)
     } catch (e) {
       console.warn('Invalid message format from client:', e)
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }))
+      } catch {
+        // Connection may be closed
+      }
       return
     }
 
-    // Handle message - server error if this fails
-    try {
-      switch (data.type) {
-        case 'join':
-          await this.handleJoin(ws, data as Message & { name: string })
-          break
-        case 'stroke':
-          await this.handleStroke(ws, data as Message & { stroke: Stroke })
-          break
-        case 'stroke-update':
-          await this.handleStrokeUpdate(ws, data as Message & { strokeId: string; point: Point })
-          break
-        case 'clear':
-          await this.handleClear(ws)
-          break
-        case 'chat':
-          await this.handleChat(ws, data as Message & { content: string })
-          break
-        case 'start-game':
-          await this.handleStartGame(ws)
-          break
-        case 'reset-game':
-          await this.handleResetGame(ws)
-          break
+    // Handle message - each handler gets its own try-catch for targeted error responses
+    const sendError = (msg: string) => {
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: msg }))
+      } catch {
+        // Connection may be closed
       }
-    } catch (e) {
-      console.error('Handler error for message type:', data.type, e)
+    }
+
+    switch (data.type) {
+      case 'join':
+        try {
+          await this.handleJoin(ws, data as Message & { name: string })
+        } catch (e) {
+          console.error('Handler error for join:', e)
+          sendError('Failed to join room')
+        }
+        break
+      case 'stroke':
+        try {
+          await this.handleStroke(ws, data as Message & { stroke: Stroke })
+        } catch (e) {
+          console.error('Handler error for stroke:', e)
+          sendError('Failed to process stroke')
+        }
+        break
+      case 'stroke-update':
+        try {
+          await this.handleStrokeUpdate(ws, data as Message & { strokeId: string; point: Point })
+        } catch (e) {
+          console.error('Handler error for stroke-update:', e)
+          sendError('Failed to process stroke update')
+        }
+        break
+      case 'clear':
+        try {
+          await this.handleClear(ws)
+        } catch (e) {
+          console.error('Handler error for clear:', e)
+          sendError('Failed to clear canvas')
+        }
+        break
+      case 'chat':
+        try {
+          await this.handleChat(ws, data as Message & { content: string })
+        } catch (e) {
+          console.error('Handler error for chat:', e)
+          sendError('Failed to send message')
+        }
+        break
+      case 'start-game':
+        try {
+          await this.handleStartGame(ws)
+        } catch (e) {
+          console.error('Handler error for start-game:', e)
+          sendError('Failed to start game')
+        }
+        break
+      case 'reset-game':
+        try {
+          await this.handleResetGame(ws)
+        } catch (e) {
+          console.error('Handler error for reset-game:', e)
+          sendError('Failed to reset game')
+        }
+        break
     }
   }
 
   async webSocketClose(ws: WebSocket) {
+    await this.ensureInitialized()
     this.handleLeave(ws)
   }
 
   async webSocketError(ws: WebSocket) {
+    await this.ensureInitialized()
     this.handleLeave(ws)
   }
 
@@ -403,7 +438,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.gameState.scores.set(playerId, { score: 0, name: player.name })
     }
 
-    // Add late joiners to roundGuessers to avoid early round end
+    // Add late joiners to roundGuessers so "all guessed" check doesn't trigger early round end.
+    // They can guess but won't affect existing players' score calculations.
     if (this.gameState.status === 'playing') {
       this.gameState.roundGuessers.add(playerId)
     }
@@ -481,7 +517,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       this.gameState = result.updatedGameState
 
-      // Always clean up the flag after a short delay (in case socket is reused)
+      // Clean up flag after a short delay to prevent race conditions with duplicate close events
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
 
       if (result.shouldEndGame) {
@@ -500,7 +536,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         }
       }
     } else {
-      // Clean up the flag after a short delay (in case socket is reused)
+      // Clean up flag after a short delay to prevent race conditions with duplicate close events
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
     }
   }
@@ -560,6 +596,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Rate limiting check for new strokes (more restrictive than updates)
     if (!this.checkRateLimit(playerId, true)) {
       console.warn(`Rate limit exceeded for player ${playerId}`)
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
+      } catch {
+        // Connection may be closed
+      }
       return
     }
 
@@ -598,7 +639,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       return
     }
 
-    // Stroke-update specific rate limiting check (higher limit than general messages)
+    // Stroke-update uses its own rate limit (bypasses general message limit) since
+    // point updates fire at 30-60 Hz during active drawing
     let strokeUpdateState = this.playerStrokeUpdateTimestamps.get(playerId)
     if (!strokeUpdateState) {
       strokeUpdateState = { timestamps: [] }
@@ -607,6 +649,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const strokeUpdateResult = checkStrokeUpdateRateLimit(strokeUpdateState, now)
     if (!strokeUpdateResult.allowed) {
       console.warn(`Stroke update rate limit exceeded for player ${playerId}`)
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
+      } catch {
+        // Connection may be closed
+      }
       return
     }
     // Update stroke update state
@@ -655,10 +702,20 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    // Only host can clear
-    if (playerId !== this.hostPlayerId) {
-      console.warn(`Player ${playerId} attempted to clear canvas but is not the host`)
-      return
+    // During playing state, only the current drawer can clear
+    // In lobby/other states, the host can clear
+    const isDrawer =
+      this.gameState.status === 'playing' && playerId === this.gameState.currentDrawerId
+    if (this.gameState.status === 'playing') {
+      if (!isDrawer) {
+        console.warn(`Player ${playerId} attempted to clear canvas but is not the current drawer`)
+        return
+      }
+    } else {
+      if (playerId !== this.hostPlayerId) {
+        console.warn(`Player ${playerId} attempted to clear canvas but is not the host`)
+        return
+      }
     }
 
     // Cancel pending storage write to avoid racing with the delete
@@ -676,6 +733,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       })
     } catch (e) {
       console.error(`Player ${playerId} failed to clear strokes:`, e)
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: 'Failed to clear canvas' }))
+      } catch {
+        // Connection may be closed
+      }
     }
   }
 
@@ -690,6 +752,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Rate limiting check (reuse existing pattern)
     if (!this.checkRateLimit(playerId, false)) {
       console.warn(`Chat rate limit exceeded for player ${playerId}`)
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
+      } catch {
+        // Connection may be closed
+      }
       return
     }
 
@@ -704,29 +771,30 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Check for correct guess during active game
     if (this.gameState.status === 'playing' && this.gameState.currentWord) {
-      if (isCorrectGuess(sanitizedContent, this.gameState.currentWord)) {
-        // If drawer or already correct, suppress message to avoid leaking word
-        if (
-          playerId === this.gameState.currentDrawerId ||
-          this.gameState.correctGuessers.has(playerId)
-        ) {
-          // Send feedback to drawer/early guesser that their message was suppressed
-          try {
-            ws.send(
-              JSON.stringify({
-                type: 'system-message',
-                content: 'Your message was suppressed to prevent revealing the answer word.',
-              })
-            )
-          } catch {
-            // Ignore send errors
-          }
-          return
-        }
+      const messageContainsWord = containsCurrentWord(sanitizedContent, this.gameState.currentWord)
 
-        // Handle first-time correct guess
+      // Suppress messages from drawer or already-guessed players that contain the word
+      if (
+        messageContainsWord &&
+        (playerId === this.gameState.currentDrawerId ||
+          this.gameState.correctGuessers.has(playerId))
+      ) {
+        try {
+          ws.send(
+            JSON.stringify({
+              type: 'system-message',
+              content: 'Your message was suppressed to prevent revealing the answer word.',
+            })
+          )
+        } catch {
+          // Ignore send errors
+        }
+        return
+      }
+
+      // Check for exact-match correct guess (scoring)
+      if (isCorrectGuess(sanitizedContent, this.gameState.currentWord)) {
         this.handleCorrectGuess(playerId, attachment.player.name)
-        // Don't broadcast the correct answer to prevent revealing it
         return
       }
     }
@@ -775,8 +843,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     for (const deadWs of deadSockets) {
       try {
         deadWs.close()
-      } catch {
-        // Ignore errors when closing
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'InvalidStateError')) {
+          console.error('Unexpected error closing dead socket:', e)
+        }
       }
     }
   }
@@ -929,8 +999,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Set round state
     const now = Date.now()
 
-    // Transition to PlayingState
-    // We cast to PlayingState because we are providing all required fields
     this.gameState = {
       ...this.gameState,
       status: 'playing',
@@ -948,7 +1016,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       roundGuesserScores: new Map(),
       endGameAfterCurrentRound:
         'endGameAfterCurrentRound' in this.gameState
-          ? this.gameState.endGameAfterCurrentRound
+          ? ((this.gameState as { endGameAfterCurrentRound?: boolean }).endGameAfterCurrentRound ??
+            false)
           : false,
     } as PlayingState
 
@@ -1002,8 +1071,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     for (const deadWs of deadSockets) {
       try {
         deadWs.close()
-      } catch {
-        // Ignore errors when closing
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'InvalidStateError')) {
+          console.error('Unexpected error closing dead socket:', e)
+        }
       }
     }
 
@@ -1079,7 +1150,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       scores: scoresToRecord(this.gameState.scores),
     })
 
-    // Update status temporarily
+    // Transition to round-end state (awaits either next round or game end)
     this.gameState = {
       ...this.gameState,
       status: 'round-end',
@@ -1096,7 +1167,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Check if game should end
     const shouldEnd =
       this.gameState.currentRound >= this.gameState.totalRounds ||
-      ('endGameAfterCurrentRound' in this.gameState && this.gameState.endGameAfterCurrentRound)
+      (this.gameState.status === 'round-end' && this.gameState.endGameAfterCurrentRound)
 
     if (shouldEnd) {
       // Give a short delay before showing final results

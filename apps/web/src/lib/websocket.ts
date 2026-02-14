@@ -1,5 +1,4 @@
 import type {
-  MessageType,
   Player,
   Stroke,
   ChatMessage,
@@ -8,6 +7,7 @@ import type {
   Winner,
   ScoreEntry,
 } from './types'
+import type { ServerMessage, ClientMessage } from '@repo/types'
 
 export type GameEventHandler = {
   onInit?: (
@@ -92,7 +92,7 @@ export class GameWebSocket {
 
     this.ws.onmessage = (event) => {
       try {
-        const data: MessageType = JSON.parse(event.data)
+        const data: ServerMessage = JSON.parse(event.data)
         this.handleMessage(data)
       } catch (e) {
         console.error('Failed to parse message:', e)
@@ -108,12 +108,13 @@ export class GameWebSocket {
       }
     }
 
-    this.ws.onerror = () => {
+    this.ws.onerror = (event) => {
+      console.error('WebSocket error:', event)
       this.handlers.onConnectionChange?.(false)
     }
   }
 
-  private handleMessage(data: MessageType) {
+  private handleMessage(data: ServerMessage) {
     switch (data.type) {
       case 'init':
         this.handlers.onInit?.(
@@ -144,41 +145,26 @@ export class GameWebSocket {
       case 'clear':
         this.handlers.onClear?.()
         break
-      case 'chat': {
-        // Narrow type: server sends 'chat' with message, client sends with content
-        const chatData = data as { type: 'chat'; message: ChatMessage }
-        this.handlers.onChat?.(chatData.message)
+      case 'chat':
+        this.handlers.onChat?.(data.message)
         break
-      }
       case 'system-message':
         this.handlers.onSystemMessage?.(data.content)
         break
       case 'game-started':
         this.handlers.onGameStarted?.(data.totalRounds, data.drawerOrder, data.scores)
         break
-      case 'round-start': {
-        // Narrow type to ServerMessage's round-start
-        const roundData = data as {
-          type: 'round-start'
-          roundNumber: number
-          totalRounds: number
-          drawerId: string
-          drawerName: string
-          word: string | undefined
-          wordLength: number | undefined
-          endTime: number
-        }
+      case 'round-start':
         this.handlers.onRoundStart?.(
-          roundData.roundNumber,
-          roundData.totalRounds,
-          roundData.drawerId,
-          roundData.drawerName,
-          roundData.word,
-          roundData.wordLength ?? 0,
-          roundData.endTime
+          data.roundNumber,
+          data.totalRounds,
+          data.drawerId,
+          data.drawerName,
+          data.word,
+          data.wordLength ?? 0,
+          data.endTime
         )
         break
-      }
       case 'round-end':
         this.handlers.onRoundEnd?.(data.word, data.result, data.scores)
         break
@@ -199,13 +185,9 @@ export class GameWebSocket {
       case 'game-reset':
         this.handlers.onGameReset?.()
         break
-      case 'error': {
-        // Log server errors and optionally notify user
-        const errorData = data as { type: 'error'; message: string }
-        console.error('Server error:', errorData.message)
-        // Could add a handler callback here if needed
+      case 'error':
+        console.error('Server error:', data.message)
         break
-      }
     }
   }
 
@@ -225,7 +207,7 @@ export class GameWebSocket {
     this.handlers = { ...this.handlers, ...handlers }
   }
 
-  send(message: object): boolean {
+  private send(message: ClientMessage): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify(message))
@@ -235,6 +217,7 @@ export class GameWebSocket {
         return false
       }
     }
+    console.warn('Cannot send message: WebSocket is not open')
     return false
   }
 

@@ -51,7 +51,7 @@
           placeholder="Enter your name..."
           value={playerName}
           oninput={(e) => onPlayerNameChange(e.currentTarget.value)}
-          maxlength="20"
+          maxlength="50"
         />
       </div>
 
