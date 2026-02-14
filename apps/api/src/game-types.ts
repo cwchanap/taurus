@@ -50,7 +50,7 @@ export type PlayingState = BaseGameState & {
   wordLength: number // non-null - derived from currentWord
   roundStartTime: number // non-null - when round started
   roundEndTime: number // non-null - when round ends
-  endGameAfterCurrentRound?: boolean // Flag to end game after current round
+  endGameAfterCurrentRound: boolean // Flag to end game after current round
 }
 
 // Round end state - between rounds, showing results
@@ -63,7 +63,7 @@ export type RoundEndState = BaseGameState & {
   wordLength: null // Cleared after round ends
   roundStartTime: number // When round started (kept for reference)
   roundEndTime: number // When round ended (kept for reference)
-  endGameAfterCurrentRound?: boolean // Flag to end game after current round
+  endGameAfterCurrentRound: boolean // Flag to end game after current round
 }
 
 // Game over state - game finished, showing final results
@@ -111,56 +111,6 @@ export interface PlayerScore {
   playerId: string
   playerName: string
   score: number
-}
-
-// Game-related message types (server -> client)
-export interface GameStartedMessage {
-  type: 'game-started'
-  totalRounds: number
-  drawerOrder: string[]
-  scores: Record<string, { score: number; name: string }>
-}
-
-export interface RoundStartMessage {
-  type: 'round-start'
-  roundNumber: number
-  totalRounds: number
-  drawerId: string
-  drawerName: string
-  word?: string // Only sent to the drawer
-  wordLength: number // Sent to all so guessers know word length
-  endTime: number // Timestamp when round ends
-}
-
-export interface RoundEndMessage {
-  type: 'round-end'
-  word: string
-  result: RoundResult
-  scores: Record<string, { score: number; name: string }>
-}
-
-export interface GameOverMessage {
-  type: 'game-over'
-  finalScores: Record<string, { score: number; name: string }>
-  winners: { playerId: string; playerName: string; score: number }[]
-}
-
-export interface CorrectGuessMessage {
-  type: 'correct-guess'
-  playerId: string
-  playerName: string
-  score: number
-  timeRemaining: number
-}
-
-export interface TickMessage {
-  type: 'tick'
-  timeRemaining: number
-}
-
-// Game-related message types (client -> server)
-export interface StartGameClientMessage {
-  type: 'start-game'
 }
 
 /**
@@ -279,34 +229,48 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         roundEndTime: null,
       } as StartingState
     case 'playing': {
-      const playingState: PlayingState = {
+      // Validate required fields for playing state
+      if (
+        !stored.currentDrawerId ||
+        !stored.currentWord ||
+        stored.wordLength == null ||
+        stored.roundStartTime == null ||
+        stored.roundEndTime == null
+      ) {
+        console.error(
+          'Corrupt playing state in storage: missing required fields, falling back to lobby'
+        )
+        return createInitialGameState()
+      }
+      return {
         ...baseState,
         status: 'playing',
-        currentDrawerId: stored.currentDrawerId!,
-        currentWord: stored.currentWord!,
-        wordLength: stored.wordLength!,
-        roundStartTime: stored.roundStartTime!,
-        roundEndTime: stored.roundEndTime!,
-      }
-      if (stored.endGameAfterCurrentRound) {
-        playingState.endGameAfterCurrentRound = stored.endGameAfterCurrentRound
-      }
-      return playingState
+        currentDrawerId: stored.currentDrawerId,
+        currentWord: stored.currentWord,
+        wordLength: stored.wordLength,
+        roundStartTime: stored.roundStartTime,
+        roundEndTime: stored.roundEndTime,
+        endGameAfterCurrentRound: stored.endGameAfterCurrentRound ?? false,
+      } as PlayingState
     }
     case 'round-end': {
-      const roundEndState: RoundEndState = {
+      // Validate required fields for round-end state
+      if (stored.roundStartTime == null || stored.roundEndTime == null) {
+        console.error(
+          'Corrupt round-end state in storage: missing required fields, falling back to lobby'
+        )
+        return createInitialGameState()
+      }
+      return {
         ...baseState,
         status: 'round-end',
         currentDrawerId: null,
         currentWord: null,
         wordLength: null,
-        roundStartTime: stored.roundStartTime!,
-        roundEndTime: stored.roundEndTime!,
-      }
-      if (stored.endGameAfterCurrentRound) {
-        roundEndState.endGameAfterCurrentRound = stored.endGameAfterCurrentRound
-      }
-      return roundEndState
+        roundStartTime: stored.roundStartTime,
+        roundEndTime: stored.roundEndTime,
+        endGameAfterCurrentRound: stored.endGameAfterCurrentRound ?? false,
+      } as RoundEndState
     }
     case 'game-over':
       return {
@@ -319,7 +283,9 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         roundEndTime: null,
       } as GameOverState
     default:
-      // Fallback to lobby for unknown states
+      console.error(
+        `Unknown game state status in storage: "${stored.status}", falling back to lobby`
+      )
       return createInitialGameState()
   }
 }

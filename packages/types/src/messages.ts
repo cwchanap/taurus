@@ -6,12 +6,17 @@ export interface Player {
   color: string
 }
 
+export interface Point {
+  x: number
+  y: number
+}
+
 export interface Stroke {
   id: string
   playerId: string
   color: string
   size: number
-  points: Array<{ x: number; y: number }>
+  points: Point[]
 }
 
 // Wire format for GameState (what goes over WebSocket)
@@ -31,7 +36,7 @@ export type ClientMessage =
   | { type: 'join'; name: string }
   | { type: 'chat'; content: string }
   | { type: 'stroke'; stroke: Stroke }
-  | { type: 'stroke-update'; strokeId: string; point: { x: number; y: number } }
+  | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'clear' }
   | { type: 'start-game' }
   | { type: 'reset-game' }
@@ -52,7 +57,7 @@ export type ServerMessage =
   | { type: 'host-change'; newHostId: string }
   | { type: 'player-left'; playerId: string }
   | { type: 'stroke'; stroke: Stroke }
-  | { type: 'stroke-update'; strokeId: string; point: { x: number; y: number } }
+  | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'clear' }
   | { type: 'chat'; message: ChatMessage }
   | {
@@ -94,5 +99,5 @@ export type ServerMessage =
   | { type: 'system-message'; content: string }
   | { type: 'error'; message: string }
 
-// Combined for convenience
+/** @deprecated Use `ClientMessage` or `ServerMessage` directly for type safety */
 export type MessageType = ClientMessage | ServerMessage

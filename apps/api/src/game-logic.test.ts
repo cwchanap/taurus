@@ -8,6 +8,7 @@ import {
   checkStrokeUpdateRateLimit,
   type RateLimitState,
   findNextDrawer,
+  containsCurrentWord,
 } from './game-logic'
 import { type PlayingState, type RoundEndState } from './game-types'
 import {
@@ -40,6 +41,7 @@ describe('handlePlayerLeaveInActiveGame', () => {
       roundGuessers: new Set(playerIds.filter((id) => id !== playerIds[currentRoundIndex])),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
+      endGameAfterCurrentRound: false,
     }
 
     // Initialize scores for all players
@@ -438,5 +440,36 @@ describe('findNextDrawer', () => {
 
     expect(result.roundNumber).toBe(2)
     expect(result.drawerId).toBe('p2')
+  })
+})
+
+describe('containsCurrentWord', () => {
+  test('detects exact match', () => {
+    expect(containsCurrentWord('cat', 'cat')).toBe(true)
+  })
+
+  test('detects case-insensitive match', () => {
+    expect(containsCurrentWord('I love CATS', 'cat')).toBe(true)
+    expect(containsCurrentWord('CAT is great', 'cat')).toBe(true)
+  })
+
+  test('detects substring match', () => {
+    expect(containsCurrentWord('the category is...', 'cat')).toBe(true)
+    expect(containsCurrentWord('concatenate', 'cat')).toBe(true)
+  })
+
+  test('returns false when word is not contained', () => {
+    expect(containsCurrentWord('dog', 'cat')).toBe(false)
+    expect(containsCurrentWord('hello world', 'cat')).toBe(false)
+  })
+
+  test('handles empty strings', () => {
+    expect(containsCurrentWord('', 'cat')).toBe(false)
+    expect(containsCurrentWord('cat', '')).toBe(true) // empty string is substring of everything
+  })
+
+  test('handles multi-word targets', () => {
+    expect(containsCurrentWord('I love ice cream!', 'ice cream')).toBe(true)
+    expect(containsCurrentWord('icecream', 'ice cream')).toBe(false)
   })
 })
