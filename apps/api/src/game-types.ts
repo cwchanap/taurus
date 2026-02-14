@@ -64,6 +64,7 @@ export type RoundEndState = BaseGameState & {
   roundStartTime: number // When round started (kept for reference)
   roundEndTime: number // When round ended (kept for reference)
   endGameAfterCurrentRound: boolean // Flag to end game after current round
+  nextTransitionAt: number // Timestamp when next transition should occur
 }
 
 // Game over state - game finished, showing final results
@@ -161,6 +162,7 @@ export interface StoredGameState {
   roundGuesserScores: [string, number][]
   usedWords: string[]
   endGameAfterCurrentRound?: boolean
+  nextTransitionAt?: number
 }
 
 /**
@@ -187,6 +189,11 @@ export function gameStateToStorage(state: GameState): StoredGameState {
   // Only include endGameAfterCurrentRound for states that have it
   if (isPlayingState(state) || isRoundEndState(state)) {
     stored.endGameAfterCurrentRound = state.endGameAfterCurrentRound
+  }
+
+  // Only include nextTransitionAt for round-end state
+  if (isRoundEndState(state)) {
+    stored.nextTransitionAt = state.nextTransitionAt
   }
 
   return stored
@@ -270,6 +277,7 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         roundStartTime: stored.roundStartTime,
         roundEndTime: stored.roundEndTime,
         endGameAfterCurrentRound: stored.endGameAfterCurrentRound ?? false,
+        nextTransitionAt: stored.nextTransitionAt ?? Date.now(),
       } as RoundEndState
     }
     case 'game-over':
