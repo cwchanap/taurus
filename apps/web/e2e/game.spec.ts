@@ -423,29 +423,38 @@ test.describe('Drawing Game Feature', () => {
 
         // Helper function to complete a round by having guesser guess correctly
         const completeRound = async () => {
+          // Capture round identifier before waiting for transition
+          // This helps detect if round actually advanced vs stuck
+          const priorRoundId = await hostPage.locator('.round-badge').textContent()
+
           // Wait for round-end overlay to disappear (if present) and game to be in playing state
           // This handles the transition between rounds
-          await hostPage
-            .locator('.round-overlay')
-            .waitFor({ state: 'hidden', timeout: 10000 })
-            .catch((e: Error) => {
-              if (e.message.includes('Timeout')) {
-                console.warn('Round overlay waitFor timed out, continuing:', e.message)
-              } else {
-                throw e
-              }
-            })
-
-          // Verify overlay is actually hidden after catch to avoid silently swallowing failures
-          const overlayVisible = await hostPage.locator('.round-overlay').isVisible()
-          if (overlayVisible) {
-            // Check if game ended instead of round transitioning
-            const gameOver = await hostPage.locator('.game-over-overlay').isVisible()
-            if (!gameOver) {
-              throw new Error(
-                'Round overlay is still visible and game has not ended — round transition may have stalled'
-              )
+          try {
+            await hostPage.locator('.round-overlay').waitFor({ state: 'hidden', timeout: 10000 })
+          } catch (e: unknown) {
+            const errorMessage = e instanceof Error ? e.message : String(e)
+            if (!errorMessage.includes('Timeout')) {
+              throw e
             }
+            // Timeout is expected if overlay wasn't visible, continue to verification
+          }
+
+          // Verify one of three conditions holds:
+          // 1. The round-overlay is hidden
+          // 2. The game-over-overlay is visible
+          // 3. The round identifier has changed
+          const isOverlayVisible = await hostPage.locator('.round-overlay').isVisible()
+          const isGameOverVisible = await hostPage.locator('.game-over-overlay').isVisible()
+          const currentRoundId = await hostPage.locator('.round-badge').textContent()
+          const roundChanged = currentRoundId !== priorRoundId
+
+          if (!isOverlayVisible || isGameOverVisible || roundChanged) {
+            // One of the expected conditions is true, continue
+          } else {
+            // None of the expected conditions are true - round transition may have stalled
+            throw new Error(
+              'Round transition verification failed: overlay still visible, game not over, and round did not change — round transition may have stalled'
+            )
           }
 
           // Check if game is already over

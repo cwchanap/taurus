@@ -34,6 +34,9 @@ import {
   ROUND_DURATION_MS,
   MIN_PLAYERS_TO_START,
   DRAWER_BONUS_SCORE,
+  GAME_END_TRANSITION_DELAY,
+  ROUND_END_TRANSITION_DELAY,
+  SKIP_ROUND_TRANSITION_DELAY,
 } from './constants'
 import { getRandomWordExcluding } from './vocabulary'
 import {
@@ -175,14 +178,19 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       this.clearTimers()
 
+      // Calculate remaining delay based on stored nextTransitionAt
+      const now = Date.now()
+      const nextTransitionAt = (this.gameState as RoundEndState).nextTransitionAt
+      const remainingDelay = nextTransitionAt ? Math.max(0, nextTransitionAt - now) : 0
+
       if (shouldEnd) {
-        this.gameEndTimer = setTimeout(() => this.endGame(), 1000)
+        this.gameEndTimer = setTimeout(() => this.endGame(), remainingDelay)
       } else {
         this.roundEndTimer = setTimeout(() => {
           if (this.gameState.status === 'round-end') {
             this.startRound()
           }
-        }, 1000)
+        }, remainingDelay)
       }
     }
   }
@@ -1178,7 +1186,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       if (this.gameEndTimer) {
         clearTimeout(this.gameEndTimer)
       }
-      this.gameEndTimer = setTimeout(() => this.endGame(), 3000)
+      // Store the target transition time for resume consistency
+      const now = Date.now()
+      ;(this.gameState as RoundEndState).nextTransitionAt = now + GAME_END_TRANSITION_DELAY
+      this.gameEndTimer = setTimeout(() => this.endGame(), GAME_END_TRANSITION_DELAY)
       return
     }
 
@@ -1188,20 +1199,26 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       if (this.roundEndTimer) {
         clearTimeout(this.roundEndTimer)
       }
+      // Store the target transition time for resume consistency
+      const now = Date.now()
+      ;(this.gameState as RoundEndState).nextTransitionAt = now + SKIP_ROUND_TRANSITION_DELAY
       this.roundEndTimer = setTimeout(() => {
         if (this.gameState.status === 'round-end' || this.gameState.status === 'playing') {
           this.startRound()
         }
-      }, 2000) // 2 second break even when skipping (drawer left)
+      }, SKIP_ROUND_TRANSITION_DELAY)
     } else {
       if (this.roundEndTimer) {
         clearTimeout(this.roundEndTimer)
       }
+      // Store the target transition time for resume consistency
+      const now = Date.now()
+      ;(this.gameState as RoundEndState).nextTransitionAt = now + ROUND_END_TRANSITION_DELAY
       this.roundEndTimer = setTimeout(() => {
         if (this.gameState.status === 'round-end') {
           this.startRound()
         }
-      }, 5000) // 5 second break between rounds
+      }, ROUND_END_TRANSITION_DELAY)
     }
   }
 
@@ -1280,6 +1297,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
    */
   private handleCorrectGuess(playerId: string, playerName: string) {
     if (!this.gameState.roundEndTime || !this.gameState.currentWord) return
+
+    // Prevent duplicate scoring - check if player already guessed correctly
+    if (this.gameState.correctGuessers.has(playerId)) {
+      return
+    }
 
     // Mark player as having guessed correctly
     this.gameState.correctGuessers.add(playerId)
