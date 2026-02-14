@@ -517,6 +517,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       this.gameState = result.updatedGameState
 
+      // Persist updated game state (e.g. drawer order/round counters) even when game continues
+      this.ctx.waitUntil(
+        this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+      )
+
       // Clean up flag after a short delay to prevent race conditions with duplicate close events
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
 
@@ -550,22 +555,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private checkRateLimit(playerId: string, isNewStroke: boolean): boolean {
     const now = Date.now()
 
-    // Get or initialize message rate limit state
-    let messageState = this.playerMessageTimestamps.get(playerId)
-    if (!messageState) {
-      messageState = { timestamps: [] }
-    }
-
-    // Check message rate limit
-    const messageResult = checkMessageRateLimit(messageState, now)
-    if (!messageResult.allowed) {
-      return false
-    }
-
-    // Update message state
-    this.playerMessageTimestamps.set(playerId, messageResult.updatedState)
-
-    // Check stroke-specific rate limit (only for NEW strokes)
     if (isNewStroke) {
       let strokeState = this.playerStrokeTimestamps.get(playerId)
       if (!strokeState) {
@@ -579,7 +568,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       // Update stroke state
       this.playerStrokeTimestamps.set(playerId, strokeResult.updatedState)
+
+      return true
     }
+
+    // Chat/messages use their own independent quota
+    let messageState = this.playerMessageTimestamps.get(playerId)
+    if (!messageState) {
+      messageState = { timestamps: [] }
+    }
+
+    const messageResult = checkMessageRateLimit(messageState, now)
+    if (!messageResult.allowed) {
+      return false
+    }
+
+    this.playerMessageTimestamps.set(playerId, messageResult.updatedState)
 
     return true
   }
