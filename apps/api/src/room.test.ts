@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { MAX_MESSAGES_PER_WINDOW, MAX_STROKES_PER_WINDOW } from './constants'
 
 // Mock cloudflare:workers module
 mock.module('cloudflare:workers', () => ({
@@ -19,7 +20,9 @@ describe('DrawingRoom - Player Leave During Game', () => {
   let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
   let mockState: Partial<DurableObjectState>
   let mockStorageGet: ReturnType<typeof mock>
+  let mockStoragePut: ReturnType<typeof mock>
   let mockGetWebSockets: ReturnType<typeof mock>
+  let mockWaitUntil: ReturnType<typeof mock>
 
   let mockEnv: unknown
 
@@ -27,13 +30,15 @@ describe('DrawingRoom - Player Leave During Game', () => {
     ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
 
     mockStorageGet = mock(() => Promise.resolve(undefined))
+    mockStoragePut = mock(() => Promise.resolve())
     mockGetWebSockets = mock(() => [])
+    mockWaitUntil = mock(() => {})
 
     // Mock Durable Object state
     mockState = {
       storage: {
         get: mockStorageGet,
-        put: mock(() => Promise.resolve()),
+        put: mockStoragePut,
         delete: mock(() => Promise.resolve()),
         list: mock(() => Promise.resolve(new Map())),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,7 +49,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
         name: 'test-room',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
-      waitUntil: mock(() => {}),
+      waitUntil: mockWaitUntil,
       blockConcurrencyWhile: mock(async (fn) => await fn()),
       getWebSockets: mockGetWebSockets,
     }
@@ -179,5 +184,88 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect((room as any).roundTimer).toBeNull()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).tickTimer).toBeNull()
+  })
+
+  test('persists updated game state when player leaves but game continues', async () => {
+    const ws1 = {
+      deserializeAttachment: () => ({
+        playerId: 'p1',
+        player: { id: 'p1', name: 'P1', color: '#111111' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    const ws2 = {
+      deserializeAttachment: () => ({
+        playerId: 'p2',
+        player: { id: 'p2', name: 'P2', color: '#222222' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    const ws3 = {
+      deserializeAttachment: () => ({
+        playerId: 'p3',
+        player: { id: 'p3', name: 'P3', color: '#333333' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+
+    mockGetWebSockets.mockReturnValue([ws1, ws2, ws3])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p2', 'p3'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'P1' }],
+        ['p2', { score: 0, name: 'P2' }],
+        ['p3', { score: 0, name: 'P3' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2', 'p3']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['cat']),
+      endGameAfterCurrentRound: false,
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(ws3 as any)
+
+    // allow async storage put promise created in waitUntil call to execute
+    await Promise.resolve()
+
+    expect(mockWaitUntil).toHaveBeenCalled()
+    expect(mockStoragePut).toHaveBeenCalledWith('gameState', expect.any(Object))
+  })
+
+  test('new stroke rate limit does not consume chat message quota', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const checkRateLimit = (room as any).checkRateLimit.bind(room)
+    const playerId = 'drawer-1'
+
+    // Consume many stroke creations beyond chat message limit
+    for (let i = 0; i < MAX_MESSAGES_PER_WINDOW + 1; i++) {
+      expect(checkRateLimit(playerId, true)).toBe(true)
+    }
+
+    // Chat should still be allowed because stroke and chat quotas are independent
+    expect(checkRateLimit(playerId, false)).toBe(true)
+
+    // Stroke quota should still enforce its own maximum
+    for (let i = MAX_MESSAGES_PER_WINDOW + 1; i < MAX_STROKES_PER_WINDOW; i++) {
+      expect(checkRateLimit(playerId, true)).toBe(true)
+    }
+    expect(checkRateLimit(playerId, true)).toBe(false)
   })
 })
