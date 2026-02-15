@@ -235,7 +235,7 @@ export function handlePlayerLeaveInActiveGame(
     // If the player being removed has already drawn or is currently drawing,
     // we need to decrement currentRound so the next round points to the correct player
     if (removedIndex <= currentRound - 1) {
-      currentRound = Math.max(0, currentRound - 1)
+      currentRound = Math.max(1, currentRound - 1)
     }
 
     // Remove player from drawer order
