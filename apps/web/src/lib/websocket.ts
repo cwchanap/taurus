@@ -87,6 +87,11 @@ export class GameWebSocket {
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0
+      // Clear any pending reconnect timer on successful connection
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = null
+      }
       this.handlers.onConnectionChange?.(true)
       this.send({ type: 'join', name: this.playerName })
     }
@@ -196,7 +201,14 @@ export class GameWebSocket {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
       const delayMs = Math.pow(2, this.reconnectAttempts - 1) * 1000
-      setTimeout(() => this.connect(), delayMs)
+      // Clear any existing reconnect timer before setting a new one
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer)
+      }
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null
+        this.connect()
+      }, delayMs)
     } else {
       this.handlers.onConnectionFailed?.(
         `Failed to reconnect after ${this.maxReconnectAttempts} attempts. Please refresh the page.`
@@ -248,6 +260,11 @@ export class GameWebSocket {
 
   disconnect() {
     this.intentionalDisconnect = true
+    // Clear any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
     this.ws?.close()
     this.ws = null
   }
