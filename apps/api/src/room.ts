@@ -81,6 +81,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private hostPlayerId: string | null = null
   private storageWriteTimer: ReturnType<typeof setTimeout> | null = null
   private storageWriteDelay = 1000 // 1s debounce balances persistence reliability with write frequency
+  private pendingStrokeWrite: Promise<void> | null = null // Track in-flight stroke write to prevent race conditions
 
   // Sliding window rate limiting
   private playerMessageTimestamps: Map<string, RateLimitState> = new Map()
@@ -244,11 +245,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     this.storageWriteTimer = setTimeout(() => {
       this.storageWriteTimer = null
-      this.ctx.waitUntil(
-        this.storagePutWithRetry('strokes', this.strokes).catch((e) =>
+      // Track the in-flight write to prevent race conditions with stroke deletion
+      this.pendingStrokeWrite = this.storagePutWithRetry('strokes', this.strokes)
+        .catch((e) => {
           console.error('Background storage save failed:', e)
-        )
-      )
+          throw e
+        })
+        .finally(() => {
+          this.pendingStrokeWrite = null
+        })
+      this.ctx.waitUntil(this.pendingStrokeWrite)
     }, this.storageWriteDelay)
   }
 
@@ -529,22 +535,26 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       this.gameState = result.updatedGameState
 
-      // Persist updated game state (e.g. drawer order/round counters) even when game continues
-      this.ctx.waitUntil(
-        this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
-      )
-
       // Clean up flag after a short delay to prevent race conditions with duplicate close events
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
 
       if (result.shouldEndGame) {
+        // endGame() will persist the terminal state, so we don't schedule a pre-transition persist here
         this.endGame()
         return
       }
 
       if (result.shouldEndRound) {
+        // endRound() will persist the terminal state, so we don't schedule a pre-transition persist here
         this.endRound(true)
+        return
       }
+
+      // Only persist game state if the game continues (not when ending game/round)
+      // This prevents race conditions where pre-transition writes overwrite terminal state
+      this.ctx.waitUntil(
+        this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+      )
 
       // Check if all remaining guessers have guessed correctly (early round end)
       if (!result.shouldEndRound && isPlayingState(this.gameState)) {
@@ -969,10 +979,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
+    // Wait for any in-flight stroke write to complete before deleting to prevent
+    // stale strokes from being written back after the delete (race condition)
+    const pendingWrite = this.pendingStrokeWrite
     this.ctx.waitUntil(
-      this.storageDeleteWithRetry('strokes').catch((e) =>
-        console.error('Failed to delete strokes from storage:', e)
-      )
+      (pendingWrite ?? Promise.resolve())
+        .catch(() => {
+          // Ignore errors from the pending write, we just need to wait for it to complete
+        })
+        .then(() => this.storageDeleteWithRetry('strokes'))
+        .catch((e) => console.error('Failed to delete strokes from storage:', e))
     )
 
     // Broadcast reset to all players
@@ -1048,10 +1064,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
+    // Wait for any in-flight stroke write to complete before deleting to prevent
+    // stale strokes from being written back after the delete (race condition)
+    const pendingWrite = this.pendingStrokeWrite
     this.ctx.waitUntil(
-      this.storageDeleteWithRetry('strokes').catch((e) =>
-        console.error('Failed to delete strokes from storage:', e)
-      )
+      (pendingWrite ?? Promise.resolve())
+        .catch(() => {
+          // Ignore errors from the pending write, we just need to wait for it to complete
+        })
+        .then(() => this.storageDeleteWithRetry('strokes'))
+        .catch((e) => console.error('Failed to delete strokes from storage:', e))
     )
 
     // Broadcast round start to all players
@@ -1284,10 +1306,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
+    // Wait for any in-flight stroke write to complete before deleting to prevent
+    // stale strokes from being written back after the delete (race condition)
+    const pendingWrite = this.pendingStrokeWrite
     this.ctx.waitUntil(
-      this.storageDeleteWithRetry('strokes').catch((e) =>
-        console.error('Failed to delete strokes from storage:', e)
-      )
+      (pendingWrite ?? Promise.resolve())
+        .catch(() => {
+          // Ignore errors from the pending write, we just need to wait for it to complete
+        })
+        .then(() => this.storageDeleteWithRetry('strokes'))
+        .catch((e) => console.error('Failed to delete strokes from storage:', e))
     )
 
     // Set status to game-over (don't reset immediately) so new/reconnecting players see results
