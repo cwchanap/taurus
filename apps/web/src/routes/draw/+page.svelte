@@ -8,6 +8,7 @@
   import GameHeader from '$lib/components/GameHeader.svelte'
   import Scoreboard from '$lib/components/Scoreboard.svelte'
   import { GameWebSocket } from '$lib/websocket'
+  import { deriveGameWinners } from '$lib/game-winners'
   import { onDestroy } from 'svelte'
   import type {
     Player,
@@ -130,6 +131,11 @@
         roundNumber = initialGameState.currentRound
         totalRounds = initialGameState.totalRounds
         scores = initialGameState.scores
+        if (initialGameState.status === 'game-over') {
+          gameWinners = deriveGameWinners(initialGameState.scores)
+        } else {
+          gameWinners = []
+        }
         if (initialGameState.roundEndTime) {
           timeRemaining = Math.max(
             0,

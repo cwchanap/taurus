@@ -81,7 +81,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private hostPlayerId: string | null = null
   private storageWriteTimer: ReturnType<typeof setTimeout> | null = null
   private storageWriteDelay = 1000 // 1s debounce balances persistence reliability with write frequency
-  private pendingStrokeWrite: Promise<void> | null = null // Track in-flight stroke write to prevent race conditions
+  private strokeStorageQueue: Promise<void> = Promise.resolve() // Serialize stroke storage write/delete ops
+  private pendingStrokeWrite: Promise<void> | null = null // Track latest in-flight stroke storage operation
 
   // Sliding window rate limiting
   private playerMessageTimestamps: Map<string, RateLimitState> = new Map()
@@ -238,6 +239,24 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
   }
 
+  private enqueueStrokeStorageOperation(operation: () => Promise<void>): Promise<void> {
+    const op = this.strokeStorageQueue.then(operation, operation)
+    this.strokeStorageQueue = op.catch(() => {
+      // Keep queue alive after failures so later operations still run
+    })
+    return op
+  }
+
+  private queueStrokeWrite(): Promise<void> {
+    return this.enqueueStrokeStorageOperation(() =>
+      this.storagePutWithRetry('strokes', this.strokes)
+    )
+  }
+
+  private queueStrokeDelete(): Promise<void> {
+    return this.enqueueStrokeStorageOperation(() => this.storageDeleteWithRetry('strokes'))
+  }
+
   private scheduleStorageWrite() {
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
@@ -245,8 +264,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     this.storageWriteTimer = setTimeout(() => {
       this.storageWriteTimer = null
-      // Track the in-flight write to prevent race conditions with stroke deletion
-      this.pendingStrokeWrite = this.storagePutWithRetry('strokes', this.strokes)
+      // Track the in-flight write while preserving operation ordering with deletes
+      this.pendingStrokeWrite = this.queueStrokeWrite()
         .catch((e) => {
           console.error('Background storage save failed:', e)
           throw e
@@ -751,7 +770,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
 
     try {
-      await this.storageDeleteWithRetry('strokes')
+      await this.queueStrokeDelete()
       this.strokes = []
 
       this.broadcast({
@@ -980,15 +999,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.storageWriteTimer = null
     }
     // Wait for any in-flight stroke write to complete before deleting to prevent
-    // stale strokes from being written back after the delete (race condition)
-    const pendingWrite = this.pendingStrokeWrite
+    // delayed stale delete from racing with newer stroke writes
     this.ctx.waitUntil(
-      (pendingWrite ?? Promise.resolve())
-        .catch(() => {
-          // Ignore errors from the pending write, we just need to wait for it to complete
-        })
-        .then(() => this.storageDeleteWithRetry('strokes'))
-        .catch((e) => console.error('Failed to delete strokes from storage:', e))
+      this.queueStrokeDelete().catch((e) =>
+        console.error('Failed to delete strokes from storage:', e)
+      )
     )
 
     // Broadcast reset to all players
@@ -1065,15 +1080,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.storageWriteTimer = null
     }
     // Wait for any in-flight stroke write to complete before deleting to prevent
-    // stale strokes from being written back after the delete (race condition)
-    const pendingWrite = this.pendingStrokeWrite
+    // delayed stale delete from racing with newer stroke writes
     this.ctx.waitUntil(
-      (pendingWrite ?? Promise.resolve())
-        .catch(() => {
-          // Ignore errors from the pending write, we just need to wait for it to complete
-        })
-        .then(() => this.storageDeleteWithRetry('strokes'))
-        .catch((e) => console.error('Failed to delete strokes from storage:', e))
+      this.queueStrokeDelete().catch((e) =>
+        console.error('Failed to delete strokes from storage:', e)
+      )
     )
 
     // Broadcast round start to all players
@@ -1307,15 +1318,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.storageWriteTimer = null
     }
     // Wait for any in-flight stroke write to complete before deleting to prevent
-    // stale strokes from being written back after the delete (race condition)
-    const pendingWrite = this.pendingStrokeWrite
+    // delayed stale delete from racing with newer stroke writes
     this.ctx.waitUntil(
-      (pendingWrite ?? Promise.resolve())
-        .catch(() => {
-          // Ignore errors from the pending write, we just need to wait for it to complete
-        })
-        .then(() => this.storageDeleteWithRetry('strokes'))
-        .catch((e) => console.error('Failed to delete strokes from storage:', e))
+      this.queueStrokeDelete().catch((e) =>
+        console.error('Failed to delete strokes from storage:', e)
+      )
     )
 
     // Set status to game-over (don't reset immediately) so new/reconnecting players see results
