@@ -268,6 +268,8 @@ export function handlePlayerLeaveInActiveGame(
       ...baseClone,
     }
   } else {
+    // Preserve nextTransitionAt from the original round-end state
+    const roundEndState = gameState as RoundEndState
     updatedState = {
       status: 'round-end',
       currentRound,
@@ -278,6 +280,7 @@ export function handlePlayerLeaveInActiveGame(
       roundStartTime: gameState.roundStartTime,
       roundEndTime: gameState.roundEndTime,
       endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
+      nextTransitionAt: roundEndState.nextTransitionAt,
       ...baseClone,
     }
   }

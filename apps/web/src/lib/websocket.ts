@@ -60,6 +60,7 @@ export class GameWebSocket {
   private ws: WebSocket | null = null
   private handlers: GameEventHandler = {}
   private reconnectAttempts = 0
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private maxReconnectAttempts = 5
   private intentionalDisconnect = false
   private roomId: string

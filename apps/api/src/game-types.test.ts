@@ -103,6 +103,7 @@ describe('gameStateToStorage / gameStateFromStorage round-trip', () => {
       roundGuesserScores: new Map(),
       usedWords: new Set(['cat']),
       endGameAfterCurrentRound: false,
+      nextTransitionAt: now + 5000,
     }
     const stored = gameStateToStorage(state)
     const restored = gameStateFromStorage(stored)

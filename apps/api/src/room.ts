@@ -450,6 +450,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // They can guess but won't affect existing players' score calculations.
     if (this.gameState.status === 'playing') {
       this.gameState.roundGuessers.add(playerId)
+      // Persist updated game state with late joiner data
+      this.ctx.waitUntil(
+        this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+      )
     }
 
     // Send current state to the new player (include existing players)
@@ -1189,6 +1193,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // Store the target transition time for resume consistency
       const now = Date.now()
       ;(this.gameState as RoundEndState).nextTransitionAt = now + GAME_END_TRANSITION_DELAY
+      // Persist with nextTransitionAt before setting timer (prevents rehydration timing issues)
+      this.ctx.waitUntil(
+        this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+      )
       this.gameEndTimer = setTimeout(() => this.endGame(), GAME_END_TRANSITION_DELAY)
       return
     }
@@ -1202,6 +1210,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // Store the target transition time for resume consistency
       const now = Date.now()
       ;(this.gameState as RoundEndState).nextTransitionAt = now + SKIP_ROUND_TRANSITION_DELAY
+      // Persist with nextTransitionAt before setting timer (prevents rehydration timing issues)
+      this.ctx.waitUntil(
+        this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+      )
       this.roundEndTimer = setTimeout(() => {
         if (this.gameState.status === 'round-end' || this.gameState.status === 'playing') {
           this.startRound()
@@ -1214,6 +1226,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // Store the target transition time for resume consistency
       const now = Date.now()
       ;(this.gameState as RoundEndState).nextTransitionAt = now + ROUND_END_TRANSITION_DELAY
+      // Persist with nextTransitionAt before setting timer (prevents rehydration timing issues)
+      this.ctx.waitUntil(
+        this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+      )
       this.roundEndTimer = setTimeout(() => {
         if (this.gameState.status === 'round-end') {
           this.startRound()
