@@ -3,6 +3,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
+    "emitDeclarationOnly": true,
     "moduleResolution": "bundler",
     "target": "esnext",
     "module": "esnext",

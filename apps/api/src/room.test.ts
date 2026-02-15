@@ -1,6 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import { MAX_MESSAGES_PER_WINDOW, MAX_STROKES_PER_WINDOW } from './constants'
 
+// Helper to flush all pending promises reliably
+function flushPromises(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
 // Mock cloudflare:workers module
 mock.module('cloudflare:workers', () => ({
   DurableObject: class {
@@ -243,7 +248,8 @@ describe('DrawingRoom - Player Leave During Game', () => {
     ;(room as any).handleLeave(ws3 as any)
 
     // allow async storage put promise created in waitUntil call to execute
-    await Promise.resolve()
+    // Use flushPromises to ensure all chained promises in waitUntil callback complete
+    await flushPromises()
 
     expect(mockWaitUntil).toHaveBeenCalled()
     expect(mockStoragePut).toHaveBeenCalledWith('gameState', expect.any(Object))

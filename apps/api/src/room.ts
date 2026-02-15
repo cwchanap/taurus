@@ -810,7 +810,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       // Check for exact-match correct guess (scoring)
       if (isCorrectGuess(sanitizedContent, this.gameState.currentWord)) {
-        this.handleCorrectGuess(playerId, attachment.player.name)
+        await this.handleCorrectGuess(playerId, attachment.player.name)
         return
       }
     }
@@ -1215,7 +1215,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
       )
       this.roundEndTimer = setTimeout(() => {
-        if (this.gameState.status === 'round-end' || this.gameState.status === 'playing') {
+        if (this.gameState.status === 'round-end') {
           this.startRound()
         }
       }, SKIP_ROUND_TRANSITION_DELAY)
@@ -1311,7 +1311,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   /**
    * Handle a correct guess from a player
    */
-  private handleCorrectGuess(playerId: string, playerName: string) {
+  private async handleCorrectGuess(playerId: string, playerName: string) {
     if (!this.gameState.roundEndTime || !this.gameState.currentWord) return
 
     // Prevent duplicate scoring - check if player already guessed correctly
@@ -1333,6 +1333,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.gameState.scores.set(playerId, { score, name: playerName })
     }
     this.gameState.roundGuesserScores.set(playerId, score)
+
+    // Persist updated scores to durable storage before broadcasting
+    await this.persistGameState()
 
     // Calculate time remaining for notification
     const timeRemaining = Math.max(0, this.gameState.roundEndTime - Date.now())

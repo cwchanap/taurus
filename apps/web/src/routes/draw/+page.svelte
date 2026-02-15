@@ -208,6 +208,11 @@
         timeRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
         gameStatus = 'playing'
         lastRoundResult = null
+        // Clear any pending correct-guess timeout before resetting notification
+        if (correctGuessTimeoutId) {
+          clearTimeout(correctGuessTimeoutId)
+          correctGuessTimeoutId = null
+        }
         correctGuessNotification = null
       },
       onRoundEnd: (word, result, newScores) => {
