@@ -207,6 +207,51 @@ describe('gameStateFromStorage validation', () => {
     const restored = gameStateFromStorage(corrupt)
     expect(restored.status).toBe('lobby')
   })
+
+  test('corrupt lobby state with non-zero currentRound resets to 0', () => {
+    const corrupt: StoredGameState = {
+      status: 'lobby',
+      currentRound: 5, // Corrupt - should be 0 for lobby
+      totalRounds: 3,
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: [],
+      scores: [],
+      correctGuessers: [],
+      roundGuessers: [],
+      roundGuesserScores: [],
+      usedWords: [],
+    }
+    const restored = gameStateFromStorage(corrupt)
+    expect(restored.status).toBe('lobby')
+    expect(restored.currentRound).toBe(0) // Should be reset to 0
+  })
+
+  test('corrupt starting state with non-zero currentRound resets to 0', () => {
+    const corrupt: StoredGameState = {
+      status: 'starting',
+      currentRound: 3, // Corrupt - should be 0 for starting
+      totalRounds: 5,
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: [],
+      correctGuessers: [],
+      roundGuessers: [],
+      roundGuesserScores: [],
+      usedWords: [],
+    }
+    const restored = gameStateFromStorage(corrupt)
+    expect(restored.status).toBe('starting')
+    expect(restored.currentRound).toBe(0) // Should be reset to 0
+    expect(restored.totalRounds).toBe(5) // Other fields preserved
+  })
 })
 
 describe('gameStateToWire', () => {

@@ -215,26 +215,42 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
   }
 
   switch (stored.status) {
-    case 'lobby':
+    case 'lobby': {
+      // Enforce invariant: LobbyState must have currentRound === 0
+      if (stored.currentRound !== 0) {
+        console.warn(
+          `Corrupt lobby state in storage: currentRound is ${stored.currentRound}, resetting to 0`
+        )
+      }
       return {
         ...baseState,
         status: 'lobby',
+        currentRound: 0, // Explicitly set to 0, not relying on baseState
         currentDrawerId: null,
         currentWord: null,
         wordLength: null,
         roundStartTime: null,
         roundEndTime: null,
       } as LobbyState
-    case 'starting':
+    }
+    case 'starting': {
+      // Enforce invariant: StartingState must have currentRound === 0
+      if (stored.currentRound !== 0) {
+        console.warn(
+          `Corrupt starting state in storage: currentRound is ${stored.currentRound}, resetting to 0`
+        )
+      }
       return {
         ...baseState,
         status: 'starting',
+        currentRound: 0, // Explicitly set to 0, not relying on baseState
         currentDrawerId: null,
         currentWord: null,
         wordLength: null,
         roundStartTime: null,
         roundEndTime: null,
       } as StartingState
+    }
     case 'playing': {
       // Validate required fields for playing state
       if (
