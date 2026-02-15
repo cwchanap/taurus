@@ -123,15 +123,23 @@ describe('handlePlayerLeaveInActiveGame', () => {
   })
 
   describe('when current drawer leaves', () => {
-    test('should clamp currentRound to minimum of 1 when first drawer leaves in round 1', () => {
+    test('should decrement currentRound to 0 when first drawer leaves in round 1', () => {
       const state = createPlayingGameState(['p1', 'p2', 'p3'], 0) // p1 is current drawer (round 1)
       const remainingPlayers = ['p2', 'p3'] // p1 leaving (first drawer)
 
       const result = handlePlayerLeaveInActiveGame('p1', state, remainingPlayers)
 
-      // currentRound should be clamped to 1 (minimum) to maintain 1-based indexing
-      expect(result.updatedGameState.currentRound).toBe(1)
+      // currentRound becomes 0 so findNextDrawer() advances to round 1 (first remaining drawer)
+      expect(result.updatedGameState.currentRound).toBe(0)
       expect(result.updatedGameState.drawerOrder).toEqual(['p2', 'p3'])
+
+      const nextDrawer = findNextDrawer(
+        result.updatedGameState.currentRound,
+        result.updatedGameState.drawerOrder,
+        new Set(remainingPlayers)
+      )
+      expect(nextDrawer.drawerId).toBe('p2')
+      expect(nextDrawer.roundNumber).toBe(1)
     })
 
     test('should end round immediately', () => {

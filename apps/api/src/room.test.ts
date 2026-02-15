@@ -26,6 +26,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
   let mockState: Partial<DurableObjectState>
   let mockStorageGet: ReturnType<typeof mock>
   let mockStoragePut: ReturnType<typeof mock>
+  let mockStorageDelete: ReturnType<typeof mock>
   let mockGetWebSockets: ReturnType<typeof mock>
   let mockWaitUntil: ReturnType<typeof mock>
 
@@ -36,6 +37,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
 
     mockStorageGet = mock(() => Promise.resolve(undefined))
     mockStoragePut = mock(() => Promise.resolve())
+    mockStorageDelete = mock(() => Promise.resolve())
     mockGetWebSockets = mock(() => [])
     mockWaitUntil = mock(() => {})
 
@@ -44,7 +46,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
       storage: {
         get: mockStorageGet,
         put: mockStoragePut,
-        delete: mock(() => Promise.resolve()),
+        delete: mockStorageDelete,
         list: mock(() => Promise.resolve(new Map())),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
@@ -273,5 +275,38 @@ describe('DrawingRoom - Player Leave During Game', () => {
       expect(checkRateLimit(playerId, true)).toBe(true)
     }
     expect(checkRateLimit(playerId, true)).toBe(false)
+  })
+
+  test('serializes stroke delete before later write operations', async () => {
+    const operationOrder: string[] = []
+
+    mockStorageDelete.mockImplementation(async () => {
+      operationOrder.push('delete')
+    })
+    mockStoragePut.mockImplementation(async () => {
+      operationOrder.push('put')
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = [
+      {
+        id: 'stroke-1',
+        playerId: 'p1',
+        color: '#000000',
+        size: 8,
+        points: [{ x: 10, y: 10 }],
+      },
+    ]
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const deletePromise = (room as any).queueStrokeDelete()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const writePromise = (room as any).queueStrokeWrite()
+
+    await Promise.all([deletePromise, writePromise])
+
+    expect(operationOrder).toEqual(['delete', 'put'])
+    expect(mockStorageDelete).toHaveBeenCalledWith('strokes')
+    expect(mockStoragePut).toHaveBeenCalledWith('strokes', expect.any(Array))
   })
 })
