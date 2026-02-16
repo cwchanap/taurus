@@ -63,10 +63,8 @@ describe('DrawingRoom - Player Leave During Game', () => {
 
     mockEnv = {}
 
-    // Suppress unused variable warnings for setup variables
+    // Suppress unused variable warning for mockEnv (used indirectly via constructor)
     void mockEnv
-
-    void room
 
     // Create actual DrawingRoom instance for future test implementation
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
