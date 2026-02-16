@@ -14,7 +14,6 @@ import {
   MAX_STROKES_PER_WINDOW,
   MAX_STROKE_UPDATES_PER_WINDOW,
   RATE_LIMIT_WINDOW,
-  SKIP_ROUND_TRANSITION_DELAY,
 } from './constants'
 import type { PlayingState, RoundEndState } from './game-types'
 import { isPlayingState } from './game-types'
@@ -266,21 +265,20 @@ export function handlePlayerLeaveInActiveGame(
 
   if (isPlayingState(gameState)) {
     if (isCurrentDrawerLeaving) {
-      // When drawer leaves, transition immediately to round-end state
-      // This keeps state self-consistent (PlayingState always has valid drawer)
-      // The caller will see shouldEndRound=true and handle timer cleanup
-      const now = Date.now()
+      // When drawer leaves, keep status as 'playing' so endRound() can properly
+      // execute and handle the transition to 'round-end'. endRound() checks that
+      // status === 'playing' before proceeding, so we must preserve that state.
+      // The caller will see shouldEndRound=true and call endRound(true).
       updatedState = {
-        status: 'round-end',
+        status: 'playing',
         currentRound,
         totalRounds,
-        currentDrawerId: null,
-        currentWord: null,
-        wordLength: null,
+        currentDrawerId: gameState.currentDrawerId,
+        currentWord: gameState.currentWord,
+        wordLength: gameState.wordLength,
         roundStartTime: gameState.roundStartTime,
         roundEndTime: gameState.roundEndTime,
         endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
-        nextTransitionAt: now + SKIP_ROUND_TRANSITION_DELAY,
         ...baseClone,
       }
     } else {

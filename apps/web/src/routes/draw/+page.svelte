@@ -64,7 +64,7 @@
 
   // Derived state
   const isCurrentDrawer = $derived(playerId === currentDrawerId)
-  const canDraw = $derived(gameStatus === 'lobby' || (gameStatus === 'playing' && isCurrentDrawer))
+  const canDraw = $derived(gameStatus === 'playing' && isCurrentDrawer)
   const canStartGame = $derived(isHost && gameStatus === 'lobby' && players.length >= 2)
 
   async function createRoom() {
