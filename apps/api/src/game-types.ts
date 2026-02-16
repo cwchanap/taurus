@@ -278,7 +278,11 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
     }
     case 'round-end': {
       // Validate required fields for round-end state
-      if (stored.roundStartTime == null || stored.roundEndTime == null) {
+      if (
+        stored.roundStartTime == null ||
+        stored.roundEndTime == null ||
+        stored.nextTransitionAt == null
+      ) {
         console.error(
           'Corrupt round-end state in storage: missing required fields, falling back to lobby'
         )
@@ -293,7 +297,7 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         roundStartTime: stored.roundStartTime,
         roundEndTime: stored.roundEndTime,
         endGameAfterCurrentRound: stored.endGameAfterCurrentRound ?? false,
-        nextTransitionAt: stored.nextTransitionAt ?? Date.now(),
+        nextTransitionAt: stored.nextTransitionAt,
       } as RoundEndState
     }
     case 'game-over':

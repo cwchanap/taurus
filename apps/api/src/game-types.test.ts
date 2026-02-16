@@ -112,6 +112,7 @@ describe('gameStateToStorage / gameStateFromStorage round-trip', () => {
     const roundEnd = restored as RoundEndState
     expect(roundEnd.roundStartTime).toBe(now - 60000)
     expect(roundEnd.roundEndTime).toBe(now)
+    expect(roundEnd.nextTransitionAt).toBe(now + 5000)
   })
 
   test('game-over state round-trips correctly', () => {
