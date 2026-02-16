@@ -100,8 +100,12 @@ export function isValidStrokeId(strokeId: unknown): strokeId is string {
  * Validates and sanitizes stroke data from client
  * Returns validated Stroke object or null if invalid
  *
- * @param strokeData Raw data from client
- * @param playerId ID of the player sending the stroke
+ * SECURITY: The playerId is ALWAYS taken from the authenticated session parameter,
+ * completely ignoring any playerId the client might have provided. This prevents
+ * spoofing attacks where a client could try to draw as another player.
+ *
+ * @param strokeData Raw data from client (playerId if present is ignored for security)
+ * @param playerId ID of the player sending the stroke (from authenticated session)
  * @param existingStrokeIds Optional set of existing stroke IDs to check for collisions
  */
 export function validateStroke(

@@ -561,7 +561,7 @@ describe('WebSocket reconnection', () => {
       expect(connectionStates).toEqual([true, false, true])
     })
 
-    it('notifies onConnectionChange(false) on error', async () => {
+    it('notifies onConnectionChange(false) on error via onclose', async () => {
       const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
       const connectionStates: boolean[] = []
 
@@ -570,8 +570,12 @@ describe('WebSocket reconnection', () => {
       })
 
       gameWs.connect()
+      // onerror logs but doesn't call onConnectionChange (to avoid duplicate with onclose)
       mockWebSocketInstances[0].simulateError()
+      expect(connectionStates).toEqual([])
 
+      // onclose fires after onerror and triggers the connection change notification
+      mockWebSocketInstances[0].simulateClose()
       expect(connectionStates).toEqual([false])
     })
   })
