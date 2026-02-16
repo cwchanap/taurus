@@ -116,7 +116,8 @@ export class GameWebSocket {
 
     this.ws.onerror = (event) => {
       console.error('WebSocket error:', event)
-      this.handlers.onConnectionChange?.(false)
+      // Don't call onConnectionChange(false) here - onclose will fire after onerror
+      // and handle the connection change notification, preventing duplicate calls
     }
   }
 

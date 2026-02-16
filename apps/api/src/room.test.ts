@@ -74,7 +74,12 @@ describe('DrawingRoom - Player Leave During Game', () => {
   })
 
   afterEach(() => {
-    // Bun test doesn't need explicit mock cleanup
+    // Clean up any timers to prevent leaks across tests
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const clearTimers = (room as any).clearTimers
+    if (room && typeof clearTimers === 'function') {
+      clearTimers()
+    }
   })
 
   test.skip('placeholder - setup verified', () => {
@@ -140,9 +145,6 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect((room as any).roundTimer).not.toBeNull()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).tickTimer).not.toBeNull()
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).clearTimers()
   })
 
   test('does not rehydrate timers when no active sockets exist', async () => {

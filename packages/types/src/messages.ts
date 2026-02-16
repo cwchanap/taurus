@@ -19,6 +19,19 @@ export interface Stroke {
   points: Point[]
 }
 
+/**
+ * Stroke payload sent by client. Unlike Stroke, playerId is optional
+ * because the server will always overwrite it with the authenticated
+ * player's ID for security reasons. If provided by client, it's ignored.
+ */
+export interface ClientStrokePayload {
+  id?: string // Optional - server generates if not provided or if collision
+  playerId?: string // Optional and IGNORED - server uses authenticated session ID
+  color: string
+  size: number
+  points: Point[]
+}
+
 // Wire format for GameState (what goes over WebSocket)
 export interface GameStateWire {
   status: GameStatus
@@ -35,7 +48,7 @@ export interface GameStateWire {
 export type ClientMessage =
   | { type: 'join'; name: string }
   | { type: 'chat'; content: string }
-  | { type: 'stroke'; stroke: Stroke }
+  | { type: 'stroke'; stroke: ClientStrokePayload }
   | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'clear' }
   | { type: 'start-game' }

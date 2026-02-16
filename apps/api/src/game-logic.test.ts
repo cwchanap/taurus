@@ -473,7 +473,9 @@ describe('containsCurrentWord', () => {
 
   test('handles empty strings', () => {
     expect(containsCurrentWord('', 'cat')).toBe(false)
-    expect(containsCurrentWord('cat', '')).toBe(true) // empty string is substring of everything
+    // Empty word should return false (guard against matching everything)
+    expect(containsCurrentWord('cat', '')).toBe(false)
+    expect(containsCurrentWord('any message', '')).toBe(false)
   })
 
   test('handles multi-word targets', () => {

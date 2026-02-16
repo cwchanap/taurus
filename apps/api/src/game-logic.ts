@@ -14,6 +14,7 @@ import {
   MAX_STROKES_PER_WINDOW,
   MAX_STROKE_UPDATES_PER_WINDOW,
   RATE_LIMIT_WINDOW,
+  SKIP_ROUND_TRANSITION_DELAY,
 } from './constants'
 import type { PlayingState, RoundEndState } from './game-types'
 import { isPlayingState } from './game-types'
@@ -90,6 +91,10 @@ export function isCorrectGuess(guess: string, word: string): boolean {
  * @returns true if the message contains the word
  */
 export function containsCurrentWord(message: string, word: string): boolean {
+  // Guard against empty or whitespace-only word - "".includes("") is true, which would match everything
+  if (word === '' || word.trim() === '') {
+    return false
+  }
   return message.toLowerCase().includes(word.toLowerCase())
 }
 
@@ -254,18 +259,43 @@ export function handlePlayerLeaveInActiveGame(
     shouldEndAfterRound = true
   }
 
+  // Check if the current drawer is leaving - this triggers a transition to round-end state
+  // since PlayingState requires currentDrawerId to be non-null
+  const isCurrentDrawerLeaving =
+    isPlayingState(gameState) && leavingPlayerId === gameState.currentDrawerId
+
   if (isPlayingState(gameState)) {
-    updatedState = {
-      status: 'playing',
-      currentRound,
-      totalRounds,
-      currentDrawerId: gameState.currentDrawerId,
-      currentWord: gameState.currentWord,
-      wordLength: gameState.wordLength,
-      roundStartTime: gameState.roundStartTime,
-      roundEndTime: gameState.roundEndTime,
-      endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
-      ...baseClone,
+    if (isCurrentDrawerLeaving) {
+      // When drawer leaves, transition immediately to round-end state
+      // This keeps state self-consistent (PlayingState always has valid drawer)
+      // The caller will see shouldEndRound=true and handle timer cleanup
+      const now = Date.now()
+      updatedState = {
+        status: 'round-end',
+        currentRound,
+        totalRounds,
+        currentDrawerId: null,
+        currentWord: null,
+        wordLength: null,
+        roundStartTime: gameState.roundStartTime,
+        roundEndTime: gameState.roundEndTime,
+        endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
+        nextTransitionAt: now + SKIP_ROUND_TRANSITION_DELAY,
+        ...baseClone,
+      }
+    } else {
+      updatedState = {
+        status: 'playing',
+        currentRound,
+        totalRounds,
+        currentDrawerId: gameState.currentDrawerId,
+        currentWord: gameState.currentWord,
+        wordLength: gameState.wordLength,
+        roundStartTime: gameState.roundStartTime,
+        roundEndTime: gameState.roundEndTime,
+        endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
+        ...baseClone,
+      }
     }
   } else {
     // Preserve nextTransitionAt from the original round-end state

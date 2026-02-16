@@ -184,9 +184,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.clearTimers()
 
       // Calculate remaining delay based on stored nextTransitionAt
+      // Fall back to appropriate full delay if nextTransitionAt is missing
       const now = Date.now()
       const nextTransitionAt = (this.gameState as RoundEndState).nextTransitionAt
-      const remainingDelay = nextTransitionAt ? Math.max(0, nextTransitionAt - now) : 0
+      const fallbackDelay = shouldEnd ? GAME_END_TRANSITION_DELAY : ROUND_END_TRANSITION_DELAY
+      const remainingDelay = nextTransitionAt ? Math.max(0, nextTransitionAt - now) : fallbackDelay
 
       if (shouldEnd) {
         this.gameEndTimer = setTimeout(() => this.endGame(), remainingDelay)
