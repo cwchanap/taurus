@@ -18,5 +18,17 @@ jobs:
       - name: Install Dependencies
         run: bun install
 
-      - name: Test
-        run: bun run test
+      - name: Test API (Bun)
+        working-directory: apps/api
+        run: bun run test:coverage
+
+      - name: Test Web (Vitest)
+        working-directory: apps/web
+        run: bun run test:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./apps/api/coverage/lcov.info,./apps/web/coverage/lcov.info
+          fail_ci_if_error: false
