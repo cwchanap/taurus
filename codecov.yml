@@ -1,0 +1,28 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+
+ignore:
+  - '**/*.test.ts'
+  - '**/*.spec.ts'
+  - 'node_modules/'
+  - 'dist/'
+  - '.svelte-kit/'
+
+comment:
+  layout: 'reach,diff,flags,tree'
+  behavior: default
+  require_changes: false
+
+flag_management:
+  default_flags:
+    carryforward: true
