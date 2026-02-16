@@ -134,9 +134,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // triggers handlers like endRound()
       this.initialized = true
 
-      // If this instance woke from hibernation with active sockets, reconstruct timers
-      // from persisted game state so rounds can continue/end as expected.
-      if (this.ctx.getWebSockets().length > 0) {
+      // Always resume game flow if in an active state, regardless of socket count.
+      // This handles cold Durable Object restarts where the first reconnect arrives
+      // via /ws before any socket is accepted (getWebSockets() returns empty array).
+      // Without this, games in 'playing' or 'round-end' states would remain stuck
+      // indefinitely until another state-changing event occurs.
+      if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {
         this.resumeGameFlowFromState()
       }
     }

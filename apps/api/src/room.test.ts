@@ -146,7 +146,12 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect((room as any).tickTimer).not.toBeNull()
   })
 
-  test('does not rehydrate timers when no active sockets exist', async () => {
+  test('rehydrates timers even when no active sockets exist (cold restart scenario)', async () => {
+    // This test verifies the fix for the timer rehydration gap:
+    // On cold Durable Object restart, the first reconnect arrives via /ws before
+    // any socket is accepted, so getWebSockets() returns empty array.
+    // Timers must still be rehydrated to prevent games from getting stuck.
+    const roundEndTime = Date.now() + 10_000
     mockStorageGet.mockImplementation((key: string) => {
       switch (key) {
         case 'strokes':
@@ -166,7 +171,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
             currentWord: 'cat',
             wordLength: 3,
             roundStartTime: Date.now(),
-            roundEndTime: Date.now() + 10_000,
+            roundEndTime,
             drawerOrder: ['drawer-1', 'guesser-1'],
             scores: [
               ['drawer-1', { score: 0, name: 'Drawer' }],
@@ -188,10 +193,11 @@ describe('DrawingRoom - Player Leave During Game', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (room as any).ensureInitialized()
 
+    // Timers should be rehydrated even without active sockets
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).roundTimer).toBeNull()
+    expect((room as any).roundTimer).not.toBeNull()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).tickTimer).toBeNull()
+    expect((room as any).tickTimer).not.toBeNull()
   })
 
   test('persists updated game state when player leaves but game continues', async () => {
