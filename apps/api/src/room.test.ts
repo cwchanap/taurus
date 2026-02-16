@@ -75,10 +75,9 @@ describe('DrawingRoom - Player Leave During Game', () => {
 
   afterEach(() => {
     // Clean up any timers to prevent leaks across tests
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const clearTimers = (room as any).clearTimers
-    if (room && typeof clearTimers === 'function') {
-      clearTimers()
+    if (room) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).clearTimers()
     }
   })
 
