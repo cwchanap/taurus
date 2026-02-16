@@ -189,9 +189,14 @@
     height: 18px;
   }
 
-  /* Disabled state */
+  /* Disabled state - only apply pointer-events: none to drawing controls,
+     not the clear button which has its own disabled prop for host permissions */
   .toolbar.disabled {
     opacity: 0.5;
+  }
+
+  .toolbar.disabled .color-btn,
+  .toolbar.disabled .size-btn {
     pointer-events: none;
   }
 
