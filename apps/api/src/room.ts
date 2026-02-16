@@ -129,13 +129,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         await this.storagePutWithRetry('created', true)
       }
 
+      // Set initialized flag BEFORE resuming game flow to prevent reentrancy
+      // into ensureInitialized() if resumeGameFlowFromState() synchronously
+      // triggers handlers like endRound()
+      this.initialized = true
+
       // If this instance woke from hibernation with active sockets, reconstruct timers
       // from persisted game state so rounds can continue/end as expected.
       if (this.ctx.getWebSockets().length > 0) {
         this.resumeGameFlowFromState()
       }
-
-      this.initialized = true
     }
   }
 
@@ -466,8 +469,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       await this.persistHost()
     }
 
-    // If a game is in progress, add the player to the scores map so their name is captured
-    if (this.gameState.status !== 'lobby' && !this.gameState.scores.has(playerId)) {
+    // If a game is in progress (but not game-over), add the player to the scores map
+    // so their name is captured. Late joiners during game-over should not affect final scores.
+    const isActiveGame = ['starting', 'playing', 'round-end'].includes(this.gameState.status)
+    if (isActiveGame && !this.gameState.scores.has(playerId)) {
       this.gameState.scores.set(playerId, { score: 0, name: player.name })
     }
 
@@ -633,8 +638,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    // During active game, only the current drawer can draw
-    if (this.gameState.status === 'playing' && playerId !== this.gameState.currentDrawerId) {
+    // Only allow drawing during active 'playing' state
+    if (this.gameState.status !== 'playing') {
+      return
+    }
+    // Only the current drawer can draw
+    if (playerId !== this.gameState.currentDrawerId) {
       return
     }
 
@@ -679,8 +688,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    // During active game, only the current drawer can draw
-    if (this.gameState.status === 'playing' && playerId !== this.gameState.currentDrawerId) {
+    // Only allow drawing during active 'playing' state
+    if (this.gameState.status !== 'playing') {
+      return
+    }
+    // Only the current drawer can draw
+    if (playerId !== this.gameState.currentDrawerId) {
       return
     }
 
