@@ -8,7 +8,7 @@
     "lint": "eslint .",
     "check": "tsc --noEmit",
     "test": "bun test --preload ./test-setup.ts",
-    "test:coverage": "bun test --coverage --preload ./test-setup.ts",
+    "test:coverage": "bun test --preload ./test-setup.ts --coverage --coverage-reporter=lcov",
     "format": "prettier --write ."
   },
   "dependencies": {
