@@ -17,6 +17,7 @@ export interface Stroke {
   color: string
   size: number
   points: Point[]
+  eraser?: boolean
 }
 
 /**
@@ -30,7 +31,29 @@ export interface ClientStrokePayload {
   color: string
   size: number
   points: Point[]
+  eraser?: boolean
 }
+
+export interface FillOperation {
+  id: string
+  playerId: string
+  x: number
+  y: number
+  color: string
+  timestamp: number
+}
+
+/** Drawing palette colors — single source of truth shared by frontend and backend */
+export const PALETTE_COLORS = [
+  '#FF6B6B',
+  '#4ECDC4',
+  '#45B7D1',
+  '#96CEB4',
+  '#FFEAA7',
+  '#DDA0DD',
+  '#FFFFFF',
+  '#1a1a2e',
+] as const
 
 // Wire format for GameState (what goes over WebSocket)
 export interface GameStateWire {
@@ -50,6 +73,9 @@ export type ClientMessage =
   | { type: 'chat'; content: string }
   | { type: 'stroke'; stroke: ClientStrokePayload }
   | { type: 'stroke-update'; strokeId: string; point: Point }
+  | { type: 'undo-stroke'; strokeId: string }
+  | { type: 'undo-fill'; fillId: string }
+  | { type: 'fill'; x: number; y: number; color: string }
   | { type: 'clear' }
   | { type: 'start-game' }
   | { type: 'reset-game' }
@@ -62,6 +88,7 @@ export type ServerMessage =
       player: Player
       players: Player[]
       strokes: Stroke[]
+      fills: FillOperation[]
       chatHistory: ChatMessage[]
       isHost: boolean
       gameState: GameStateWire
@@ -71,6 +98,17 @@ export type ServerMessage =
   | { type: 'player-left'; playerId: string }
   | { type: 'stroke'; stroke: Stroke }
   | { type: 'stroke-update'; strokeId: string; point: Point }
+  | { type: 'stroke-removed'; strokeId: string }
+  | {
+      type: 'fill'
+      id: string
+      playerId: string
+      x: number
+      y: number
+      color: string
+      timestamp: number
+    }
+  | { type: 'fill-removed'; fillId: string }
   | { type: 'clear' }
   | { type: 'chat'; message: ChatMessage }
   | {
