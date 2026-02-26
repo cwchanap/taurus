@@ -7,6 +7,10 @@ export const MAX_COORDINATE_VALUE = 100000
 export const MAX_CHAT_MESSAGE_LENGTH = 500
 export const MAX_CHAT_HISTORY = 50
 
+// Drawing tool limits
+export const MAX_CANVAS_WIDTH = 4096
+export const MAX_CANVAS_HEIGHT = 4096
+
 // Game configuration
 export const ROUND_DURATION_MS = 60000 // 60 seconds per round
 export const MIN_PLAYERS_TO_START = 2

@@ -14,12 +14,21 @@
     Player,
     Stroke,
     Point,
+    FillOperation,
     ChatMessage,
     GameStatus,
     RoundResult,
     Winner,
     ScoreEntry,
   } from '$lib/types'
+
+  type Tool = 'pencil' | 'eraser' | 'fill'
+
+  type UndoItem =
+    | { type: 'stroke'; strokeId: string; stroke: Stroke }
+    | { type: 'fill'; fillId: string; fill: FillOperation }
+
+  const MAX_UNDO_DEPTH = 20
 
   // API URL - configurable via VITE_API_URL environment variable
   const API_URL =
@@ -57,6 +66,10 @@
 
   let color = $state('#4ECDC4')
   let brushSize = $state(8)
+  let tool = $state<Tool>('pencil')
+  let fills = $state<FillOperation[]>([])
+  let undoStack = $state<UndoItem[]>([])
+  let redoStack = $state<UndoItem[]>([])
 
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
@@ -66,6 +79,8 @@
   const isCurrentDrawer = $derived(playerId === currentDrawerId)
   const canDraw = $derived(gameStatus === 'playing' && isCurrentDrawer)
   const canStartGame = $derived(isHost && gameStatus === 'lobby' && players.length >= 2)
+  const canUndo = $derived(canDraw && undoStack.length > 0)
+  const canRedo = $derived(canDraw && redoStack.length > 0)
 
   async function createRoom() {
     isLoading = true
@@ -117,13 +132,25 @@
       onConnectionFailed: (reason) => {
         errorMessage = reason
       },
-      onInit: (id, player, playerList, strokeList, chatHistory, hostFlag, initialGameState) => {
+      onInit: (
+        id,
+        player,
+        playerList,
+        strokeList,
+        fillList,
+        chatHistory,
+        hostFlag,
+        initialGameState
+      ) => {
         playerId = id
         players = playerList
         isHost = hostFlag
         // Clear canvas before applying new state to avoid desync
         canvasComponent?.clearCanvas()
         strokes = strokeList
+        fills = fillList
+        undoStack = []
+        redoStack = []
         chatMessages = chatHistory
         // Initialize game state from server
         gameStatus = initialGameState.status
@@ -180,8 +207,25 @@
           strokes[index].points.push(point)
         }
       },
+      onStrokeRemoved: (strokeId) => {
+        strokes = strokes.filter((s) => s.id !== strokeId)
+      },
+      onFill: (fill) => {
+        fills = [...fills, fill]
+        // Add to undo stack when the current drawer receives their own fill confirmation
+        if (isCurrentDrawer) {
+          undoStack = [
+            ...undoStack.slice(-(MAX_UNDO_DEPTH - 1)),
+            { type: 'fill', fillId: fill.id, fill },
+          ]
+        }
+      },
+      onFillRemoved: (fillId) => {
+        fills = fills.filter((f) => f.id !== fillId)
+      },
       onClear: () => {
         strokes = []
+        fills = []
         canvasComponent?.clearCanvas()
       },
       onChat: (message) => {
@@ -214,6 +258,8 @@
         timeRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
         gameStatus = 'playing'
         lastRoundResult = null
+        undoStack = []
+        redoStack = []
         // Clear any pending correct-guess timeout before resetting notification
         if (correctGuessTimeoutId) {
           clearTimeout(correctGuessTimeoutId)
@@ -277,6 +323,9 @@
         roundNumber = 0
         totalRounds = 0
         strokes = []
+        fills = []
+        undoStack = []
+        redoStack = []
         canvasComponent?.clearCanvas()
       },
     })
@@ -297,6 +346,12 @@
   function handleStrokeStart(stroke: Stroke) {
     strokes = [...strokes, stroke]
     ws?.sendStroke(stroke)
+    // New stroke clears redo stack and pushes to undo
+    redoStack = []
+    undoStack = [
+      ...undoStack.slice(-(MAX_UNDO_DEPTH - 1)),
+      { type: 'stroke', strokeId: stroke.id, stroke },
+    ]
   }
 
   function handleStrokeUpdate(strokeId: string, point: Point) {
@@ -307,8 +362,66 @@
     ws?.sendStrokeUpdate(strokeId, point)
   }
 
+  function handleFill(x: number, y: number, fillColor: string) {
+    // Fill is immediately reflected server-side; we'll add to fills when server echoes back
+    ws?.sendFill(x, y, fillColor)
+    // Optimistically add to undo stack with a placeholder (server will assign real ID)
+    // We handle this by tracking the pending fill — but since server generates the ID,
+    // we listen for the onFill event and add to undo stack there
+    redoStack = []
+  }
+
+  function handleUndo() {
+    if (undoStack.length === 0) return
+    const item = undoStack[undoStack.length - 1]
+    undoStack = undoStack.slice(0, -1)
+    redoStack = [...redoStack, item]
+
+    if (item.type === 'stroke') {
+      strokes = strokes.filter((s) => s.id !== item.strokeId)
+      ws?.sendUndoStroke(item.strokeId)
+    } else {
+      fills = fills.filter((f) => f.id !== item.fillId)
+      ws?.sendUndoFill(item.fillId)
+    }
+  }
+
+  function handleRedo() {
+    if (redoStack.length === 0) return
+    const item = redoStack[redoStack.length - 1]
+    redoStack = redoStack.slice(0, -1)
+
+    if (item.type === 'stroke') {
+      // Stroke IDs are reused on redo (server removed them during undo), so push immediately
+      undoStack = [...undoStack, item]
+      strokes = [...strokes, item.stroke]
+      ws?.sendStroke(item.stroke)
+    } else {
+      // For fills, the server assigns a new ID. Do NOT push to undoStack here —
+      // onFill echo will push it with the correct server-assigned ID.
+      ws?.sendFill(item.fill.x, item.fill.y, item.fill.color)
+    }
+  }
+
+  function handleKeyDown(event: KeyboardEvent) {
+    if (!canDraw) return
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+    const ctrlOrCmd = isMac ? event.metaKey : event.ctrlKey
+
+    if (ctrlOrCmd && event.shiftKey && event.key === 'Z') {
+      event.preventDefault()
+      handleRedo()
+    } else if (ctrlOrCmd && event.key === 'z') {
+      event.preventDefault()
+      handleUndo()
+    }
+  }
+
   function handleClear() {
     strokes = []
+    fills = []
+    undoStack = []
+    redoStack = []
     canvasComponent?.clearCanvas()
     ws?.sendClear()
   }
@@ -327,6 +440,7 @@
 
     // Clear local strokes immediately for better UX
     strokes = []
+    fills = []
     canvasComponent?.clearCanvas()
   }
 </script>
@@ -338,6 +452,8 @@
     content="A multiplayer drawing game - draw together with friends in real-time!"
   />
 </svelte:head>
+
+<svelte:window onkeydown={handleKeyDown} />
 
 {#if pageState === 'lobby'}
   <Lobby
@@ -431,8 +547,14 @@
         <Toolbar
           {color}
           {brushSize}
+          {tool}
+          {canUndo}
+          {canRedo}
           onColorChange={(c) => (color = c)}
           onBrushSizeChange={(s) => (brushSize = s)}
+          onToolChange={(t) => (tool = t)}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
           onClear={handleClear}
           disabled={!canDraw}
           clearDisabled={!(isHost || (gameStatus === 'playing' && isCurrentDrawer))}
@@ -457,11 +579,14 @@
           bind:this={canvasComponent}
           {color}
           {brushSize}
+          {tool}
           {strokes}
+          {fills}
           {playerId}
           disabled={!canDraw}
           onStrokeStart={handleStrokeStart}
           onStrokeUpdate={handleStrokeUpdate}
+          onFill={handleFill}
         />
         <!-- Cannot draw indicator -->
         {#if gameStatus === 'playing' && !isCurrentDrawer}

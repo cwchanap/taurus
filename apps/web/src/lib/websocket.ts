@@ -1,6 +1,7 @@
 import type {
   Player,
   Stroke,
+  FillOperation,
   ChatMessage,
   GameState,
   RoundResult,
@@ -15,6 +16,7 @@ export type GameEventHandler = {
     player: Player,
     players: Player[],
     strokes: Stroke[],
+    fills: FillOperation[],
     chatHistory: ChatMessage[],
     isHost: boolean,
     gameState: GameState
@@ -24,6 +26,9 @@ export type GameEventHandler = {
   onPlayerLeft?: (playerId: string) => void
   onStroke?: (stroke: Stroke) => void
   onStrokeUpdate?: (strokeId: string, point: { x: number; y: number }) => void
+  onStrokeRemoved?: (strokeId: string) => void
+  onFill?: (fill: FillOperation) => void
+  onFillRemoved?: (fillId: string) => void
   onClear?: () => void
   onChat?: (message: ChatMessage) => void
   onConnectionChange?: (connected: boolean) => void
@@ -129,6 +134,7 @@ export class GameWebSocket {
           data.player,
           data.players,
           data.strokes,
+          data.fills,
           data.chatHistory,
           data.isHost,
           data.gameState
@@ -148,6 +154,22 @@ export class GameWebSocket {
         break
       case 'stroke-update':
         this.handlers.onStrokeUpdate?.(data.strokeId, data.point)
+        break
+      case 'stroke-removed':
+        this.handlers.onStrokeRemoved?.(data.strokeId)
+        break
+      case 'fill':
+        this.handlers.onFill?.({
+          id: data.id,
+          playerId: data.playerId,
+          x: data.x,
+          y: data.y,
+          color: data.color,
+          timestamp: data.timestamp,
+        })
+        break
+      case 'fill-removed':
+        this.handlers.onFillRemoved?.(data.fillId)
         break
       case 'clear':
         this.handlers.onClear?.()
@@ -241,6 +263,18 @@ export class GameWebSocket {
 
   sendStrokeUpdate(strokeId: string, point: { x: number; y: number }) {
     this.send({ type: 'stroke-update', strokeId, point })
+  }
+
+  sendUndoStroke(strokeId: string) {
+    this.send({ type: 'undo-stroke', strokeId })
+  }
+
+  sendUndoFill(fillId: string) {
+    this.send({ type: 'undo-fill', fillId })
+  }
+
+  sendFill(x: number, y: number, color: string) {
+    this.send({ type: 'fill', x, y, color })
   }
 
   sendClear() {
