@@ -1,5 +1,4 @@
 import type { Stroke } from '@repo/types'
-import { PALETTE_COLORS } from '@repo/types'
 
 import {
   MAX_CHAT_MESSAGE_LENGTH,
@@ -11,6 +10,7 @@ import {
   MAX_COORDINATE_VALUE,
   MAX_CANVAS_WIDTH,
   MAX_CANVAS_HEIGHT,
+  PALETTE_COLORS,
 } from './constants'
 
 /**
