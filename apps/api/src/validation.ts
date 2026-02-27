@@ -118,11 +118,23 @@ export function validateFill(data: unknown): { x: number; y: number; color: stri
 
   const d = data as Record<string, unknown>
 
-  if (typeof d.x !== 'number' || !Number.isFinite(d.x) || d.x < 0 || d.x > MAX_CANVAS_WIDTH) {
+  if (
+    typeof d.x !== 'number' ||
+    !Number.isFinite(d.x) ||
+    !Number.isInteger(d.x) ||
+    d.x < 0 ||
+    d.x >= MAX_CANVAS_WIDTH
+  ) {
     return null
   }
 
-  if (typeof d.y !== 'number' || !Number.isFinite(d.y) || d.y < 0 || d.y > MAX_CANVAS_HEIGHT) {
+  if (
+    typeof d.y !== 'number' ||
+    !Number.isFinite(d.y) ||
+    !Number.isInteger(d.y) ||
+    d.y < 0 ||
+    d.y >= MAX_CANVAS_HEIGHT
+  ) {
     return null
   }
 

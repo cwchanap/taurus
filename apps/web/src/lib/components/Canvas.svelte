@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Application, Graphics, Container } from 'pixi.js'
   import { onMount, onDestroy } from 'svelte'
-  import type { Point, Stroke, FillOperation } from '$lib/types'
+  import type { Point, Stroke, FillOperation } from '@repo/types'
 
   type Tool = 'pencil' | 'eraser' | 'fill'
 
