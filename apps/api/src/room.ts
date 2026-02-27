@@ -839,7 +839,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       await this.queueStrokeDelete()
       this.strokes = []
       this.fills = []
-      this.queueFillDelete()
+      await this.queueFillDelete()
 
       this.broadcast({
         type: 'clear',
