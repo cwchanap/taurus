@@ -226,6 +226,8 @@
       onClear: () => {
         strokes = []
         fills = []
+        undoStack = []
+        redoStack = []
         canvasComponent?.clearCanvas()
       },
       onChat: (message) => {
@@ -405,6 +407,21 @@
 
   function handleKeyDown(event: KeyboardEvent) {
     if (!canDraw) return
+
+    // Skip if target is an editable element
+    const target = event.target
+    if (target instanceof HTMLElement) {
+      const tagName = target.tagName.toLowerCase()
+      if (
+        target.isContentEditable ||
+        tagName === 'input' ||
+        tagName === 'textarea' ||
+        target.getAttribute('role') === 'textbox'
+      ) {
+        return
+      }
+    }
+
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
     const ctrlOrCmd = isMac ? event.metaKey : event.ctrlKey
 

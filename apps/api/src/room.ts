@@ -284,12 +284,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     )
   }
 
-  private queueFillDelete(): void {
-    this.ctx.waitUntil(
-      this.enqueueFillStorageOperation(() => this.storageDeleteWithRetry('fills')).catch((e) =>
-        console.error('Failed to delete fills:', e)
-      )
-    )
+  private queueFillDelete(): Promise<void> {
+    return this.enqueueFillStorageOperation(() => this.storageDeleteWithRetry('fills'))
   }
 
   private scheduleStorageWrite() {
@@ -896,7 +892,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
 
     const trimmedId = data.fillId.trim()
-    const idx = this.fills.findIndex((f) => f.id === trimmedId && f.playerId === playerId)
+    const idx = this.fills.findLastIndex((f) => f.id === trimmedId && f.playerId === playerId)
     if (idx === -1) {
       console.warn(`Fill ${trimmedId} not found for undo by player ${playerId}`)
       return
@@ -1176,7 +1172,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       )
     )
     this.ctx.waitUntil(
-      this.ctx.storage.delete('fills').catch((e) => console.error('Failed to delete fills:', e))
+      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
     )
 
     // Broadcast reset to all players
@@ -1261,7 +1257,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       )
     )
     this.ctx.waitUntil(
-      this.ctx.storage.delete('fills').catch((e) => console.error('Failed to delete fills:', e))
+      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
     )
 
     // Broadcast round start to all players
@@ -1503,7 +1499,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       )
     )
     this.ctx.waitUntil(
-      this.ctx.storage.delete('fills').catch((e) => console.error('Failed to delete fills:', e))
+      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
     )
 
     // Set status to game-over (don't reset immediately) so new/reconnecting players see results
