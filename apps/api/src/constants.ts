@@ -10,6 +10,16 @@ export const MAX_CHAT_HISTORY = 50
 // Drawing tool limits
 export const MAX_CANVAS_WIDTH = 4096
 export const MAX_CANVAS_HEIGHT = 4096
+export const PALETTE_COLORS = [
+  '#FF6B6B',
+  '#4ECDC4',
+  '#45B7D1',
+  '#96CEB4',
+  '#FFEAA7',
+  '#DDA0DD',
+  '#FFFFFF',
+  '#1a1a2e',
+] as const
 
 // Game configuration
 export const ROUND_DURATION_MS = 60000 // 60 seconds per round
