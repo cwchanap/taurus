@@ -101,11 +101,7 @@ export function isValidDrawingId(id: unknown): id is string {
 
 /** @deprecated Use isValidDrawingId instead */
 export function isValidStrokeId(strokeId: unknown): strokeId is string {
-  if (typeof strokeId !== 'string') {
-    return false
-  }
-  const trimmed = strokeId.trim()
-  return trimmed.length > 0 && trimmed.length <= 100
+  return isValidDrawingId(strokeId)
 }
 
 /**

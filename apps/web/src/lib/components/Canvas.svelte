@@ -46,6 +46,7 @@
   let fillGraphics: Map<string, Graphics> = new Map()
   let strokeColor = ''
   let strokeSize = 0
+  let currentIsEraser = false
 
   // Reconcile strokes whenever strokes prop changes
   $effect(() => {
@@ -157,9 +158,10 @@
     isDrawing = true
     currentStrokeId = crypto.randomUUID()
     lastPoint = point
+    currentIsEraser = tool === 'eraser'
 
     currentGraphics = new Graphics()
-    if (tool === 'eraser') {
+    if (currentIsEraser) {
       currentGraphics.blendMode = 'erase'
     }
     drawingContainer.addChild(currentGraphics)
@@ -174,7 +176,7 @@
       points: [point],
       color: strokeColor,
       size: strokeSize,
-      ...(tool === 'eraser' ? { eraser: true } : {}),
+      ...(currentIsEraser ? { eraser: true } : {}),
     }
 
     onStrokeStart(stroke)
@@ -190,7 +192,7 @@
       .lineTo(point.x, point.y)
       .stroke({
         width: strokeSize,
-        color: tool === 'eraser' ? 0x000000 : strokeColor,
+        color: currentIsEraser ? 0x000000 : strokeColor,
         cap: 'round',
       })
 
