@@ -113,7 +113,7 @@
     pixiApp.stage.addChild(bg)
     backgroundGraphics = bg
 
-    // All strokes/fills go into this container so 'erase' works within the container
+    // All strokes/fills go into this container so they render above the background
     const dc = new Container()
     pixiApp.stage.addChild(dc)
     drawingContainer = dc
@@ -161,9 +161,6 @@
     currentIsEraser = tool === 'eraser'
 
     currentGraphics = new Graphics()
-    if (currentIsEraser) {
-      currentGraphics.blendMode = 'erase'
-    }
     drawingContainer.addChild(currentGraphics)
     strokeGraphics.set(currentStrokeId, currentGraphics)
 
@@ -192,7 +189,7 @@
       .lineTo(point.x, point.y)
       .stroke({
         width: strokeSize,
-        color: currentIsEraser ? 0x000000 : strokeColor,
+        color: currentIsEraser ? CANVAS_BG : strokeColor,
         cap: 'round',
       })
 
@@ -213,9 +210,6 @@
     let graphics = strokeGraphics.get(stroke.id)
     if (!graphics) {
       graphics = new Graphics()
-      if (stroke.eraser) {
-        graphics.blendMode = 'erase'
-      }
       drawingContainer.addChild(graphics)
       strokeGraphics.set(stroke.id, graphics)
     }
@@ -227,7 +221,7 @@
         .lineTo(stroke.points[i].x, stroke.points[i].y)
         .stroke({
           width: stroke.size,
-          color: stroke.eraser ? 0x000000 : stroke.color,
+          color: stroke.eraser ? CANVAS_BG : stroke.color,
           cap: 'round',
         })
     }
@@ -370,7 +364,7 @@
       .lineTo(point.x, point.y)
       .stroke({
         width: existingStroke.size,
-        color: existingStroke.eraser ? 0x000000 : existingStroke.color,
+        color: existingStroke.eraser ? CANVAS_BG : existingStroke.color,
         cap: 'round',
       })
 
