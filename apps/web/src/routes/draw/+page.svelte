@@ -9,6 +9,24 @@
   import Scoreboard from '$lib/components/Scoreboard.svelte'
   import { GameWebSocket } from '$lib/websocket'
   import { deriveGameWinners } from '$lib/game-winners'
+  import {
+    applyRedoState,
+    applyUndoState,
+    buildGameOverState,
+    buildGameResetState,
+    buildRoundEndState,
+    buildRoundStartState,
+    clearCorrectGuessNotification,
+    clearSystemNotification,
+    createCorrectGuessNotification,
+    createSystemNotification,
+    deriveWinnersIfGameOver,
+    getDrawerDisplayName,
+    getTimeRemainingSeconds,
+    isEditableKeyboardTarget,
+    pushBoundedUndo,
+    updateStrokePoint,
+  } from '$lib/draw-page-state'
   import { onDestroy } from 'svelte'
   import type {
     Player,
@@ -24,9 +42,7 @@
 
   type Tool = 'pencil' | 'eraser' | 'fill'
 
-  type UndoItem =
-    | { type: 'stroke'; strokeId: string; stroke: Stroke }
-    | { type: 'fill'; fillId: string; fill: FillOperation }
+  type UndoItem = import('$lib/draw-page-state').UndoItem
 
   const MAX_UNDO_DEPTH = 20
 
@@ -158,27 +174,13 @@
         roundNumber = initialGameState.currentRound
         totalRounds = initialGameState.totalRounds
         scores = initialGameState.scores
-        if (initialGameState.status === 'game-over') {
-          gameWinners = deriveGameWinners(initialGameState.scores)
-        } else {
-          gameWinners = []
-        }
-        if (initialGameState.roundEndTime) {
-          timeRemaining = Math.max(
-            0,
-            Math.ceil((initialGameState.roundEndTime - Date.now()) / 1000)
-          )
-        }
-
-        // Restore drawer info and word length if game is in progress
-        if (currentDrawerId) {
-          const drawer = players.find((p) => p.id === currentDrawerId)
-          if (drawer) {
-            currentDrawerName = drawer.name
-          } else {
-            currentDrawerName = scores[currentDrawerId]?.name || 'Unknown'
-          }
-        }
+        gameWinners = deriveWinnersIfGameOver(
+          initialGameState.status,
+          initialGameState.scores,
+          deriveGameWinners
+        )
+        timeRemaining = getTimeRemainingSeconds(initialGameState.roundEndTime)
+        currentDrawerName = getDrawerDisplayName(currentDrawerId, players, scores)
 
         wordLength = initialGameState.wordLength ?? 0
         currentWord =
@@ -214,10 +216,11 @@
         fills = [...fills, fill]
         // Add to undo stack when the current drawer receives their own fill confirmation
         if (isCurrentDrawer) {
-          undoStack = [
-            ...undoStack.slice(-(MAX_UNDO_DEPTH - 1)),
+          undoStack = pushBoundedUndo(
+            undoStack,
             { type: 'fill', fillId: fill.id, fill },
-          ]
+            MAX_UNDO_DEPTH
+          )
         }
       },
       onFillRemoved: (fillId) => {
@@ -234,13 +237,13 @@
         chatMessages = [...chatMessages, message]
       },
       onSystemMessage: (content) => {
-        systemNotification = content
+        systemNotification = createSystemNotification(content)
         if (systemNotificationTimeoutId) {
           clearTimeout(systemNotificationTimeoutId)
         }
         // Clear notification after a few seconds
         systemNotificationTimeoutId = setTimeout(() => {
-          systemNotification = null
+          systemNotification = clearSystemNotification()
           systemNotificationTimeoutId = null
         }, 4000)
       },
@@ -251,49 +254,60 @@
         gameStatus = 'starting'
       },
       onRoundStart: (round, rounds, drawerId, drawerNameVal, word, wordLen, endTime) => {
-        roundNumber = round
-        totalRounds = rounds
-        currentDrawerId = drawerId
-        currentDrawerName = drawerNameVal
-        currentWord = word
-        wordLength = wordLen
-        timeRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
-        gameStatus = 'playing'
-        lastRoundResult = null
-        undoStack = []
-        redoStack = []
+        const next = buildRoundStartState(
+          round,
+          rounds,
+          drawerId,
+          drawerNameVal,
+          word,
+          wordLen,
+          endTime
+        )
+        roundNumber = next.roundNumber
+        totalRounds = next.totalRounds
+        currentDrawerId = next.currentDrawerId
+        currentDrawerName = next.currentDrawerName
+        currentWord = next.currentWord
+        wordLength = next.wordLength
+        timeRemaining = next.timeRemaining
+        gameStatus = next.gameStatus
+        lastRoundResult = next.lastRoundResult
+        undoStack = next.undoStack
+        redoStack = next.redoStack
         // Clear any pending correct-guess timeout before resetting notification
         if (correctGuessTimeoutId) {
           clearTimeout(correctGuessTimeoutId)
           correctGuessTimeoutId = null
         }
-        correctGuessNotification = null
+        correctGuessNotification = next.correctGuessNotification
       },
       onRoundEnd: (word, result, newScores) => {
-        lastRevealedWord = word
-        lastRoundResult = result
-        scores = newScores
-        gameStatus = 'round-end'
-        currentWord = undefined
-        currentDrawerId = null
-        currentDrawerName = ''
-        wordLength = 0 // Reset to avoid showing stale masked word
+        const next = buildRoundEndState(word, result, newScores)
+        lastRevealedWord = next.lastRevealedWord
+        lastRoundResult = next.lastRoundResult
+        scores = next.scores
+        gameStatus = next.gameStatus
+        currentWord = next.currentWord
+        currentDrawerId = next.currentDrawerId
+        currentDrawerName = next.currentDrawerName
+        wordLength = next.wordLength
       },
       onGameOver: (finalScores, winners) => {
-        scores = finalScores
-        gameWinners = winners
-        gameStatus = 'game-over'
-        currentDrawerId = null
-        currentWord = undefined
+        const next = buildGameOverState(finalScores, winners)
+        scores = next.scores
+        gameWinners = next.gameWinners
+        gameStatus = next.gameStatus
+        currentDrawerId = next.currentDrawerId
+        currentWord = next.currentWord
       },
       onCorrectGuess: (guesserId, guesserName, score, remaining) => {
         if (correctGuessTimeoutId) {
           clearTimeout(correctGuessTimeoutId)
         }
-        correctGuessNotification = { playerName: guesserName, score }
+        correctGuessNotification = createCorrectGuessNotification(guesserName, score)
         // Clear notification after a few seconds
         correctGuessTimeoutId = setTimeout(() => {
-          correctGuessNotification = null
+          correctGuessNotification = clearCorrectGuessNotification()
           correctGuessTimeoutId = null
         }, 3000)
       },
@@ -301,33 +315,31 @@
         timeRemaining = remaining
       },
       onGameReset: () => {
-        // Clear correct-guess notification and timeout
-        correctGuessNotification = null
         if (correctGuessTimeoutId) {
           clearTimeout(correctGuessTimeoutId)
           correctGuessTimeoutId = null
         }
-        // Clear system notification and timeout
-        systemNotification = null
         if (systemNotificationTimeoutId) {
           clearTimeout(systemNotificationTimeoutId)
           systemNotificationTimeoutId = null
         }
 
-        // Reset local game state to lobby
-        gameStatus = 'lobby'
-        gameWinners = []
-        lastRoundResult = null
-        scores = {}
-        currentDrawerId = null
-        currentWord = undefined
-        lastRevealedWord = ''
-        roundNumber = 0
-        totalRounds = 0
-        strokes = []
-        fills = []
-        undoStack = []
-        redoStack = []
+        const next = buildGameResetState()
+        gameStatus = next.gameStatus
+        gameWinners = next.gameWinners
+        lastRoundResult = next.lastRoundResult
+        scores = next.scores
+        currentDrawerId = next.currentDrawerId
+        currentWord = next.currentWord
+        lastRevealedWord = next.lastRevealedWord
+        roundNumber = next.roundNumber
+        totalRounds = next.totalRounds
+        strokes = next.strokes
+        fills = next.fills
+        undoStack = next.undoStack
+        redoStack = next.redoStack
+        correctGuessNotification = next.correctGuessNotification
+        systemNotification = next.systemNotification
         canvasComponent?.clearCanvas()
       },
     })
@@ -350,17 +362,15 @@
     ws?.sendStroke(stroke)
     // New stroke clears redo stack and pushes to undo
     redoStack = []
-    undoStack = [
-      ...undoStack.slice(-(MAX_UNDO_DEPTH - 1)),
+    undoStack = pushBoundedUndo(
+      undoStack,
       { type: 'stroke', strokeId: stroke.id, stroke },
-    ]
+      MAX_UNDO_DEPTH
+    )
   }
 
   function handleStrokeUpdate(strokeId: string, point: Point) {
-    const index = strokes.findIndex((s) => s.id === strokeId)
-    if (index !== -1) {
-      strokes[index].points.push(point)
-    }
+    strokes = updateStrokePoint(strokes, strokeId, point)
     ws?.sendStrokeUpdate(strokeId, point)
   }
 
@@ -374,34 +384,29 @@
   }
 
   function handleUndo() {
-    if (undoStack.length === 0) return
-    const item = undoStack[undoStack.length - 1]
-    undoStack = undoStack.slice(0, -1)
-    redoStack = [...redoStack, item]
+    const next = applyUndoState(undoStack, redoStack, strokes, fills)
+    undoStack = next.undoStack
+    redoStack = next.redoStack
+    strokes = next.strokes
+    fills = next.fills
 
-    if (item.type === 'stroke') {
-      strokes = strokes.filter((s) => s.id !== item.strokeId)
-      ws?.sendUndoStroke(item.strokeId)
-    } else {
-      fills = fills.filter((f) => f.id !== item.fillId)
-      ws?.sendUndoFill(item.fillId)
+    if (next.action?.type === 'undo-stroke') {
+      ws?.sendUndoStroke(next.action.strokeId)
+    } else if (next.action?.type === 'undo-fill') {
+      ws?.sendUndoFill(next.action.fillId)
     }
   }
 
   function handleRedo() {
-    if (redoStack.length === 0) return
-    const item = redoStack[redoStack.length - 1]
-    redoStack = redoStack.slice(0, -1)
+    const next = applyRedoState(redoStack, undoStack, strokes)
+    redoStack = next.redoStack
+    undoStack = next.undoStack
+    strokes = next.strokes
 
-    if (item.type === 'stroke') {
-      // Stroke IDs are reused on redo (server removed them during undo), so push immediately
-      undoStack = [...undoStack, item]
-      strokes = [...strokes, item.stroke]
-      ws?.sendStroke(item.stroke)
-    } else {
-      // For fills, the server assigns a new ID. Do NOT push to undoStack here —
-      // onFill echo will push it with the correct server-assigned ID.
-      ws?.sendFill(item.fill.x, item.fill.y, item.fill.color)
+    if (next.action?.type === 'send-stroke') {
+      ws?.sendStroke(next.action.stroke)
+    } else if (next.action?.type === 'send-fill') {
+      ws?.sendFill(next.action.x, next.action.y, next.action.color)
     }
   }
 
@@ -409,17 +414,8 @@
     if (!canDraw) return
 
     // Skip if target is an editable element
-    const target = event.target
-    if (target instanceof HTMLElement) {
-      const tagName = target.tagName.toLowerCase()
-      if (
-        target.isContentEditable ||
-        tagName === 'input' ||
-        tagName === 'textarea' ||
-        target.getAttribute('role') === 'textbox'
-      ) {
-        return
-      }
+    if (isEditableKeyboardTarget(event.target)) {
+      return
     }
 
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0

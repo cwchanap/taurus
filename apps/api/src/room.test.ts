@@ -314,4 +314,157 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect(mockStorageDelete).toHaveBeenCalledWith('strokes')
     expect(mockStoragePut).toHaveBeenCalledWith('strokes', expect.any(Array))
   })
+
+  test('ensureInitialized recovers from invalid persisted game state', async () => {
+    const originalError = console.error
+    console.error = mock(() => {})
+
+    mockStorageGet.mockImplementation((key: string) => {
+      switch (key) {
+        case 'strokes':
+          return Promise.resolve([])
+        case 'fills':
+          return Promise.resolve([])
+        case 'created':
+          return Promise.resolve(true)
+        case 'chatHistory':
+          return Promise.resolve([])
+        case 'hostPlayerId':
+          return Promise.resolve('host-1')
+        case 'gameState':
+          return Promise.resolve({ status: 'invalid-status' })
+        default:
+          return Promise.resolve(undefined)
+      }
+    })
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (room as any).ensureInitialized()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((room as any).gameState.status).toBe('lobby')
+    } finally {
+      console.error = originalError
+    }
+  })
+
+  test('ensureInitialized marks room as created when orphaned data exists', async () => {
+    mockStorageGet.mockImplementation((key: string) => {
+      switch (key) {
+        case 'strokes':
+          return Promise.resolve([{ id: 's1', playerId: 'p1', points: [], color: '#000', size: 4 }])
+        case 'fills':
+          return Promise.resolve([])
+        case 'created':
+          return Promise.resolve(false)
+        case 'chatHistory':
+          return Promise.resolve([])
+        case 'hostPlayerId':
+          return Promise.resolve(null)
+        case 'gameState':
+          return Promise.resolve(undefined)
+        default:
+          return Promise.resolve(undefined)
+      }
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).ensureInitialized()
+
+    expect(mockStoragePut).toHaveBeenCalledWith('created', true)
+  })
+
+  test('resumeGameFlowFromState ends expired playing round immediately', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: Date.now() - 10_000,
+      roundEndTime: Date.now() - 1,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map(),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const endRoundSpy = mock((room as any).endRound.bind(room))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).endRound = endRoundSpy
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).resumeGameFlowFromState()
+
+    expect(endRoundSpy).toHaveBeenCalledWith(false)
+  })
+
+  test('resumeGameFlowFromState schedules round-end transition to start next round', () => {
+    const originalSetTimeout = globalThis.setTimeout
+    const setTimeoutSpy = mock(() => {
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    })
+    globalThis.setTimeout = setTimeoutSpy as unknown as typeof setTimeout
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).gameState = {
+        status: 'round-end',
+        currentRound: 1,
+        totalRounds: 3,
+        currentDrawerId: null,
+        drawerOrder: ['p1', 'p2', 'p3'],
+        scores: new Map(),
+        lastRoundResult: null,
+        usedWords: new Set(),
+        endGameAfterCurrentRound: false,
+        nextTransitionAt: Date.now() + 2_000,
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).resumeGameFlowFromState()
+
+      expect(setTimeoutSpy).toHaveBeenCalled()
+    } finally {
+      globalThis.setTimeout = originalSetTimeout
+    }
+  })
+
+  test('resumeGameFlowFromState schedules game end when final transition is reached', () => {
+    const originalSetTimeout = globalThis.setTimeout
+    const setTimeoutSpy = mock(() => {
+      return 1 as unknown as ReturnType<typeof setTimeout>
+    })
+    globalThis.setTimeout = setTimeoutSpy as unknown as typeof setTimeout
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).gameState = {
+        status: 'round-end',
+        currentRound: 3,
+        totalRounds: 3,
+        currentDrawerId: null,
+        drawerOrder: ['p1', 'p2', 'p3'],
+        scores: new Map(),
+        lastRoundResult: null,
+        usedWords: new Set(),
+        endGameAfterCurrentRound: false,
+        nextTransitionAt: Date.now() + 2_000,
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).resumeGameFlowFromState()
+
+      expect(setTimeoutSpy).toHaveBeenCalled()
+    } finally {
+      globalThis.setTimeout = originalSetTimeout
+    }
+  })
 })

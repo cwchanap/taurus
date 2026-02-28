@@ -1,15 +1,6 @@
-import { test, expect, type Locator } from '@playwright/test'
-
-/**
- * Helper to get non-empty text from a locator with explicit wait.
- * This prevents flaky tests by ensuring the element has text before reading.
- */
-async function getNonEmptyText(locator: Locator, timeout = 10000): Promise<string> {
-  await expect(locator).not.toBeEmpty({ timeout })
-  const text = await locator.textContent()
-  if (!text) throw new Error('Element text content is null')
-  return text
-}
+import { test, expect } from '@playwright/test'
+import { completeRoundByCorrectGuess } from './helpers/round-flow'
+import { getNonEmptyText } from './helpers/text'
 
 test.describe('Drawing Game Feature', () => {
   test.describe('Game Lobby', () => {
@@ -421,89 +412,15 @@ test.describe('Drawing Game Feature', () => {
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
         await expect(playerPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
 
-        // Helper function to complete a round by having guesser guess correctly
-        const completeRound = async () => {
-          // Capture round identifier before waiting for transition
-          // This helps detect if round actually advanced vs stuck
-          const priorRoundId = await hostPage.locator('.round-badge').textContent()
-
-          // Wait for round-end overlay to disappear (if present) and game to be in playing state
-          // This handles the transition between rounds
-          try {
-            await hostPage.locator('.round-overlay').waitFor({ state: 'hidden', timeout: 10000 })
-          } catch (e: unknown) {
-            const errorMessage = e instanceof Error ? e.message : String(e)
-            if (!errorMessage.includes('Timeout')) {
-              throw e
-            }
-            // Timeout is expected if overlay wasn't visible, continue to verification
-          }
-
-          // Verify one of three conditions holds:
-          // 1. The round-overlay is hidden
-          // 2. The game-over-overlay is visible
-          // 3. The round identifier has changed
-          const isOverlayVisible = await hostPage.locator('.round-overlay').isVisible()
-          const isGameOverVisible = await hostPage.locator('.game-over-overlay').isVisible()
-          const currentRoundId = await hostPage.locator('.round-badge').textContent()
-          const roundChanged = currentRoundId !== priorRoundId
-
-          if (!isOverlayVisible || isGameOverVisible || roundChanged) {
-            // One of the expected conditions is true, continue
-          } else {
-            // None of the expected conditions are true - round transition may have stalled
-            throw new Error(
-              'Round transition verification failed: overlay still visible, game not over, and round did not change — round transition may have stalled'
-            )
-          }
-
-          // Check if game is already over
-          const isOver = await hostPage.locator('.game-over-overlay').isVisible()
-          if (isOver) return false
-
-          // Determine who is drawer and who is guesser by checking for "Draw:" label
-          const hostWordLabel = await getNonEmptyText(hostPage.locator('.word-label'))
-          const isHostDrawer = hostWordLabel === 'Draw:'
-
-          const drawerPage = isHostDrawer ? hostPage : playerPage
-          const guesserPage = isHostDrawer ? playerPage : hostPage
-
-          // Wait for the drawer to see their word (not just "—")
-          const wordElement = drawerPage.locator('.word:not(.masked)')
-          await expect(wordElement).toBeVisible({ timeout: 5000 })
-
-          // Keep checking until we get an actual word, not "—"
-          let word = await wordElement.textContent()
-          let retries = 0
-          while ((!word || word === '—') && retries < 10) {
-            await hostPage.waitForTimeout(500)
-            word = await wordElement.textContent()
-            retries++
-          }
-
-          if (!word || word === '—') throw new Error('Failed to get the word')
-
-          // Guesser types the correct word in chat
-          await guesserPage.locator('.chat-input').fill(word.trim())
-          await guesserPage.locator('.chat-input').press('Enter')
-
-          // Wait for correct guess notification
-          await expect(guesserPage.locator('.correct-guess-notification')).toBeVisible({
-            timeout: 5000,
-          })
-
-          return true
-        }
-
         // Complete round 1
-        const round1Continues = await completeRound()
+        const round1Continues = await completeRoundByCorrectGuess(hostPage, playerPage)
 
         // Complete round 2 only if the game hasn't ended
         if (round1Continues) {
           // Wait for round transition (round-end phase)
           await hostPage.waitForTimeout(4000)
 
-          await completeRound()
+          await completeRoundByCorrectGuess(hostPage, playerPage)
         }
 
         // Wait for game to end

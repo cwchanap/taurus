@@ -3,11 +3,15 @@ import {
   validateStroke,
   validateFill,
   isValidStrokeId,
+  isValidDrawingId,
   isValidColor,
   isValidSize,
   isValidPlayerName,
+  validateMessageContent,
+  sanitizeMessage,
 } from './validation'
 import {
+  MAX_CHAT_MESSAGE_LENGTH,
   MAX_STROKE_SIZE,
   MIN_STROKE_SIZE,
   MAX_COLOR_LENGTH,
@@ -99,6 +103,34 @@ describe('isValidStrokeId', () => {
   test('should accept valid IDs after trimming', () => {
     expect(isValidStrokeId('  valid-id  ')).toBe(true)
     expect(isValidStrokeId('\ttrimmed\n')).toBe(true)
+  })
+})
+
+describe('isValidDrawingId', () => {
+  test('accepts valid drawing IDs after trimming', () => {
+    expect(isValidDrawingId('  drawing-1  ')).toBe(true)
+  })
+
+  test('rejects invalid drawing IDs', () => {
+    expect(isValidDrawingId('   ')).toBe(false)
+    expect(isValidDrawingId(123)).toBe(false)
+    expect(isValidDrawingId('a'.repeat(101))).toBe(false)
+  })
+})
+
+describe('message validation helpers', () => {
+  test('validateMessageContent rejects empty/whitespace and accepts non-empty string', () => {
+    expect(validateMessageContent('hello')).toBe(true)
+    expect(validateMessageContent('   ')).toBe(false)
+    expect(validateMessageContent(123)).toBe(false)
+  })
+
+  test('sanitizeMessage trims and enforces max length', () => {
+    const longMessage = `  ${'a'.repeat(MAX_CHAT_MESSAGE_LENGTH + 20)}  `
+    const sanitized = sanitizeMessage(longMessage)
+    expect(sanitized.length).toBe(MAX_CHAT_MESSAGE_LENGTH)
+    expect(sanitized.startsWith('a')).toBe(true)
+    expect(sanitized.endsWith('a')).toBe(true)
   })
 })
 
