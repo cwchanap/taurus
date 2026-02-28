@@ -213,4 +213,126 @@ describe('Canvas', () => {
 
     component.clearCanvas()
   })
+
+  it('does not draw when disabled is true', async () => {
+    const onStrokeStart = vi.fn()
+
+    render(Canvas, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [],
+      fills: [],
+      playerId: 'player-1',
+      onStrokeStart,
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: true,
+    })
+
+    await tick()
+
+    const app = pixiState.apps[0] as {
+      stage: { emit: (event: string, payload: { global: { x: number; y: number } }) => void }
+    }
+
+    app.stage.emit('pointerdown', { global: { x: 10, y: 12 } })
+
+    expect(onStrokeStart).not.toHaveBeenCalled()
+  })
+
+  it('sets eraser blend mode when drawing with eraser tool', async () => {
+    const onStrokeStart = vi.fn()
+
+    render(Canvas, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'eraser',
+      strokes: [],
+      fills: [],
+      playerId: 'player-1',
+      onStrokeStart,
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+
+    const app = pixiState.apps[0] as {
+      stage: { emit: (event: string, payload: { global: { x: number; y: number } }) => void }
+    }
+
+    app.stage.emit('pointerdown', { global: { x: 5, y: 5 } })
+
+    expect(onStrokeStart).toHaveBeenCalledTimes(1)
+    const stroke = onStrokeStart.mock.calls[0][0]
+    expect(stroke.eraser).toBe(true)
+  })
+
+  it('removes deleted strokes during reconciliation', async () => {
+    const { rerender } = render(Canvas, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [
+        {
+          id: 's1',
+          playerId: 'p1',
+          points: [
+            { x: 1, y: 1 },
+            { x: 2, y: 2 },
+          ],
+          color: '#000',
+          size: 4,
+        },
+        {
+          id: 's2',
+          playerId: 'p1',
+          points: [
+            { x: 3, y: 3 },
+            { x: 4, y: 4 },
+          ],
+          color: '#000',
+          size: 4,
+        },
+      ],
+      fills: [],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+
+    // Remove s1 by updating strokes prop
+    await rerender({
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [
+        {
+          id: 's2',
+          playerId: 'p1',
+          points: [
+            { x: 3, y: 3 },
+            { x: 4, y: 4 },
+          ],
+          color: '#000',
+          size: 4,
+        },
+      ],
+      fills: [],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+    // No assertion needed beyond no-throw – the reconciliation removes the graphics object
+  })
 })

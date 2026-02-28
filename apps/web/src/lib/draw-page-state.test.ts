@@ -208,4 +208,54 @@ describe('draw-page-state helpers', () => {
     expect(createCorrectGuessNotification('Alice', 42)).toEqual({ playerName: 'Alice', score: 42 })
     expect(clearCorrectGuessNotification()).toBeNull()
   })
+
+  it('updateStrokePoint returns unchanged array when stroke not found', () => {
+    const strokes: Stroke[] = [
+      { id: 's1', playerId: 'p1', points: [{ x: 1, y: 1 }], color: '#000', size: 4 },
+    ]
+    const result = updateStrokePoint(strokes, 'missing-id', { x: 5, y: 5 })
+    expect(result).toBe(strokes)
+    expect(result[0].points).toHaveLength(1)
+  })
+
+  it('applyUndoState returns null action when stack is empty', () => {
+    const result = applyUndoState([], [], [], [])
+    expect(result.action).toBeNull()
+    expect(result.strokes).toEqual([])
+    expect(result.fills).toEqual([])
+  })
+
+  it('applyRedoState returns null action when stack is empty', () => {
+    const result = applyRedoState([], [], [])
+    expect(result.action).toBeNull()
+    expect(result.strokes).toEqual([])
+  })
+
+  it('isEditableKeyboardTarget returns false for null and true for editable elements', () => {
+    expect(isEditableKeyboardTarget(null)).toBe(false)
+
+    const textarea = document.createElement('textarea')
+    expect(isEditableKeyboardTarget(textarea)).toBe(true)
+
+    const roleTextbox = document.createElement('span')
+    roleTextbox.setAttribute('role', 'textbox')
+    expect(isEditableKeyboardTarget(roleTextbox)).toBe(true)
+  })
+
+  it('getDrawerDisplayName returns empty string when drawerId is null', () => {
+    expect(getDrawerDisplayName(null, [], {})).toBe('')
+  })
+
+  it('pushBoundedUndo grows stack when below maxDepth', () => {
+    const stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#000',
+      size: 4,
+    } as Stroke
+
+    const next = pushBoundedUndo([], { type: 'stroke', strokeId: 's1', stroke }, 5)
+    expect(next).toHaveLength(1)
+  })
 })

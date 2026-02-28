@@ -67,4 +67,60 @@ describe('Toolbar', () => {
     expect(onRedo).toHaveBeenCalledTimes(1)
     expect(onClear).toHaveBeenCalledTimes(1)
   })
+
+  it('does not switch tool when selecting color with pencil active', async () => {
+    const onColorChange = vi.fn()
+    const onToolChange = vi.fn()
+
+    render(Toolbar, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      canUndo: false,
+      canRedo: false,
+      onColorChange,
+      onBrushSizeChange: vi.fn(),
+      onToolChange,
+      onUndo: vi.fn(),
+      onRedo: vi.fn(),
+      onClear: vi.fn(),
+      disabled: false,
+      clearDisabled: false,
+    })
+
+    const colorButtons = screen.getAllByRole('button', { name: /select color/i })
+    await fireEvent.click(colorButtons[0])
+
+    expect(onToolChange).not.toHaveBeenCalled()
+    expect(onColorChange).toHaveBeenCalled()
+  })
+
+  it('calls onToolChange when tool buttons are clicked', async () => {
+    const onToolChange = vi.fn()
+
+    render(Toolbar, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      canUndo: false,
+      canRedo: false,
+      onColorChange: vi.fn(),
+      onBrushSizeChange: vi.fn(),
+      onToolChange,
+      onUndo: vi.fn(),
+      onRedo: vi.fn(),
+      onClear: vi.fn(),
+      disabled: false,
+      clearDisabled: false,
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /eraser tool/i }))
+    expect(onToolChange).toHaveBeenCalledWith('eraser')
+
+    await fireEvent.click(screen.getByRole('button', { name: /fill tool/i }))
+    expect(onToolChange).toHaveBeenCalledWith('fill')
+
+    await fireEvent.click(screen.getByRole('button', { name: /pencil tool/i }))
+    expect(onToolChange).toHaveBeenCalledWith('pencil')
+  })
 })

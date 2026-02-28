@@ -468,3 +468,244 @@ describe('DrawingRoom - Player Leave During Game', () => {
     }
   })
 })
+
+describe('DrawingRoom - Broadcast and Message Handling', () => {
+  let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+  let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
+  let mockState: Partial<DurableObjectState>
+  let mockStorageGet: ReturnType<typeof mock>
+  let mockStoragePut: ReturnType<typeof mock>
+  let mockStorageDelete: ReturnType<typeof mock>
+  let mockGetWebSockets: ReturnType<typeof mock>
+  let mockWaitUntil: ReturnType<typeof mock>
+  let mockEnv: unknown
+
+  beforeEach(async () => {
+    ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+    mockStorageGet = mock(() => Promise.resolve(undefined))
+    mockStoragePut = mock(() => Promise.resolve())
+    mockStorageDelete = mock(() => Promise.resolve())
+    mockGetWebSockets = mock(() => [])
+    mockWaitUntil = mock(() => {})
+
+    mockState = {
+      storage: {
+        get: mockStorageGet,
+        put: mockStoragePut,
+        delete: mockStorageDelete,
+        list: mock(() => Promise.resolve(new Map())),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      id: {
+        toString: () => 'test-room-id',
+        equals: () => false,
+        name: 'test-room',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      waitUntil: mockWaitUntil,
+      blockConcurrencyWhile: mock(async (fn) => await fn()),
+      getWebSockets: mockGetWebSockets,
+    }
+
+    mockEnv = {}
+    void mockEnv
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
+    // Mark as initialized so handlers skip storage reads
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+  })
+
+  afterEach(() => {
+    if (room) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).clearTimers()
+    }
+  })
+
+  test('broadcast sends JSON to all connected sockets', () => {
+    const ws1 = { send: mock(() => {}), close: mock(() => {}) }
+    const ws2 = { send: mock(() => {}), close: mock(() => {}) }
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).broadcast({ type: 'test', value: 42 })
+
+    expect(ws1.send).toHaveBeenCalledWith(JSON.stringify({ type: 'test', value: 42 }))
+    expect(ws2.send).toHaveBeenCalledWith(JSON.stringify({ type: 'test', value: 42 }))
+  })
+
+  test('broadcast excludes the specified socket', () => {
+    const ws1 = { send: mock(() => {}), close: mock(() => {}) }
+    const ws2 = { send: mock(() => {}), close: mock(() => {}) }
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).broadcast({ type: 'player-joined' }, ws1)
+
+    expect(ws1.send).not.toHaveBeenCalled()
+    expect(ws2.send).toHaveBeenCalledTimes(1)
+  })
+
+  test('handleChat broadcasts message to all players in lobby', async () => {
+    const ws = {
+      deserializeAttachment: () => ({
+        playerId: 'p1',
+        player: { id: 'p1', name: 'Alice', color: '#fff' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    mockGetWebSockets.mockReturnValue([ws])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).handleChat(ws, {
+      type: 'chat',
+      content: 'hello world',
+    })
+
+    // broadcast sends the chat message to all sockets (including sender)
+    expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
+    expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"content":"hello world"'))
+  })
+
+  test('handleChat ignores message from socket with no player attachment', async () => {
+    const ws = {
+      deserializeAttachment: () => null,
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    mockGetWebSockets.mockReturnValue([ws])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).handleChat(ws, {
+      type: 'chat',
+      content: 'hello',
+    })
+
+    expect(ws.send).not.toHaveBeenCalled()
+  })
+
+  test('handleStartGame rejects non-host player', async () => {
+    const warnSpy = mock(() => {})
+    const originalWarn = console.warn
+    console.warn = warnSpy
+
+    const ws = {
+      deserializeAttachment: () => ({
+        playerId: 'p2',
+        player: { id: 'p2', name: 'Bob', color: '#000' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    mockGetWebSockets.mockReturnValue([ws])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (room as any).handleStartGame(ws)
+    } finally {
+      console.warn = originalWarn
+    }
+
+    expect(warnSpy).toHaveBeenCalled()
+    // Game should remain in lobby
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('lobby')
+  })
+
+  test('handleStartGame rejects when fewer than 2 players are connected', async () => {
+    const warnSpy = mock(() => {})
+    const originalWarn = console.warn
+    console.warn = warnSpy
+
+    const ws = {
+      deserializeAttachment: () => ({
+        playerId: 'p1',
+        player: { id: 'p1', name: 'Alice', color: '#fff' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    // Only one player in the room
+    mockGetWebSockets.mockReturnValue([ws])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (room as any).handleStartGame(ws)
+    } finally {
+      console.warn = originalWarn
+    }
+
+    expect(warnSpy).toHaveBeenCalled()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('lobby')
+  })
+
+  test('webSocketMessage returns error response for invalid JSON', async () => {
+    const ws = {
+      deserializeAttachment: () => null,
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    mockGetWebSockets.mockReturnValue([ws])
+
+    await room.webSocketMessage(ws as unknown as WebSocket, '{invalid json}')
+
+    expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"type":"error"'))
+  })
+
+  test('handleResetGame rejects non-host player', async () => {
+    const warnSpy = mock(() => {})
+    const originalWarn = console.warn
+    console.warn = warnSpy
+
+    const ws = {
+      deserializeAttachment: () => ({
+        playerId: 'p2',
+        player: { id: 'p2', name: 'Bob', color: '#000' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    mockGetWebSockets.mockReturnValue([ws])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (room as any).handleResetGame(ws)
+    } finally {
+      console.warn = originalWarn
+    }
+
+    expect(warnSpy).toHaveBeenCalled()
+  })
+
+  test('getPlayers returns player list from connected sockets', () => {
+    const ws1 = {
+      deserializeAttachment: () => ({
+        playerId: 'p1',
+        player: { id: 'p1', name: 'Alice', color: '#fff' },
+      }),
+    }
+    const ws2 = {
+      deserializeAttachment: () => ({
+        playerId: 'p2',
+        player: { id: 'p2', name: 'Bob', color: '#000' },
+      }),
+    }
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const players = (room as any).getPlayers()
+    expect(players).toHaveLength(2)
+    expect(players[0].name).toBe('Alice')
+    expect(players[1].name).toBe('Bob')
+  })
+})
