@@ -129,7 +129,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       }
 
       // Defensive: auto-set created flag if orphaned data exists without it
-      if (!this.created && (this.strokes.length > 0 || this.chatHistory.getMessages().length > 0)) {
+      if (
+        !this.created &&
+        (this.strokes.length > 0 ||
+          this.fills.length > 0 ||
+          this.chatHistory.getMessages().length > 0)
+      ) {
         this.created = true
         await this.storagePutWithRetry('created', true)
       }
@@ -837,15 +842,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     try {
       await this.queueStrokeDelete()
+      await this.queueFillDelete()
       this.strokes = []
       this.fills = []
-      await this.queueFillDelete()
 
       this.broadcast({
         type: 'clear',
       })
     } catch (e) {
-      console.error(`Player ${playerId} failed to clear strokes:`, e)
+      console.error(`Player ${playerId} failed to clear canvas:`, e)
       try {
         ws.send(JSON.stringify({ type: 'error', message: 'Failed to clear canvas' }))
       } catch {
