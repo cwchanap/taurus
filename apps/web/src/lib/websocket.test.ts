@@ -273,6 +273,272 @@ describe('Chat Message Types', () => {
   })
 })
 
+describe('handleMessage dispatch', () => {
+  let originalWebSocket: typeof globalThis.WebSocket
+  let mockSocket: MockWebSocket
+
+  beforeEach(() => {
+    originalWebSocket = globalThis.WebSocket
+    class TrackedMock extends MockWebSocket {
+      constructor(url: string) {
+        super(url)
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        mockSocket = this
+      }
+    }
+    Object.assign(TrackedMock, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 })
+    globalThis.WebSocket = TrackedMock as unknown as typeof WebSocket
+  })
+
+  afterEach(() => {
+    globalThis.WebSocket = originalWebSocket
+  })
+
+  function createConnectedWs(handlers: Parameters<GameWebSocket['on']>[0]) {
+    const gameWs = new GameWebSocket('http://localhost', 'room-1', 'Player')
+    gameWs.on(handlers)
+    gameWs.connect()
+    mockSocket.simulateOpen()
+    return gameWs
+  }
+
+  function receive(data: object) {
+    mockSocket.onmessage?.({ data: JSON.stringify(data) })
+  }
+
+  it('dispatches init to onInit', () => {
+    const onInit = vi.fn()
+    createConnectedWs({ onInit })
+    receive({
+      type: 'init',
+      playerId: 'p1',
+      player: { id: 'p1', name: 'A', color: '#fff' },
+      players: [],
+      strokes: [],
+      fills: [],
+      chatHistory: [],
+      isHost: false,
+      gameState: {
+        status: 'lobby',
+        currentDrawerId: null,
+        currentRound: 0,
+        totalRounds: 0,
+        scores: {},
+      },
+    })
+    expect(onInit).toHaveBeenCalledTimes(1)
+  })
+
+  it('dispatches player-joined to onPlayerJoined', () => {
+    const onPlayerJoined = vi.fn()
+    createConnectedWs({ onPlayerJoined })
+    receive({ type: 'player-joined', player: { id: 'p2', name: 'B', color: '#000' } })
+    expect(onPlayerJoined).toHaveBeenCalledWith({ id: 'p2', name: 'B', color: '#000' })
+  })
+
+  it('dispatches host-change to onHostChange', () => {
+    const onHostChange = vi.fn()
+    createConnectedWs({ onHostChange })
+    receive({ type: 'host-change', newHostId: 'p2' })
+    expect(onHostChange).toHaveBeenCalledWith('p2')
+  })
+
+  it('dispatches player-left to onPlayerLeft', () => {
+    const onPlayerLeft = vi.fn()
+    createConnectedWs({ onPlayerLeft })
+    receive({ type: 'player-left', playerId: 'p1' })
+    expect(onPlayerLeft).toHaveBeenCalledWith('p1')
+  })
+
+  it('dispatches stroke to onStroke', () => {
+    const onStroke = vi.fn()
+    createConnectedWs({ onStroke })
+    const stroke = { id: 's1', playerId: 'p1', points: [], color: '#000', size: 4 }
+    receive({ type: 'stroke', stroke })
+    expect(onStroke).toHaveBeenCalledWith(stroke)
+  })
+
+  it('dispatches stroke-update to onStrokeUpdate', () => {
+    const onStrokeUpdate = vi.fn()
+    createConnectedWs({ onStrokeUpdate })
+    receive({ type: 'stroke-update', strokeId: 's1', point: { x: 5, y: 10 } })
+    expect(onStrokeUpdate).toHaveBeenCalledWith('s1', { x: 5, y: 10 })
+  })
+
+  it('dispatches stroke-removed to onStrokeRemoved', () => {
+    const onStrokeRemoved = vi.fn()
+    createConnectedWs({ onStrokeRemoved })
+    receive({ type: 'stroke-removed', strokeId: 's1' })
+    expect(onStrokeRemoved).toHaveBeenCalledWith('s1')
+  })
+
+  it('dispatches fill to onFill', () => {
+    const onFill = vi.fn()
+    createConnectedWs({ onFill })
+    receive({
+      type: 'fill',
+      id: 'f1',
+      playerId: 'p1',
+      x: 10,
+      y: 20,
+      color: '#FF0000',
+      timestamp: 1234,
+    })
+    expect(onFill).toHaveBeenCalledWith({
+      id: 'f1',
+      playerId: 'p1',
+      x: 10,
+      y: 20,
+      color: '#FF0000',
+      timestamp: 1234,
+    })
+  })
+
+  it('dispatches fill-removed to onFillRemoved', () => {
+    const onFillRemoved = vi.fn()
+    createConnectedWs({ onFillRemoved })
+    receive({ type: 'fill-removed', fillId: 'f1' })
+    expect(onFillRemoved).toHaveBeenCalledWith('f1')
+  })
+
+  it('dispatches clear to onClear', () => {
+    const onClear = vi.fn()
+    createConnectedWs({ onClear })
+    receive({ type: 'clear' })
+    expect(onClear).toHaveBeenCalledTimes(1)
+  })
+
+  it('dispatches chat to onChat', () => {
+    const onChat = vi.fn()
+    createConnectedWs({ onChat })
+    const msg = {
+      id: 'm1',
+      playerId: 'p1',
+      playerName: 'A',
+      playerColor: '#fff',
+      content: 'hi',
+      timestamp: 0,
+    }
+    receive({ type: 'chat', message: msg })
+    expect(onChat).toHaveBeenCalledWith(msg)
+  })
+
+  it('dispatches system-message to onSystemMessage', () => {
+    const onSystemMessage = vi.fn()
+    createConnectedWs({ onSystemMessage })
+    receive({ type: 'system-message', content: 'Hello!' })
+    expect(onSystemMessage).toHaveBeenCalledWith('Hello!')
+  })
+
+  it('dispatches game-started to onGameStarted', () => {
+    const onGameStarted = vi.fn()
+    createConnectedWs({ onGameStarted })
+    receive({ type: 'game-started', totalRounds: 3, drawerOrder: ['p1'], scores: {} })
+    expect(onGameStarted).toHaveBeenCalledWith(3, ['p1'], {})
+  })
+
+  it('dispatches round-start to onRoundStart', () => {
+    const onRoundStart = vi.fn()
+    createConnectedWs({ onRoundStart })
+    receive({
+      type: 'round-start',
+      roundNumber: 1,
+      totalRounds: 3,
+      drawerId: 'p1',
+      drawerName: 'A',
+      word: 'cat',
+      wordLength: 3,
+      endTime: 9999,
+    })
+    expect(onRoundStart).toHaveBeenCalledWith(1, 3, 'p1', 'A', 'cat', 3, 9999)
+  })
+
+  it('dispatches round-end to onRoundEnd', () => {
+    const onRoundEnd = vi.fn()
+    createConnectedWs({ onRoundEnd })
+    const result = {
+      drawerId: 'p1',
+      drawerName: 'A',
+      word: 'cat',
+      correctGuessers: [],
+      drawerScore: 0,
+    }
+    receive({ type: 'round-end', word: 'cat', result, scores: {} })
+    expect(onRoundEnd).toHaveBeenCalledWith('cat', result, {})
+  })
+
+  it('dispatches game-over to onGameOver', () => {
+    const onGameOver = vi.fn()
+    createConnectedWs({ onGameOver })
+    receive({ type: 'game-over', finalScores: {}, winners: [] })
+    expect(onGameOver).toHaveBeenCalledWith({}, [])
+  })
+
+  it('dispatches correct-guess to onCorrectGuess', () => {
+    const onCorrectGuess = vi.fn()
+    createConnectedWs({ onCorrectGuess })
+    receive({
+      type: 'correct-guess',
+      playerId: 'p1',
+      playerName: 'A',
+      score: 10,
+      timeRemaining: 30,
+    })
+    expect(onCorrectGuess).toHaveBeenCalledWith('p1', 'A', 10, 30)
+  })
+
+  it('dispatches tick to onTick', () => {
+    const onTick = vi.fn()
+    createConnectedWs({ onTick })
+    receive({ type: 'tick', timeRemaining: 45 })
+    expect(onTick).toHaveBeenCalledWith(45)
+  })
+
+  it('dispatches game-reset to onGameReset', () => {
+    const onGameReset = vi.fn()
+    createConnectedWs({ onGameReset })
+    receive({ type: 'game-reset' })
+    expect(onGameReset).toHaveBeenCalledTimes(1)
+  })
+
+  it('logs error type server messages', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    createConnectedWs({})
+    receive({ type: 'error', message: 'Something went wrong' })
+    expect(errorSpy).toHaveBeenCalledWith('Server error:', 'Something went wrong')
+    errorSpy.mockRestore()
+  })
+
+  it('sends stroke and stroke-update messages when connected', () => {
+    const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+    gameWs.connect()
+    const sendSpy = vi.spyOn(mockSocket, 'send')
+    mockSocket.simulateOpen()
+
+    const stroke = { id: 's1', playerId: 'p1', points: [{ x: 1, y: 1 }], color: '#000', size: 4 }
+    gameWs.sendStroke(stroke)
+    gameWs.sendStrokeUpdate('s1', { x: 5, y: 10 })
+
+    const payloads = sendSpy.mock.calls.map((c) => JSON.parse(c[0]))
+    expect(payloads).toContainEqual({ type: 'stroke', stroke })
+    expect(payloads).toContainEqual({
+      type: 'stroke-update',
+      strokeId: 's1',
+      point: { x: 5, y: 10 },
+    })
+  })
+
+  it('warns and returns false when sending while not connected', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+    gameWs.connect()
+    // Socket is in CONNECTING state, not OPEN – send should warn
+    gameWs.sendClear()
+    expect(warnSpy).toHaveBeenCalledWith('Cannot send message: WebSocket is not open')
+    warnSpy.mockRestore()
+  })
+})
+
 describe('WebSocket reconnection', () => {
   let originalWebSocket: typeof globalThis.WebSocket
   let originalSetTimeout: typeof globalThis.setTimeout
