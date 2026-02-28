@@ -306,8 +306,11 @@ describe('WebSocket reconnection', () => {
       return scheduledTimeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>
     }) as unknown as typeof setTimeout
 
-    globalThis.clearTimeout = (() => {
-      // no-op for deterministic timeout shim in tests
+    globalThis.clearTimeout = ((id?: ReturnType<typeof setTimeout>) => {
+      const index = Number(id) - 1
+      if (index >= 0 && index < scheduledTimeoutCallbacks.length) {
+        scheduledTimeoutCallbacks.splice(index, 1)
+      }
     }) as unknown as typeof clearTimeout
 
     // Create a mock WebSocket class that tracks instances
@@ -605,6 +608,71 @@ describe('WebSocket reconnection', () => {
 
       // Should still only have one WebSocket instance
       expect(mockWebSocketInstances).toHaveLength(1)
+    })
+  })
+
+  describe('message send wrappers and error handling', () => {
+    it('sends wrapper message types when connected', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+
+      gameWs.connect()
+      const socket = mockWebSocketInstances[0]
+      const sendSpy = vi.spyOn(socket, 'send')
+      socket.simulateOpen()
+
+      gameWs.sendUndoStroke('stroke-1')
+      gameWs.sendUndoFill('fill-1')
+      gameWs.sendFill(10, 20, '#FF6B6B')
+      gameWs.sendClear()
+      gameWs.sendChat('hello')
+      gameWs.sendStartGame()
+      gameWs.sendResetGame()
+
+      const payloads = sendSpy.mock.calls.map((call) => JSON.parse(call[0]))
+
+      expect(payloads).toEqual(
+        expect.arrayContaining([
+          { type: 'join', name: 'TestPlayer' },
+          { type: 'undo-stroke', strokeId: 'stroke-1' },
+          { type: 'undo-fill', fillId: 'fill-1' },
+          { type: 'fill', x: 10, y: 20, color: '#FF6B6B' },
+          { type: 'clear' },
+          { type: 'chat', content: 'hello' },
+          { type: 'start-game' },
+          { type: 'reset-game' },
+        ])
+      )
+    })
+
+    it('logs parse errors for malformed server payloads without disconnecting', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+      const onConnectionChange = vi.fn()
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      gameWs.on({ onConnectionChange })
+      gameWs.connect()
+
+      const socket = mockWebSocketInstances[0]
+      socket.simulateOpen()
+      socket.onmessage?.({ data: '{invalid json' })
+
+      expect(errorSpy).toHaveBeenCalledWith('Failed to parse message:', expect.any(SyntaxError))
+      expect(onConnectionChange).toHaveBeenCalledWith(true)
+      expect(onConnectionChange).not.toHaveBeenCalledWith(false)
+    })
+
+    it('clears pending reconnect timer on disconnect()', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+
+      gameWs.connect()
+      mockWebSocketInstances[0].simulateOpen()
+      mockWebSocketInstances[0].simulateClose()
+
+      expect(scheduledTimeoutCallbacks.length).toBeGreaterThan(0)
+
+      gameWs.disconnect()
+
+      expect(scheduledTimeoutCallbacks.length).toBe(0)
     })
   })
 })
