@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
-import type { Player, Stroke, ChatMessage } from '@repo/types'
+import type { Player, Stroke, FillOperation, ChatMessage } from '@repo/types'
 import { ChatHistory } from './chat-history'
 import { gameStateToWire } from './game-types'
 
@@ -58,7 +58,9 @@ import {
   isValidPlayerName,
   isValidPoint,
   isValidStrokeId,
+  isValidDrawingId,
   validateStroke,
+  validateFill,
 } from './validation'
 import {
   calculateCorrectGuessScore,
@@ -76,6 +78,7 @@ import {
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> implements TimerContainer {
   private strokes: Stroke[] = []
+  private fills: FillOperation[] = []
   private initialized = false
   private created = false
   private hostPlayerId: string | null = null
@@ -83,6 +86,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private storageWriteDelay = 1000 // 1s debounce balances persistence reliability with write frequency
   private strokeStorageQueue: Promise<void> = Promise.resolve() // Serialize stroke storage write/delete ops
   private pendingStrokeWrite: Promise<void> | null = null // Track latest in-flight stroke storage operation
+  private fillStorageQueue: Promise<void> = Promise.resolve() // Serialize fill storage write/delete ops
 
   // Sliding window rate limiting
   private playerMessageTimestamps: Map<string, RateLimitState> = new Map()
@@ -105,6 +109,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private async ensureInitialized() {
     if (!this.initialized) {
       this.strokes = (await this.ctx.storage.get<Stroke[]>('strokes')) || []
+      this.fills = (await this.ctx.storage.get<FillOperation[]>('fills')) || []
       this.created = (await this.ctx.storage.get<boolean>('created')) || false
       const storedChatHistory = (await this.ctx.storage.get<ChatMessage[]>('chatHistory')) || []
       this.chatHistory.setMessages(storedChatHistory)
@@ -124,7 +129,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       }
 
       // Defensive: auto-set created flag if orphaned data exists without it
-      if (!this.created && (this.strokes.length > 0 || this.chatHistory.getMessages().length > 0)) {
+      if (
+        !this.created &&
+        (this.strokes.length > 0 ||
+          this.fills.length > 0 ||
+          this.chatHistory.getMessages().length > 0)
+      ) {
         this.created = true
         await this.storagePutWithRetry('created', true)
       }
@@ -263,6 +273,24 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
   private queueStrokeDelete(): Promise<void> {
     return this.enqueueStrokeStorageOperation(() => this.storageDeleteWithRetry('strokes'))
+  }
+
+  private enqueueFillStorageOperation(operation: () => Promise<void>): Promise<void> {
+    const op = this.fillStorageQueue.then(operation, operation)
+    this.fillStorageQueue = op.catch(() => {})
+    return op
+  }
+
+  private queueFillWrite(): void {
+    this.ctx.waitUntil(
+      this.enqueueFillStorageOperation(() => this.storagePutWithRetry('fills', this.fills)).catch(
+        (e) => console.error('Failed to persist fills:', e)
+      )
+    )
+  }
+
+  private queueFillDelete(): Promise<void> {
+    return this.enqueueFillStorageOperation(() => this.storageDeleteWithRetry('fills'))
   }
 
   private scheduleStorageWrite() {
@@ -434,6 +462,30 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           sendError('Failed to reset game')
         }
         break
+      case 'undo-stroke':
+        try {
+          await this.handleUndoStroke(ws, data as Message & { strokeId: string })
+        } catch (e) {
+          console.error('Handler error for undo-stroke:', e)
+          sendError('Failed to undo stroke')
+        }
+        break
+      case 'undo-fill':
+        try {
+          await this.handleUndoFill(ws, data as Message & { fillId: string })
+        } catch (e) {
+          console.error('Handler error for undo-fill:', e)
+          sendError('Failed to undo fill')
+        }
+        break
+      case 'fill':
+        try {
+          await this.handleFill(ws, data as Message & { x: number; y: number; color: string })
+        } catch (e) {
+          console.error('Handler error for fill:', e)
+          sendError('Failed to process fill')
+        }
+        break
     }
   }
 
@@ -501,6 +553,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         player,
         players: [...existingPlayers, player],
         strokes: this.strokes,
+        fills: this.fills,
         chatHistory: this.chatHistory.getMessages(),
         isHost: playerId === this.hostPlayerId,
         gameState: gameStateToWire(this.gameState, playerId === this.gameState.currentDrawerId),
@@ -789,19 +842,118 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     try {
       await this.queueStrokeDelete()
+      await this.queueFillDelete()
       this.strokes = []
+      this.fills = []
 
       this.broadcast({
         type: 'clear',
       })
     } catch (e) {
-      console.error(`Player ${playerId} failed to clear strokes:`, e)
+      console.error(`Player ${playerId} failed to clear canvas:`, e)
       try {
         ws.send(JSON.stringify({ type: 'error', message: 'Failed to clear canvas' }))
       } catch {
         // Connection may be closed
       }
     }
+  }
+
+  private async handleUndoStroke(ws: WebSocket, data: Message & { strokeId: string }) {
+    const playerId = this.getPlayerIdForSocket(ws)
+    if (!playerId) return
+
+    if (this.gameState.status !== 'playing') return
+    if (playerId !== this.gameState.currentDrawerId) return
+
+    if (!isValidDrawingId(data.strokeId)) {
+      console.warn(`Invalid strokeId in undo-stroke from player ${playerId}`)
+      return
+    }
+
+    const trimmedId = data.strokeId.trim()
+    const idx = this.strokes.findLastIndex((s) => s.id === trimmedId && s.playerId === playerId)
+    if (idx === -1) {
+      console.warn(`Stroke ${trimmedId} not found for undo by player ${playerId}`)
+      return
+    }
+
+    this.strokes.splice(idx, 1)
+    this.scheduleStorageWrite()
+
+    this.broadcast({ type: 'stroke-removed', strokeId: trimmedId })
+  }
+
+  private async handleUndoFill(ws: WebSocket, data: Message & { fillId: string }) {
+    const playerId = this.getPlayerIdForSocket(ws)
+    if (!playerId) return
+
+    if (this.gameState.status !== 'playing') return
+    if (playerId !== this.gameState.currentDrawerId) return
+
+    if (!isValidDrawingId(data.fillId)) {
+      console.warn(`Invalid fillId in undo-fill from player ${playerId}`)
+      return
+    }
+
+    const trimmedId = data.fillId.trim()
+    const idx = this.fills.findLastIndex((f) => f.id === trimmedId && f.playerId === playerId)
+    if (idx === -1) {
+      console.warn(`Fill ${trimmedId} not found for undo by player ${playerId}`)
+      return
+    }
+
+    this.fills.splice(idx, 1)
+    this.queueFillWrite()
+
+    this.broadcast({ type: 'fill-removed', fillId: trimmedId })
+  }
+
+  private async handleFill(ws: WebSocket, data: Message & { x: number; y: number; color: string }) {
+    const playerId = this.getPlayerIdForSocket(ws)
+    if (!playerId) return
+
+    if (this.gameState.status !== 'playing') return
+    if (playerId !== this.gameState.currentDrawerId) return
+
+    // Reuse the stroke rate limit bucket for fill operations
+    if (!this.checkRateLimit(playerId, true)) {
+      console.warn(`Rate limit exceeded for fill by player ${playerId}`)
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
+
+    const validated = validateFill(data)
+    if (!validated) {
+      console.warn(`Invalid fill data from player ${playerId}`)
+      return
+    }
+
+    const fill: FillOperation = {
+      id: crypto.randomUUID(),
+      playerId,
+      x: validated.x,
+      y: validated.y,
+      color: validated.color,
+      timestamp: Date.now(),
+    }
+
+    this.fills.push(fill)
+    this.queueFillWrite()
+
+    this.broadcast({
+      type: 'fill',
+      id: fill.id,
+      playerId: fill.playerId,
+      x: fill.x,
+      y: fill.y,
+      color: fill.color,
+      timestamp: fill.timestamp,
+    })
   }
 
   private async handleChat(ws: WebSocket, data: Message & { content: string }) {
@@ -1010,8 +1162,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Persist reset game state
     await this.persistGameState()
 
-    // Clear strokes and storage to prevent stale canvas on next game
+    // Clear strokes/fills and storage to prevent stale canvas on next game
     this.strokes = []
+    this.fills = []
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
@@ -1022,6 +1175,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.queueStrokeDelete().catch((e) =>
         console.error('Failed to delete strokes from storage:', e)
       )
+    )
+    this.ctx.waitUntil(
+      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
     )
 
     // Broadcast reset to all players
@@ -1093,6 +1249,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Clear canvas for new round
     this.strokes = []
+    this.fills = []
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
@@ -1103,6 +1260,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.queueStrokeDelete().catch((e) =>
         console.error('Failed to delete strokes from storage:', e)
       )
+    )
+    this.ctx.waitUntil(
+      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
     )
 
     // Broadcast round start to all players
@@ -1329,8 +1489,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       winners,
     })
 
-    // Clear strokes to prevent stale canvas on next game
+    // Clear strokes/fills to prevent stale canvas on next game
     this.strokes = []
+    this.fills = []
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
@@ -1341,6 +1502,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.queueStrokeDelete().catch((e) =>
         console.error('Failed to delete strokes from storage:', e)
       )
+    )
+    this.ctx.waitUntil(
+      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
     )
 
     // Set status to game-over (don't reset immediately) so new/reconnecting players see results

@@ -103,21 +103,44 @@ Common TypeScript types shared between frontend and backend:
 
 ### Unit Tests
 
-Run: `bun test`
+```bash
+# Run all unit tests (API + web)
+bun test
 
-- Game logic: `apps/api/src/game-logic.test.ts` - pure functions for testability
-- Validation: `apps/api/src/validation.test.ts` - stroke validation, ID collision handling
-- Chat: `apps/api/src/chat.test.ts` - message validation, sanitization
-- Vocabulary: `apps/api/src/game.test.ts` - word selection logic
-- Timer cleanup: `apps/api/src/timer-cleanup.test.ts` - timer management
+# Run a single test file
+cd apps/api && bun test src/game-logic.test.ts
+cd apps/web && bun run test -- websocket.test.ts
+
+# Run with coverage
+cd apps/api && bun run test:coverage
+cd apps/web && bun run test:coverage
+```
+
+**API tests** (`apps/api/src/`):
+
+- `game-logic.test.ts` - pure functions for game state
+- `game-types.test.ts` - type conversion helpers (`gameStateToWire`, `scoresToRecord`)
+- `room.test.ts` - `DrawingRoom` Durable Object integration
+- `validation.test.ts` - stroke validation, ID collision handling
+- `chat.test.ts` - message validation, sanitization
+- `game.test.ts` - word selection logic
+- `timer-cleanup.test.ts` - timer management
+
+**Web tests** (`apps/web/src/lib/`):
+
+- `websocket.test.ts` - `GameWebSocket` class
+- `game-winners.test.ts` - winner calculation logic
 
 ### E2E Tests (Playwright)
 
-Run: `cd apps/web && bun run e2e`
+```bash
+bun run e2e                    # from root
+cd apps/web && bun run e2e     # from web app
+```
 
 - `apps/web/e2e/game.spec.ts` - multiplayer game flows
 - `apps/web/e2e/chat.spec.ts` - chat functionality
 
 **Testing Durable Objects:**
 
-Durable Objects are difficult to unit test. Extract business logic to pure functions in `game-logic.ts` for testability.
+`apps/api/test-setup.ts` mocks `cloudflare:workers` so Durable Objects can run under Bun. Business logic is extracted to pure functions in `game-logic.ts` for testability.

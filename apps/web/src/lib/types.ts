@@ -9,6 +9,7 @@ export type {
   Player,
   Stroke,
   Point,
+  FillOperation,
   GameStateWire as GameState,
 } from '@repo/types'
 

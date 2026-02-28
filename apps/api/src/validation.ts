@@ -8,6 +8,9 @@ import {
   MIN_STROKE_SIZE,
   MAX_STROKE_POINTS,
   MAX_COORDINATE_VALUE,
+  MAX_CANVAS_WIDTH,
+  MAX_CANVAS_HEIGHT,
+  PALETTE_COLORS,
 } from './constants'
 
 /**
@@ -86,14 +89,44 @@ export function isValidSize(size: unknown): size is number {
 }
 
 /**
- * Validates a stroke ID (should be a non-empty string, reasonable length)
+ * Validates a drawing element ID (stroke or fill — both use UUID format)
  */
-export function isValidStrokeId(strokeId: unknown): strokeId is string {
-  if (typeof strokeId !== 'string') {
+export function isValidDrawingId(id: unknown): id is string {
+  if (typeof id !== 'string') {
     return false
   }
-  const trimmed = strokeId.trim()
+  const trimmed = id.trim()
   return trimmed.length > 0 && trimmed.length <= 100
+}
+
+/** @deprecated Use isValidDrawingId instead */
+export function isValidStrokeId(strokeId: unknown): strokeId is string {
+  return isValidDrawingId(strokeId)
+}
+
+/**
+ * Validates a fill operation's coordinates and color
+ */
+export function validateFill(data: unknown): { x: number; y: number; color: string } | null {
+  if (!data || typeof data !== 'object') {
+    return null
+  }
+
+  const d = data as Record<string, unknown>
+
+  if (typeof d.x !== 'number' || !Number.isFinite(d.x) || d.x < 0 || d.x >= MAX_CANVAS_WIDTH) {
+    return null
+  }
+
+  if (typeof d.y !== 'number' || !Number.isFinite(d.y) || d.y < 0 || d.y >= MAX_CANVAS_HEIGHT) {
+    return null
+  }
+
+  if (typeof d.color !== 'string' || !(PALETTE_COLORS as readonly string[]).includes(d.color)) {
+    return null
+  }
+
+  return { x: Math.floor(d.x), y: Math.floor(d.y), color: d.color }
 }
 
 /**
@@ -182,5 +215,6 @@ export function validateStroke(
     points: points.map((p) => ({ x: Number(p.x), y: Number(p.y) })),
     color: (data.color as string).trim(),
     size: data.size as number,
+    ...(data.eraser === true ? { eraser: true } : {}),
   }
 }

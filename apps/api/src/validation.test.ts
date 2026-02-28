@@ -1,17 +1,97 @@
 import { describe, expect, test } from 'bun:test'
 import {
   validateStroke,
+  validateFill,
   isValidStrokeId,
+  isValidDrawingId,
   isValidColor,
   isValidSize,
   isValidPlayerName,
+  validateMessageContent,
+  sanitizeMessage,
 } from './validation'
 import {
+  MAX_CHAT_MESSAGE_LENGTH,
   MAX_STROKE_SIZE,
   MIN_STROKE_SIZE,
   MAX_COLOR_LENGTH,
   MAX_PLAYER_NAME_LENGTH,
+  MAX_CANVAS_WIDTH,
+  MAX_CANVAS_HEIGHT,
+  PALETTE_COLORS,
 } from './constants'
+
+const VALID_FILL_COLOR = PALETTE_COLORS[0]
+
+describe('validateFill', () => {
+  test('accepts integer coordinates and valid palette color', () => {
+    const result = validateFill({ x: 100, y: 200, color: VALID_FILL_COLOR })
+    expect(result).not.toBeNull()
+    expect(result?.x).toBe(100)
+    expect(result?.y).toBe(200)
+    expect(result?.color).toBe(VALID_FILL_COLOR)
+  })
+
+  test('accepts and floors fractional coordinates', () => {
+    const result = validateFill({ x: 100.7, y: 200.3, color: VALID_FILL_COLOR })
+    expect(result).not.toBeNull()
+    expect(result?.x).toBe(100)
+    expect(result?.y).toBe(200)
+  })
+
+  test('accepts fractional coordinates at boundary (just below max)', () => {
+    const result = validateFill({
+      x: MAX_CANVAS_WIDTH - 0.5,
+      y: MAX_CANVAS_HEIGHT - 0.5,
+      color: VALID_FILL_COLOR,
+    })
+    expect(result).not.toBeNull()
+    expect(result?.x).toBe(MAX_CANVAS_WIDTH - 1)
+    expect(result?.y).toBe(MAX_CANVAS_HEIGHT - 1)
+  })
+
+  test('rejects x >= MAX_CANVAS_WIDTH', () => {
+    expect(validateFill({ x: MAX_CANVAS_WIDTH, y: 0, color: VALID_FILL_COLOR })).toBeNull()
+  })
+
+  test('rejects y >= MAX_CANVAS_HEIGHT', () => {
+    expect(validateFill({ x: 0, y: MAX_CANVAS_HEIGHT, color: VALID_FILL_COLOR })).toBeNull()
+  })
+
+  test('rejects negative x', () => {
+    expect(validateFill({ x: -1, y: 0, color: VALID_FILL_COLOR })).toBeNull()
+  })
+
+  test('rejects negative y', () => {
+    expect(validateFill({ x: 0, y: -0.5, color: VALID_FILL_COLOR })).toBeNull()
+  })
+
+  test('rejects non-finite x (NaN, Infinity)', () => {
+    expect(validateFill({ x: NaN, y: 0, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: Infinity, y: 0, color: VALID_FILL_COLOR })).toBeNull()
+  })
+
+  test('rejects non-finite y', () => {
+    expect(validateFill({ x: 0, y: NaN, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 0, y: -Infinity, color: VALID_FILL_COLOR })).toBeNull()
+  })
+
+  test('rejects non-number coordinates', () => {
+    expect(validateFill({ x: '10', y: 0, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 0, y: '10', color: VALID_FILL_COLOR })).toBeNull()
+  })
+
+  test('rejects color not in palette', () => {
+    expect(validateFill({ x: 0, y: 0, color: '#000000' })).toBeNull()
+    expect(validateFill({ x: 0, y: 0, color: 'red' })).toBeNull()
+  })
+
+  test('rejects null or non-object input', () => {
+    expect(validateFill(null)).toBeNull()
+    expect(validateFill('string')).toBeNull()
+    expect(validateFill(42)).toBeNull()
+  })
+})
 
 describe('isValidStrokeId', () => {
   test('should reject whitespace-only strings', () => {
@@ -23,6 +103,34 @@ describe('isValidStrokeId', () => {
   test('should accept valid IDs after trimming', () => {
     expect(isValidStrokeId('  valid-id  ')).toBe(true)
     expect(isValidStrokeId('\ttrimmed\n')).toBe(true)
+  })
+})
+
+describe('isValidDrawingId', () => {
+  test('accepts valid drawing IDs after trimming', () => {
+    expect(isValidDrawingId('  drawing-1  ')).toBe(true)
+  })
+
+  test('rejects invalid drawing IDs', () => {
+    expect(isValidDrawingId('   ')).toBe(false)
+    expect(isValidDrawingId(123)).toBe(false)
+    expect(isValidDrawingId('a'.repeat(101))).toBe(false)
+  })
+})
+
+describe('message validation helpers', () => {
+  test('validateMessageContent rejects empty/whitespace and accepts non-empty string', () => {
+    expect(validateMessageContent('hello')).toBe(true)
+    expect(validateMessageContent('   ')).toBe(false)
+    expect(validateMessageContent(123)).toBe(false)
+  })
+
+  test('sanitizeMessage trims and enforces max length', () => {
+    const longMessage = `  ${'a'.repeat(MAX_CHAT_MESSAGE_LENGTH + 20)}  `
+    const sanitized = sanitizeMessage(longMessage)
+    expect(sanitized.length).toBe(MAX_CHAT_MESSAGE_LENGTH)
+    expect(sanitized.startsWith('a')).toBe(true)
+    expect(sanitized.endsWith('a')).toBe(true)
   })
 })
 
