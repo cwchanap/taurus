@@ -79,17 +79,6 @@ describe('DrawingRoom - Player Leave During Game', () => {
     }
   })
 
-  test.skip('placeholder - setup verified', () => {
-    // TODO: Implement actual setup verification
-    expect(true).toBe(true)
-  })
-
-  test.skip('player who already drew leaves - adjusts drawerOrder and totalRounds', () => {
-    // TODO: Implement using helper factory and DrawingRoom instance
-    // This requires significant mocking of internal state which is hard to reach from outside
-    expect(true).toBe(true)
-  })
-
   test('rehydrates playing state timers after hibernation when sockets are active', async () => {
     const roundEndTime = Date.now() + 10_000
     mockStorageGet.mockImplementation((key: string) => {
@@ -707,5 +696,221 @@ describe('DrawingRoom - Broadcast and Message Handling', () => {
     expect(players).toHaveLength(2)
     expect(players[0].name).toBe('Alice')
     expect(players[1].name).toBe('Bob')
+  })
+})
+
+describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
+  let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+  let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
+  let mockState: Partial<DurableObjectState>
+  let mockStoragePut: ReturnType<typeof mock>
+  let mockStorageDelete: ReturnType<typeof mock>
+  let mockGetWebSockets: ReturnType<typeof mock>
+  let mockWaitUntil: ReturnType<typeof mock>
+  let mockEnv: unknown
+
+  // Helper: create a mock WebSocket with a fixed player ID
+  function createMockWs(playerId: string, playerName = 'TestPlayer') {
+    return {
+      deserializeAttachment: () => ({
+        playerId,
+        player: { id: playerId, name: playerName, color: '#FF6B6B' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+  }
+
+  // Helper: get all parsed messages sent via ws.send
+  function getSentMessages(ws: ReturnType<typeof createMockWs>) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (ws.send as ReturnType<typeof mock>).mock.calls.map((call: any[]) => {
+      try {
+        return JSON.parse(call[0] as string)
+      } catch {
+        return null
+      }
+    })
+  }
+
+  // Helper: set room into playing state with a specific drawer
+  function setPlayingState(drawerId: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: drawerId,
+      currentWord: 'apple',
+      wordLength: 5,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: [drawerId],
+      scores: new Map(),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+    }
+  }
+
+  beforeEach(async () => {
+    ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+    mockStoragePut = mock(() => Promise.resolve())
+    mockStorageDelete = mock(() => Promise.resolve())
+    mockGetWebSockets = mock(() => [])
+    mockWaitUntil = mock(() => {})
+
+    mockState = {
+      storage: {
+        get: mock(() => Promise.resolve(undefined)),
+        put: mockStoragePut,
+        delete: mockStorageDelete,
+        list: mock(() => Promise.resolve(new Map())),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      id: {
+        toString: () => 'test-room-id',
+        equals: () => false,
+        name: 'test-room',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      waitUntil: mockWaitUntil,
+      blockConcurrencyWhile: mock(async (fn) => await fn()),
+      getWebSockets: mockGetWebSockets,
+    }
+
+    mockEnv = {}
+    void mockEnv
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
+  })
+
+  afterEach(() => {
+    if (room) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).clearTimers()
+    }
+  })
+
+  test('handleFill: rejects fill from non-drawer player', async () => {
+    // Player 'non-drawer' joins; current drawer is 'actual-drawer'
+    const ws = createMockWs('non-drawer', 'NonDrawer')
+    mockGetWebSockets.mockReturnValue([ws])
+    setPlayingState('actual-drawer')
+
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'fill', x: 100, y: 100, color: '#FF6B6B' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(ws)
+    expect(msgs.some((m) => m?.type === 'fill')).toBe(false)
+  })
+
+  test('handleFill: rejects fill when game is not in playing state', async () => {
+    const ws = createMockWs('player-1', 'Player')
+    mockGetWebSockets.mockReturnValue([ws])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      roundEndTime: null,
+      drawerOrder: [],
+      scores: new Map(),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+    }
+
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'fill', x: 100, y: 100, color: '#FF6B6B' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(ws)
+    expect(msgs.some((m) => m?.type === 'fill')).toBe(false)
+  })
+
+  test('handleUndoStroke: does not broadcast stroke-removed when player is not the drawer', async () => {
+    const ws = createMockWs('non-drawer', 'NonDrawer')
+    mockGetWebSockets.mockReturnValue([ws])
+    setPlayingState('actual-drawer')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = [
+      {
+        id: 'stroke-1',
+        playerId: 'actual-drawer',
+        color: '#FF6B6B',
+        size: 4,
+        points: [{ x: 0, y: 0 }],
+      },
+    ]
+
+    await room.webSocketMessage(ws, JSON.stringify({ type: 'undo-stroke', strokeId: 'stroke-1' }))
+    await flushPromises()
+
+    const msgs = getSentMessages(ws)
+    expect(msgs.some((m) => m?.type === 'stroke-removed')).toBe(false)
+  })
+
+  test('handleUndoFill: does not broadcast fill-removed for fill owned by different player', async () => {
+    const ws = createMockWs('drawer', 'Drawer')
+    mockGetWebSockets.mockReturnValue([ws])
+    setPlayingState('drawer')
+    // Fill is owned by 'other-player', not 'drawer'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).fills = [
+      {
+        id: 'fill-1',
+        playerId: 'other-player',
+        x: 10,
+        y: 10,
+        color: '#FF6B6B',
+        timestamp: Date.now(),
+      },
+    ]
+
+    await room.webSocketMessage(ws, JSON.stringify({ type: 'undo-fill', fillId: 'fill-1' }))
+    await flushPromises()
+
+    const msgs = getSentMessages(ws)
+    expect(msgs.some((m) => m?.type === 'fill-removed')).toBe(false)
+  })
+
+  test('handleClear: rejects clear from non-drawer during playing state', async () => {
+    const ws = createMockWs('non-drawer', 'NonDrawer')
+    mockGetWebSockets.mockReturnValue([ws])
+    setPlayingState('actual-drawer')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = [
+      {
+        id: 'stroke-1',
+        playerId: 'actual-drawer',
+        color: '#FF6B6B',
+        size: 4,
+        points: [{ x: 0, y: 0 }],
+      },
+    ]
+
+    await room.webSocketMessage(ws, JSON.stringify({ type: 'clear' }))
+    await flushPromises()
+
+    const msgs = getSentMessages(ws)
+    expect(msgs.some((m) => m?.type === 'clear')).toBe(false)
   })
 })
