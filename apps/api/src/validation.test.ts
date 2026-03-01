@@ -141,7 +141,7 @@ describe('validateStroke', () => {
       { x: 10, y: 10 },
       { x: 20, y: 20 },
     ],
-    color: '#000000',
+    color: '#FF6B6B',
     size: 5,
   }
   const playerId = 'player-1'
@@ -225,7 +225,7 @@ describe('validateStroke', () => {
   })
 
   test('should reject stroke with empty points', () => {
-    const data = { points: [], color: '#000000', size: 5 }
+    const data = { points: [], color: '#FF6B6B', size: 5 }
     expect(validateStroke(data, 'player-1')).toBeNull()
   })
 
@@ -234,8 +234,54 @@ describe('validateStroke', () => {
     expect(validateStroke(data, 'player-1')).toBeNull()
   })
 
+  test('rejects stroke with color not in PALETTE_COLORS', () => {
+    const result = validateStroke(
+      {
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        color: '#BADCOLOR',
+        size: 4,
+      },
+      'player-1'
+    )
+    expect(result).toBeNull()
+  })
+
+  test('rejects stroke with arbitrary CSS color string', () => {
+    const result = validateStroke(
+      {
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        color: 'red',
+        size: 4,
+      },
+      'player-1'
+    )
+    expect(result).toBeNull()
+  })
+
+  test('accepts stroke with valid palette color', () => {
+    const result = validateStroke(
+      {
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        color: '#FF6B6B',
+        size: 4,
+      },
+      'player-1'
+    )
+    expect(result).not.toBeNull()
+    expect(result?.color).toBe('#FF6B6B')
+  })
+
   test('should reject stroke with invalid size', () => {
-    const data = { points: [{ x: 0, y: 0 }], color: '#000', size: -1 }
+    const data = { points: [{ x: 0, y: 0 }], color: '#FF6B6B', size: -1 }
     expect(validateStroke(data, 'player-1')).toBeNull()
   })
 })

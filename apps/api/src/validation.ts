@@ -173,9 +173,12 @@ export function validateStroke(
     }
   }
 
-  // Validate color
-  if (!isValidColor(data.color)) {
-    console.warn('Invalid stroke data: color is invalid')
+  // Validate color — must be one of the allowed palette colors
+  if (
+    typeof data.color !== 'string' ||
+    !(PALETTE_COLORS as readonly string[]).includes(data.color)
+  ) {
+    console.warn('Invalid stroke data: color is not a palette color')
     return null
   }
 
@@ -213,7 +216,7 @@ export function validateStroke(
     id: strokeId,
     playerId,
     points: points.map((p) => ({ x: Number(p.x), y: Number(p.y) })),
-    color: (data.color as string).trim(),
+    color: data.color as string,
     size: data.size as number,
     ...(data.eraser === true ? { eraser: true } : {}),
   }
