@@ -7,120 +7,98 @@ afterEach(() => {
   cleanup()
 })
 
+type Tool = 'pencil' | 'eraser' | 'fill'
+
+interface ToolbarProps {
+  color: string
+  brushSize: number
+  tool: Tool
+  canUndo: boolean
+  canRedo: boolean
+  onColorChange: (color: string) => void
+  onBrushSizeChange: (size: number) => void
+  onToolChange: (tool: Tool) => void
+  onUndo: () => void
+  onRedo: () => void
+  onClear: () => void
+  disabled?: boolean
+  clearDisabled?: boolean
+}
+
+function makeToolbarProps(overrides: Partial<ToolbarProps> = {}): ToolbarProps {
+  return {
+    color: '#4ECDC4',
+    brushSize: 8,
+    tool: 'pencil',
+    canUndo: false,
+    canRedo: false,
+    onColorChange: vi.fn(),
+    onBrushSizeChange: vi.fn(),
+    onToolChange: vi.fn(),
+    onUndo: vi.fn(),
+    onRedo: vi.fn(),
+    onClear: vi.fn(),
+    disabled: false,
+    clearDisabled: false,
+    ...overrides,
+  }
+}
+
 describe('Toolbar', () => {
   it('switches eraser to pencil when selecting a color', async () => {
-    const onColorChange = vi.fn()
-    const onToolChange = vi.fn()
+    const props = makeToolbarProps({ tool: 'eraser' })
+    render(Toolbar, props)
 
-    render(Toolbar, {
-      color: '#4ECDC4',
-      brushSize: 8,
-      tool: 'eraser',
-      canUndo: false,
-      canRedo: false,
-      onColorChange,
-      onBrushSizeChange: vi.fn(),
-      onToolChange,
-      onUndo: vi.fn(),
-      onRedo: vi.fn(),
-      onClear: vi.fn(),
-      disabled: false,
-      clearDisabled: false,
-    })
-
+    // Find a non-active color button (different from current color)
     const colorButtons = screen.getAllByRole('button', { name: /select color/i })
-    await fireEvent.click(colorButtons[0])
+    const nonActiveButton =
+      colorButtons.find((btn) => !btn.classList.contains('active')) || colorButtons[0]
+    await fireEvent.click(nonActiveButton)
 
-    expect(onToolChange).toHaveBeenCalledWith('pencil')
-    expect(onColorChange).toHaveBeenCalled()
+    expect(props.onToolChange).toHaveBeenCalledWith('pencil')
+    expect(props.onColorChange).toHaveBeenCalled()
   })
 
   it('triggers brush/action callbacks', async () => {
-    const onBrushSizeChange = vi.fn()
-    const onUndo = vi.fn()
-    const onRedo = vi.fn()
-    const onClear = vi.fn()
-
-    render(Toolbar, {
-      color: '#4ECDC4',
-      brushSize: 8,
-      tool: 'pencil',
-      canUndo: true,
-      canRedo: true,
-      onColorChange: vi.fn(),
-      onBrushSizeChange,
-      onToolChange: vi.fn(),
-      onUndo,
-      onRedo,
-      onClear,
-      disabled: false,
-      clearDisabled: false,
-    })
+    const props = makeToolbarProps({ canUndo: true, canRedo: true })
+    render(Toolbar, props)
 
     await fireEvent.click(screen.getAllByRole('button', { name: /brush size 16px/i })[0])
     await fireEvent.click(screen.getByRole('button', { name: /undo/i }))
     await fireEvent.click(screen.getByRole('button', { name: /redo/i }))
     await fireEvent.click(screen.getByRole('button', { name: /clear/i }))
 
-    expect(onBrushSizeChange).toHaveBeenCalledWith(16)
-    expect(onUndo).toHaveBeenCalledTimes(1)
-    expect(onRedo).toHaveBeenCalledTimes(1)
-    expect(onClear).toHaveBeenCalledTimes(1)
+    expect(props.onBrushSizeChange).toHaveBeenCalledWith(16)
+    expect(props.onUndo).toHaveBeenCalledTimes(1)
+    expect(props.onRedo).toHaveBeenCalledTimes(1)
+    expect(props.onClear).toHaveBeenCalledTimes(1)
   })
 
   it('does not switch tool when selecting color with pencil active', async () => {
-    const onColorChange = vi.fn()
-    const onToolChange = vi.fn()
+    const props = makeToolbarProps()
+    render(Toolbar, props)
 
-    render(Toolbar, {
-      color: '#4ECDC4',
-      brushSize: 8,
-      tool: 'pencil',
-      canUndo: false,
-      canRedo: false,
-      onColorChange,
-      onBrushSizeChange: vi.fn(),
-      onToolChange,
-      onUndo: vi.fn(),
-      onRedo: vi.fn(),
-      onClear: vi.fn(),
-      disabled: false,
-      clearDisabled: false,
-    })
-
+    // Find a non-active color button (different from current color)
     const colorButtons = screen.getAllByRole('button', { name: /select color/i })
-    await fireEvent.click(colorButtons[0])
+    const nonActiveButton =
+      colorButtons.find((btn) => !btn.classList.contains('active')) || colorButtons[0]
+    await fireEvent.click(nonActiveButton)
 
-    expect(onToolChange).not.toHaveBeenCalled()
-    expect(onColorChange).toHaveBeenCalled()
+    expect(props.onToolChange).not.toHaveBeenCalled()
+    expect(props.onColorChange).toHaveBeenCalled()
   })
 
   it('calls onToolChange when tool buttons are clicked', async () => {
-    const onToolChange = vi.fn()
-
-    render(Toolbar, {
-      color: '#4ECDC4',
-      brushSize: 8,
-      tool: 'pencil',
-      canUndo: false,
-      canRedo: false,
-      onColorChange: vi.fn(),
-      onBrushSizeChange: vi.fn(),
-      onToolChange,
-      onUndo: vi.fn(),
-      onRedo: vi.fn(),
-      onClear: vi.fn(),
-      disabled: false,
-      clearDisabled: false,
-    })
+    const props = makeToolbarProps()
+    render(Toolbar, props)
 
     await fireEvent.click(screen.getByRole('button', { name: /eraser tool/i }))
-    expect(onToolChange).toHaveBeenCalledWith('eraser')
-
     await fireEvent.click(screen.getByRole('button', { name: /fill tool/i }))
-    expect(onToolChange).toHaveBeenCalledWith('fill')
-
     await fireEvent.click(screen.getByRole('button', { name: /pencil tool/i }))
-    expect(onToolChange).toHaveBeenCalledWith('pencil')
+
+    expect(props.onToolChange).toHaveBeenCalledTimes(3)
+    expect(props.onToolChange).toHaveBeenNthCalledWith(1, 'eraser')
+    expect(props.onToolChange).toHaveBeenNthCalledWith(2, 'fill')
+    expect(props.onToolChange).toHaveBeenNthCalledWith(3, 'pencil')
   })
 })

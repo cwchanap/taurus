@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import type { FillOperation, ScoreEntry, Stroke } from './types'
 import {
@@ -8,9 +9,7 @@ import {
   buildRoundEndState,
   buildRoundStartState,
   clearCorrectGuessNotification,
-  clearSystemNotification,
   createCorrectGuessNotification,
-  createSystemNotification,
   deriveWinnersIfGameOver,
   getDrawerDisplayName,
   getTimeRemainingSeconds,
@@ -201,10 +200,7 @@ describe('draw-page-state helpers', () => {
     expect(reset.systemNotification).toBeNull()
   })
 
-  it('creates and clears notifications via helper transitions', () => {
-    expect(createSystemNotification('Round started')).toBe('Round started')
-    expect(clearSystemNotification()).toBeNull()
-
+  it('creates and clears correct guess notifications', () => {
     expect(createCorrectGuessNotification('Alice', 42)).toEqual({ playerName: 'Alice', score: 42 })
     expect(clearCorrectGuessNotification()).toBeNull()
   })

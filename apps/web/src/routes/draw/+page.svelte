@@ -17,9 +17,7 @@
     buildRoundEndState,
     buildRoundStartState,
     clearCorrectGuessNotification,
-    clearSystemNotification,
     createCorrectGuessNotification,
-    createSystemNotification,
     deriveWinnersIfGameOver,
     getDrawerDisplayName,
     getTimeRemainingSeconds,
@@ -216,6 +214,8 @@
         fills = [...fills, fill]
         // Add to undo stack when the current drawer receives their own fill confirmation
         if (isCurrentDrawer) {
+          // Clear redo stack when server confirms the fill (new action clears redo)
+          redoStack = []
           undoStack = pushBoundedUndo(
             undoStack,
             { type: 'fill', fillId: fill.id, fill },
@@ -237,13 +237,13 @@
         chatMessages = [...chatMessages, message]
       },
       onSystemMessage: (content) => {
-        systemNotification = createSystemNotification(content)
+        systemNotification = content
         if (systemNotificationTimeoutId) {
           clearTimeout(systemNotificationTimeoutId)
         }
         // Clear notification after a few seconds
         systemNotificationTimeoutId = setTimeout(() => {
-          systemNotification = clearSystemNotification()
+          systemNotification = null
           systemNotificationTimeoutId = null
         }, 4000)
       },
@@ -377,10 +377,7 @@
   function handleFill(x: number, y: number, fillColor: string) {
     // Fill is immediately reflected server-side; we'll add to fills when server echoes back
     ws?.sendFill(x, y, fillColor)
-    // Optimistically add to undo stack with a placeholder (server will assign real ID)
-    // We handle this by tracking the pending fill — but since server generates the ID,
-    // we listen for the onFill event and add to undo stack there
-    redoStack = []
+    // Redo stack is cleared when server confirms the fill (in onFill handler)
   }
 
   function handleUndo() {
