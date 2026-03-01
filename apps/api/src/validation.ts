@@ -89,7 +89,8 @@ export function isValidSize(size: unknown): size is number {
 }
 
 /**
- * Validates a drawing element ID (stroke or fill — both use UUID format)
+ * Validates a drawing element ID (stroke or fill)
+ * Accepts non-empty strings up to 100 chars
  */
 export function isValidDrawingId(id: unknown): id is string {
   if (typeof id !== 'string') {

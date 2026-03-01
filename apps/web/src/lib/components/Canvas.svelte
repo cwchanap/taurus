@@ -201,8 +201,9 @@
       .lineTo(point.x, point.y)
       .stroke({
         width: strokeSize,
-        color: currentIsEraser ? CANVAS_BG : strokeColor,
+        color: strokeColor,
         cap: 'round',
+        ...(currentIsEraser ? { blendMode: 'erase' } : {}),
       })
 
     lastPoint = point
@@ -233,8 +234,9 @@
         .lineTo(stroke.points[i].x, stroke.points[i].y)
         .stroke({
           width: stroke.size,
-          color: stroke.eraser ? CANVAS_BG : stroke.color,
+          color: stroke.color,
           cap: 'round',
+          ...(stroke.eraser ? { blendMode: 'erase' } : {}),
         })
     }
   }
@@ -308,7 +310,7 @@
       }
     }
 
-    drawingContainer.addChild(graphics)
+    drawingContainer.addChildAt(graphics, 0)
     fillGraphics.set(fill.id, graphics)
   }
 
@@ -390,8 +392,9 @@
       .lineTo(point.x, point.y)
       .stroke({
         width: existingStroke.size,
-        color: existingStroke.eraser ? CANVAS_BG : existingStroke.color,
+        color: existingStroke.color,
         cap: 'round',
+        ...(existingStroke.eraser ? { blendMode: 'erase' } : {}),
       })
 
     return true
