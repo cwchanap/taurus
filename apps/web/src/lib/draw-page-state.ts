@@ -104,9 +104,11 @@ export function applyRedoState(
     }
   }
 
+  // Note: undoStack is NOT updated here for fills - the server generates a new fill ID
+  // and the onFill handler will add the new fill to the undo stack when echoed back
   return {
     redoStack: nextRedo,
-    undoStack: [...undoStack, item],
+    undoStack,
     strokes,
     fills: [...fills, item.fill],
     action: {

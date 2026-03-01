@@ -218,13 +218,15 @@
         const alreadyApplied = fills.some((f) => f.id === fill.id)
         if (!alreadyApplied) {
           fills = [...fills, fill]
-          // Add to undo stack only for new fills, not redo echoes (redo already moved item to undoStack)
+          // Add to undo stack for both new fills and redo echoes
+          // (redo no longer pre-adds to undoStack since server generates new fill ID)
           if (isCurrentDrawer) {
             undoStack = pushBoundedUndo(
               undoStack,
               { type: 'fill', fillId: fill.id, fill },
               MAX_UNDO_DEPTH
             )
+            redoStack = [] // Clear redo stack since this is a new action
           }
         }
       },
@@ -377,6 +379,19 @@
   function handleStrokeUpdate(strokeId: string, point: Point) {
     strokes = updateStrokePoint(strokes, strokeId, point)
     ws?.sendStrokeUpdate(strokeId, point)
+    // Update the undo stack entry with the full stroke to ensure redo restores complete stroke
+    const undoIndex = undoStack.findIndex(
+      (item) => item.type === 'stroke' && item.strokeId === strokeId
+    )
+    if (undoIndex !== -1) {
+      const fullStroke = strokes.find((s) => s.id === strokeId)
+      if (fullStroke) {
+        const item = undoStack[undoIndex]
+        if (item.type === 'stroke') {
+          undoStack[undoIndex] = { type: 'stroke', strokeId: item.strokeId, stroke: fullStroke }
+        }
+      }
+    }
   }
 
   function handleFill(x: number, y: number, fillColor: string) {
