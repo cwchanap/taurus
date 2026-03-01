@@ -109,9 +109,13 @@ describe('draw-page-state helpers', () => {
     const strokeRedo = applyRedoState([{ type: 'stroke', strokeId: 's1', stroke }], [], [], [])
     expect(strokeRedo.action).toEqual({ type: 'send-stroke', stroke })
     expect(strokeRedo.strokes).toHaveLength(1)
+    // Stroke redo adds to undo stack
+    expect(strokeRedo.undoStack).toHaveLength(1)
 
     const fillRedo = applyRedoState([{ type: 'fill', fillId: 'f1', fill }], [], [], [])
     expect(fillRedo.action).toEqual({ type: 'send-fill', x: 10, y: 10, color: '#fff' })
+    // Fill redo does NOT add to undo stack (server generates new fill ID, onFill handler adds it)
+    expect(fillRedo.undoStack).toHaveLength(0)
   })
 
   it('applyRedoState returns updated fills for fill-type redo', () => {
@@ -136,6 +140,8 @@ describe('draw-page-state helpers', () => {
     expect(result.action).toEqual({ type: 'send-fill', x: 10, y: 10, color: '#FF6B6B' })
     expect(result.fills).toHaveLength(2)
     expect(result.fills[1].id).toBe('f1')
+    // Fill redo does NOT add to undo stack (server generates new fill ID, onFill handler adds it)
+    expect(result.undoStack).toHaveLength(0)
   })
 
   it('handles editable keyboard target detection', () => {
