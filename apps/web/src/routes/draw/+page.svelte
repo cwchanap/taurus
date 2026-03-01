@@ -212,16 +212,17 @@
       },
       onFill: (fill) => {
         // Deduplicate: skip if fill already applied locally (e.g., from redo)
-        if (!fills.some((f) => f.id === fill.id)) {
+        const alreadyApplied = fills.some((f) => f.id === fill.id)
+        if (!alreadyApplied) {
           fills = [...fills, fill]
-        }
-        // Add to undo stack when the current drawer receives their own fill confirmation
-        if (isCurrentDrawer) {
-          undoStack = pushBoundedUndo(
-            undoStack,
-            { type: 'fill', fillId: fill.id, fill },
-            MAX_UNDO_DEPTH
-          )
+          // Add to undo stack only for new fills, not redo echoes (redo already moved item to undoStack)
+          if (isCurrentDrawer) {
+            undoStack = pushBoundedUndo(
+              undoStack,
+              { type: 'fill', fillId: fill.id, fill },
+              MAX_UNDO_DEPTH
+            )
+          }
         }
       },
       onFillRemoved: (fillId) => {
