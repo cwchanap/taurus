@@ -393,7 +393,7 @@
   bind:this={container}
   class="canvas-container"
   class:cursor-crosshair={tool === 'fill'}
-  class:cursor-eraser={tool === 'eraser'}
+  class:cursor-cell={tool === 'eraser'}
 >
   {#if !app}
     <div class="loading-overlay">
@@ -413,14 +413,6 @@
     box-shadow:
       0 25px 50px -12px rgb(0 0 0 / 0.5),
       inset 0 0 0 1px rgb(255 255 255 / 0.1);
-  }
-
-  .cursor-crosshair {
-    cursor: crosshair;
-  }
-
-  .cursor-eraser {
-    cursor: cell;
   }
 
   .loading-overlay {

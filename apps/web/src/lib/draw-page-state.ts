@@ -103,7 +103,7 @@ export function applyRedoState(
 
   return {
     redoStack: nextRedo,
-    undoStack,
+    undoStack: [...undoStack, item],
     strokes,
     action: {
       type: 'send-fill',
@@ -283,14 +283,6 @@ export function buildGameResetState(): {
     correctGuessNotification: null,
     systemNotification: null,
   }
-}
-
-export function createSystemNotification(content: string): string {
-  return content
-}
-
-export function clearSystemNotification(): null {
-  return null
 }
 
 export function createCorrectGuessNotification(
