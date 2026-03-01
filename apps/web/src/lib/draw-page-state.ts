@@ -75,18 +75,20 @@ export function applyUndoState(
 export function applyRedoState(
   redoStack: UndoItem[],
   undoStack: UndoItem[],
-  strokes: Stroke[]
+  strokes: Stroke[],
+  fills: FillOperation[]
 ): {
   redoStack: UndoItem[]
   undoStack: UndoItem[]
   strokes: Stroke[]
+  fills: FillOperation[]
   action:
     | { type: 'send-stroke'; stroke: Stroke }
     | { type: 'send-fill'; x: number; y: number; color: string }
     | null
 } {
   if (redoStack.length === 0) {
-    return { redoStack, undoStack, strokes, action: null }
+    return { redoStack, undoStack, strokes, fills, action: null }
   }
 
   const item = redoStack[redoStack.length - 1]
@@ -97,6 +99,7 @@ export function applyRedoState(
       redoStack: nextRedo,
       undoStack: [...undoStack, item],
       strokes: [...strokes, item.stroke],
+      fills,
       action: { type: 'send-stroke', stroke: item.stroke },
     }
   }
@@ -105,6 +108,7 @@ export function applyRedoState(
     redoStack: nextRedo,
     undoStack: [...undoStack, item],
     strokes,
+    fills: [...fills, item.fill],
     action: {
       type: 'send-fill',
       x: item.fill.x,

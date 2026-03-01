@@ -106,12 +106,36 @@ describe('draw-page-state helpers', () => {
       timestamp: Date.now(),
     }
 
-    const strokeRedo = applyRedoState([{ type: 'stroke', strokeId: 's1', stroke }], [], [])
+    const strokeRedo = applyRedoState([{ type: 'stroke', strokeId: 's1', stroke }], [], [], [])
     expect(strokeRedo.action).toEqual({ type: 'send-stroke', stroke })
     expect(strokeRedo.strokes).toHaveLength(1)
 
-    const fillRedo = applyRedoState([{ type: 'fill', fillId: 'f1', fill }], [], [])
+    const fillRedo = applyRedoState([{ type: 'fill', fillId: 'f1', fill }], [], [], [])
     expect(fillRedo.action).toEqual({ type: 'send-fill', x: 10, y: 10, color: '#fff' })
+  })
+
+  it('applyRedoState returns updated fills for fill-type redo', () => {
+    const fill: FillOperation = {
+      id: 'f1',
+      playerId: 'p1',
+      x: 10,
+      y: 10,
+      color: '#FF6B6B',
+      timestamp: Date.now(),
+    }
+    const existingFill: FillOperation = {
+      id: 'f0',
+      playerId: 'p1',
+      x: 5,
+      y: 5,
+      color: '#4ECDC4',
+      timestamp: Date.now(),
+    }
+
+    const result = applyRedoState([{ type: 'fill', fillId: 'f1', fill }], [], [], [existingFill])
+    expect(result.action).toEqual({ type: 'send-fill', x: 10, y: 10, color: '#FF6B6B' })
+    expect(result.fills).toHaveLength(2)
+    expect(result.fills[1].id).toBe('f1')
   })
 
   it('handles editable keyboard target detection', () => {
@@ -222,7 +246,7 @@ describe('draw-page-state helpers', () => {
   })
 
   it('applyRedoState returns null action when stack is empty', () => {
-    const result = applyRedoState([], [], [])
+    const result = applyRedoState([], [], [], [])
     expect(result.action).toBeNull()
     expect(result.strokes).toEqual([])
   })
