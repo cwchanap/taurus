@@ -211,11 +211,12 @@
         strokes = strokes.filter((s) => s.id !== strokeId)
       },
       onFill: (fill) => {
-        fills = [...fills, fill]
+        // Deduplicate: skip if fill already applied locally (e.g., from redo)
+        if (!fills.some((f) => f.id === fill.id)) {
+          fills = [...fills, fill]
+        }
         // Add to undo stack when the current drawer receives their own fill confirmation
         if (isCurrentDrawer) {
-          // Clear redo stack when server confirms the fill (new action clears redo)
-          redoStack = []
           undoStack = pushBoundedUndo(
             undoStack,
             { type: 'fill', fillId: fill.id, fill },
@@ -395,10 +396,11 @@
   }
 
   function handleRedo() {
-    const next = applyRedoState(redoStack, undoStack, strokes)
+    const next = applyRedoState(redoStack, undoStack, strokes, fills)
     redoStack = next.redoStack
     undoStack = next.undoStack
     strokes = next.strokes
+    fills = next.fills
 
     if (next.action?.type === 'send-stroke') {
       ws?.sendStroke(next.action.stroke)
