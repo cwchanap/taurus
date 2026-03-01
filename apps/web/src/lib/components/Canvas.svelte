@@ -47,97 +47,109 @@
   let strokeColor = ''
   let strokeSize = 0
   let currentIsEraser = false
+  let initError = $state<string | null>(null)
 
   // Reconcile strokes whenever strokes prop changes
   $effect(() => {
     if (!app || !drawingContainer) return
+    try {
+      const currentStrokeIds = new Set(strokes.map((s) => s.id))
 
-    const currentStrokeIds = new Set(strokes.map((s) => s.id))
-
-    if (import.meta.env.DEV && currentStrokeIds.size !== strokes.length) {
-      console.error('Canvas: Duplicate stroke IDs detected!')
-    }
-
-    // Remove deleted strokes
-    for (const [id, graphics] of strokeGraphics.entries()) {
-      if (!currentStrokeIds.has(id)) {
-        graphics.destroy()
-        strokeGraphics.delete(id)
+      if (import.meta.env.DEV && currentStrokeIds.size !== strokes.length) {
+        console.error('Canvas: Duplicate stroke IDs detected!')
       }
-    }
 
-    // Add new strokes
-    for (const stroke of strokes) {
-      if (!strokeGraphics.has(stroke.id)) {
-        drawStroke(stroke)
+      // Remove deleted strokes
+      for (const [id, graphics] of strokeGraphics.entries()) {
+        if (!currentStrokeIds.has(id)) {
+          graphics.destroy()
+          strokeGraphics.delete(id)
+        }
       }
+
+      // Add new strokes
+      for (const stroke of strokes) {
+        if (!strokeGraphics.has(stroke.id)) {
+          drawStroke(stroke)
+        }
+      }
+    } catch (e) {
+      console.error('Canvas: Stroke reconciliation failed:', e)
     }
   })
 
   // Reconcile fills whenever fills prop changes
   $effect(() => {
     if (!app || !drawingContainer) return
+    try {
+      const currentFillIds = new Set(fills.map((f) => f.id))
 
-    const currentFillIds = new Set(fills.map((f) => f.id))
-
-    // Remove deleted fills
-    for (const [id, graphics] of fillGraphics.entries()) {
-      if (!currentFillIds.has(id)) {
-        graphics.destroy()
-        fillGraphics.delete(id)
+      // Remove deleted fills
+      for (const [id, graphics] of fillGraphics.entries()) {
+        if (!currentFillIds.has(id)) {
+          graphics.destroy()
+          fillGraphics.delete(id)
+        }
       }
-    }
 
-    // Add new fills
-    for (const fill of fills) {
-      if (!fillGraphics.has(fill.id)) {
-        applyFill(fill)
+      // Add new fills
+      for (const fill of fills) {
+        if (!fillGraphics.has(fill.id)) {
+          applyFill(fill)
+        }
       }
+    } catch (e) {
+      console.error('Canvas: Fill reconciliation failed:', e)
     }
   })
 
   onMount(async () => {
     mounted = true
-    const pixiApp = new Application()
-    await pixiApp.init({
-      background: CANVAS_BG,
-      resizeTo: container,
-      antialias: true,
-    })
-    container.appendChild(pixiApp.canvas)
+    try {
+      const pixiApp = new Application()
+      await pixiApp.init({
+        background: CANVAS_BG,
+        resizeTo: container,
+        antialias: true,
+      })
+      container.appendChild(pixiApp.canvas)
 
-    // Create background layer (needed so erased areas reveal canvas bg color, not transparency)
-    const bg = new Graphics()
-    bg.rect(0, 0, pixiApp.screen.width, pixiApp.screen.height)
-    bg.fill(CANVAS_BG)
-    pixiApp.stage.addChild(bg)
-    backgroundGraphics = bg
-
-    // All strokes/fills go into this container so they render above the background
-    const dc = new Container()
-    pixiApp.stage.addChild(dc)
-    drawingContainer = dc
-
-    pixiApp.stage.eventMode = 'static'
-    pixiApp.stage.hitArea = pixiApp.screen
-
-    pixiApp.stage.on('pointerdown', onPointerDown)
-    pixiApp.stage.on('pointermove', onPointerMove)
-    pixiApp.stage.on('pointerup', onPointerUp)
-    pixiApp.stage.on('pointerupoutside', onPointerUp)
-
-    // Resize background when canvas resizes
-    pixiApp.renderer.on('resize', (width: number, height: number) => {
-      bg.clear()
-      bg.rect(0, 0, width, height)
+      // Create background layer (needed so erased areas reveal canvas bg color, not transparency)
+      const bg = new Graphics()
+      bg.rect(0, 0, pixiApp.screen.width, pixiApp.screen.height)
       bg.fill(CANVAS_BG)
-    })
+      pixiApp.stage.addChild(bg)
+      backgroundGraphics = bg
 
-    if (!mounted) {
-      pixiApp.destroy(true)
-      return
+      // All strokes/fills go into this container so they render above the background
+      const dc = new Container()
+      pixiApp.stage.addChild(dc)
+      drawingContainer = dc
+
+      pixiApp.stage.eventMode = 'static'
+      pixiApp.stage.hitArea = pixiApp.screen
+
+      pixiApp.stage.on('pointerdown', onPointerDown)
+      pixiApp.stage.on('pointermove', onPointerMove)
+      pixiApp.stage.on('pointerup', onPointerUp)
+      pixiApp.stage.on('pointerupoutside', onPointerUp)
+
+      // Resize background when canvas resizes
+      pixiApp.renderer.on('resize', (width: number, height: number) => {
+        bg.clear()
+        bg.rect(0, 0, width, height)
+        bg.fill(CANVAS_BG)
+      })
+
+      if (!mounted) {
+        pixiApp.destroy(true)
+        return
+      }
+      app = pixiApp
+    } catch (e) {
+      console.error('Canvas: Failed to initialize pixi.js renderer:', e)
+      initError = 'Canvas failed to initialize. Try refreshing the page.'
     }
-    app = pixiApp
   })
 
   onDestroy(() => {
@@ -232,8 +244,22 @@
 
     // Extract from the full stage (includes background layer) so empty canvas areas
     // read as the background color rather than transparent, preventing runaway fills.
-    const extracted = app.renderer.extract.pixels(app.stage)
+    let extracted: { pixels: Uint8ClampedArray; width: number; height: number }
+    try {
+      extracted = app.renderer.extract.pixels(app.stage)
+    } catch (e) {
+      console.error(`Canvas: Failed to extract pixels for fill ${fill.id}:`, e)
+      return
+    }
+
     const { pixels, width, height } = extracted
+
+    if (!pixels || width <= 0 || height <= 0) {
+      console.error(
+        `Canvas: Pixel extraction returned invalid dimensions (${width}x${height}) for fill ${fill.id}`
+      )
+      return
+    }
 
     const targetX = Math.round(fill.x)
     const targetY = Math.round(fill.y)
@@ -397,8 +423,12 @@
 >
   {#if !app}
     <div class="loading-overlay">
-      <div class="spinner"></div>
-      <span>Initializing Canvas...</span>
+      {#if initError}
+        <span class="error-text">{initError}</span>
+      {:else}
+        <div class="spinner"></div>
+        <span>Initializing Canvas...</span>
+      {/if}
     </div>
   {/if}
 </div>
@@ -441,5 +471,12 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  .error-text {
+    color: #ff6b6b;
+    font-size: 14px;
+    text-align: center;
+    padding: 0 16px;
   }
 </style>
