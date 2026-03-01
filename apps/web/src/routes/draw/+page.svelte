@@ -146,6 +146,9 @@
       onConnectionFailed: (reason) => {
         errorMessage = reason
       },
+      onServerError: (message) => {
+        errorMessage = message
+      },
       onInit: (
         id,
         player,
