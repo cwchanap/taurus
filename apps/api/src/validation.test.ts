@@ -22,6 +22,7 @@ import {
 } from './constants'
 
 const VALID_FILL_COLOR = PALETTE_COLORS[0]
+const VALID_STROKE_COLOR = PALETTE_COLORS[0]
 
 describe('validateFill', () => {
   test('accepts integer coordinates and valid palette color', () => {
@@ -141,7 +142,7 @@ describe('validateStroke', () => {
       { x: 10, y: 10 },
       { x: 20, y: 20 },
     ],
-    color: '#FF6B6B',
+    color: VALID_STROKE_COLOR,
     size: 5,
   }
   const playerId = 'player-1'
@@ -225,7 +226,7 @@ describe('validateStroke', () => {
   })
 
   test('should reject stroke with empty points', () => {
-    const data = { points: [], color: '#FF6B6B', size: 5 }
+    const data = { points: [], color: VALID_STROKE_COLOR, size: 5 }
     expect(validateStroke(data, 'player-1')).toBeNull()
   })
 
@@ -271,17 +272,17 @@ describe('validateStroke', () => {
           { x: 0, y: 0 },
           { x: 1, y: 1 },
         ],
-        color: '#FF6B6B',
+        color: VALID_STROKE_COLOR,
         size: 4,
       },
       'player-1'
     )
     expect(result).not.toBeNull()
-    expect(result?.color).toBe('#FF6B6B')
+    expect(result?.color).toBe(VALID_STROKE_COLOR)
   })
 
   test('should reject stroke with invalid size', () => {
-    const data = { points: [{ x: 0, y: 0 }], color: '#FF6B6B', size: -1 }
+    const data = { points: [{ x: 0, y: 0 }], color: VALID_STROKE_COLOR, size: -1 }
     expect(validateStroke(data, 'player-1')).toBeNull()
   })
 })
