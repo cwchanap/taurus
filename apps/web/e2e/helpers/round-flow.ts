@@ -40,7 +40,7 @@ export async function completeRoundByCorrectGuess(
   let word = await wordElement.textContent()
   let retries = 0
   while ((!word || word === '—') && retries < 10) {
-    await hostPage.waitForTimeout(500)
+    await drawerPage.waitForTimeout(500)
     word = await wordElement.textContent()
     retries++
   }
