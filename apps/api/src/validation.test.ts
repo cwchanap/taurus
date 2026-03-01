@@ -18,8 +18,8 @@ import {
   MAX_PLAYER_NAME_LENGTH,
   MAX_CANVAS_WIDTH,
   MAX_CANVAS_HEIGHT,
-  PALETTE_COLORS,
 } from './constants'
+import { PALETTE_COLORS } from '@repo/types'
 
 const VALID_FILL_COLOR = PALETTE_COLORS[0]
 const VALID_STROKE_COLOR = PALETTE_COLORS[0]
