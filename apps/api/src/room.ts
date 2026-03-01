@@ -259,8 +259,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
   private enqueueStrokeStorageOperation(operation: () => Promise<void>): Promise<void> {
     const op = this.strokeStorageQueue.then(operation, operation)
-    this.strokeStorageQueue = op.catch(() => {
-      // Keep queue alive after failures so later operations still run
+    this.strokeStorageQueue = op.catch((e) => {
+      console.error('Stroke storage queue operation failed, continuing queue:', e)
     })
     return op
   }
@@ -277,7 +277,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
   private enqueueFillStorageOperation(operation: () => Promise<void>): Promise<void> {
     const op = this.fillStorageQueue.then(operation, operation)
-    this.fillStorageQueue = op.catch(() => {})
+    this.fillStorageQueue = op.catch((e) => {
+      console.error('Fill storage queue operation failed, continuing queue:', e)
+    })
     return op
   }
 
