@@ -285,6 +285,74 @@ describe('validateStroke', () => {
     const data = { points: [{ x: 0, y: 0 }], color: VALID_STROKE_COLOR, size: -1 }
     expect(validateStroke(data, 'player-1')).toBeNull()
   })
+
+  test('includes eraser:true when eraser is exactly true', () => {
+    const result = validateStroke(
+      {
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        color: VALID_STROKE_COLOR,
+        size: 4,
+        eraser: true,
+      },
+      'player-1'
+    )
+    expect(result).not.toBeNull()
+    expect(result?.eraser).toBe(true)
+  })
+
+  test('omits eraser field when eraser is false', () => {
+    const result = validateStroke(
+      {
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        color: VALID_STROKE_COLOR,
+        size: 4,
+        eraser: false,
+      },
+      'player-1'
+    )
+    expect(result).not.toBeNull()
+    expect(result?.eraser).toBeUndefined()
+  })
+
+  test('omits eraser field when eraser is truthy non-boolean (number 1)', () => {
+    const result = validateStroke(
+      {
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        color: VALID_STROKE_COLOR,
+        size: 4,
+        eraser: 1,
+      },
+      'player-1'
+    )
+    expect(result).not.toBeNull()
+    expect(result?.eraser).toBeUndefined()
+  })
+
+  test('omits eraser field when eraser is string "true"', () => {
+    const result = validateStroke(
+      {
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        color: VALID_STROKE_COLOR,
+        size: 4,
+        eraser: 'true',
+      },
+      'player-1'
+    )
+    expect(result).not.toBeNull()
+    expect(result?.eraser).toBeUndefined()
+  })
 })
 
 describe('isValidColor', () => {
