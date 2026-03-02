@@ -26,6 +26,7 @@ jobs:
         run: bun run build
 
       - name: Install Playwright Browsers
+        working-directory: apps/web
         run: bunx playwright install --with-deps
 
       - name: Run Playwright Tests
