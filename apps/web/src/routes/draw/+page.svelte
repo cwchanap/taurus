@@ -84,6 +84,7 @@
   let fills = $state<FillOperation[]>([])
   let undoStack = $state<UndoItem[]>([])
   let redoStack = $state<UndoItem[]>([])
+  let pendingRedoFills = $state<Set<string>>(new Set())
 
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
@@ -226,7 +227,13 @@
               { type: 'fill', fillId: fill.id, fill },
               MAX_UNDO_DEPTH
             )
-            redoStack = [] // Clear redo stack since this is a new action
+            // Check if this fill came from a redo - if so, don't clear redoStack
+            const redoKey = `${fill.x}:${fill.y}:${fill.color}`
+            if (pendingRedoFills.has(redoKey)) {
+              pendingRedoFills.delete(redoKey)
+            } else {
+              redoStack = [] // Clear redo stack only for new actions, not redo echoes
+            }
           }
         }
       },
@@ -424,6 +431,8 @@
     if (next.action?.type === 'send-stroke') {
       ws?.sendStroke(next.action.stroke)
     } else if (next.action?.type === 'send-fill') {
+      const key = `${next.action.x}:${next.action.y}:${next.action.color}`
+      pendingRedoFills.add(key)
       ws?.sendFill(next.action.x, next.action.y, next.action.color)
     }
   }

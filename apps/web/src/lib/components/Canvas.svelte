@@ -279,7 +279,10 @@
     const targetB = pixels[idx + 2]
 
     // Don't fill if already the same color
-    if (targetR === fillColor.r && targetG === fillColor.g && targetB === fillColor.b) return
+    if (targetR === fillColor.r && targetG === fillColor.g && targetB === fillColor.b) {
+      fillGraphics.set(fill.id, null as unknown as Graphics)
+      return
+    }
 
     // BFS flood fill on pixel data
     const filled = floodFill(
