@@ -152,6 +152,8 @@ describe('validateStroke', () => {
     expect(result).not.toBeNull()
     expect(result?.id).toBe('stroke-1')
     expect(result?.playerId).toBe(playerId)
+    expect(result?.timestamp).toBeDefined()
+    expect(typeof result?.timestamp).toBe('number')
   })
 
   test('should reject stroke if client ID collides with existing ID', () => {
@@ -184,6 +186,8 @@ describe('validateStroke', () => {
     expect(result).not.toBeNull()
     expect(result?.id).toBeDefined()
     expect(result?.id?.length).toBeGreaterThan(0)
+    expect(result?.timestamp).toBeDefined()
+    expect(typeof result?.timestamp).toBe('number')
   })
 
   test('should handle collision for generated IDs', () => {
@@ -279,6 +283,7 @@ describe('validateStroke', () => {
     )
     expect(result).not.toBeNull()
     expect(result?.color).toBe(VALID_STROKE_COLOR)
+    expect(result?.timestamp).toBeDefined()
   })
 
   test('should reject stroke with invalid size', () => {

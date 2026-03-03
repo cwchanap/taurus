@@ -27,6 +27,7 @@ describe('draw-page-state helpers', () => {
       points: [{ x: 1, y: 1 }],
       color: '#000',
       size: 4,
+      timestamp: 1000,
     } as Stroke
 
     const stack: UndoItem[] = [
@@ -48,6 +49,7 @@ describe('draw-page-state helpers', () => {
         points: [{ x: 1, y: 1 }],
         color: '#000',
         size: 4,
+        timestamp: 1000,
       },
     ]
 
@@ -65,6 +67,7 @@ describe('draw-page-state helpers', () => {
       points: [{ x: 1, y: 1 }],
       color: '#000',
       size: 4,
+      timestamp: 1000,
     }
     const fill: FillOperation = {
       id: 'f1',
@@ -96,6 +99,7 @@ describe('draw-page-state helpers', () => {
       points: [{ x: 1, y: 1 }],
       color: '#000',
       size: 4,
+      timestamp: 1000,
     }
     const fill: FillOperation = {
       id: 'f1',
@@ -108,9 +112,10 @@ describe('draw-page-state helpers', () => {
 
     const strokeRedo = applyRedoState([{ type: 'stroke', strokeId: 's1', stroke }], [], [], [])
     expect(strokeRedo.action).toEqual({ type: 'send-stroke', stroke })
-    expect(strokeRedo.strokes).toHaveLength(1)
-    // Stroke redo adds to undo stack
-    expect(strokeRedo.undoStack).toHaveLength(1)
+    // Stroke redo does NOT optimistically add to strokes (server echoes back)
+    expect(strokeRedo.strokes).toHaveLength(0)
+    // Stroke redo does NOT add to undo stack (onStroke handler adds it when echo arrives)
+    expect(strokeRedo.undoStack).toHaveLength(0)
 
     const fillRedo = applyRedoState([{ type: 'fill', fillId: 'f1', fill }], [], [], [])
     expect(fillRedo.action).toEqual({ type: 'send-fill', x: 10, y: 10, color: '#fff' })
@@ -237,7 +242,14 @@ describe('draw-page-state helpers', () => {
 
   it('updateStrokePoint returns unchanged array when stroke not found', () => {
     const strokes: Stroke[] = [
-      { id: 's1', playerId: 'p1', points: [{ x: 1, y: 1 }], color: '#000', size: 4 },
+      {
+        id: 's1',
+        playerId: 'p1',
+        points: [{ x: 1, y: 1 }],
+        color: '#000',
+        size: 4,
+        timestamp: 1000,
+      },
     ]
     const result = updateStrokePoint(strokes, 'missing-id', { x: 5, y: 5 })
     expect(result).toBe(strokes)

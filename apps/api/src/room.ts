@@ -759,13 +759,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Schedule debounced storage write
     this.scheduleStorageWrite('strokes')
 
-    this.broadcast(
-      {
-        type: 'stroke',
-        stroke,
-      },
-      ws
-    )
+    // Broadcast to ALL players (including sender) so that:
+    // 1. New strokes are echoed back for confirmation
+    // 2. Redo strokes are properly synchronized (client doesn't optimistically add for redo)
+    this.broadcast({
+      type: 'stroke',
+      stroke,
+    })
   }
 
   private async handleStrokeUpdate(

@@ -289,6 +289,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
         color: '#000000',
         size: 8,
         points: [{ x: 10, y: 10 }],
+        timestamp: Date.now(),
       },
     ]
 
@@ -908,6 +909,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
         color: '#FF6B6B',
         size: 4,
         points: [{ x: 0, y: 0 }],
+        timestamp: Date.now(),
       },
     ]
 
@@ -954,6 +956,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
         color: '#FF6B6B',
         size: 4,
         points: [{ x: 0, y: 0 }],
+        timestamp: Date.now(),
       },
     ]
 

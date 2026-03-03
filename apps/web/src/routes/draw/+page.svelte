@@ -85,6 +85,7 @@
   let undoStack = $state<UndoItem[]>([])
   let redoStack = $state<UndoItem[]>([])
   let pendingRedoFills = $state<Set<string>>(new Set())
+  let pendingRedoStrokes = $state<Set<string>>(new Set())
 
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
@@ -170,6 +171,7 @@
         undoStack = []
         redoStack = []
         pendingRedoFills = new Set()
+        pendingRedoStrokes = new Set()
         chatMessages = chatHistory
         // Initialize game state from server
         gameStatus = initialGameState.status
@@ -202,8 +204,23 @@
         players = players.filter((p) => p.id !== id)
       },
       onStroke: (stroke) => {
-        strokes = [...strokes, stroke]
-        canvasComponent?.addRemoteStroke(stroke)
+        // Deduplicate by stroke id - new strokes are already added optimistically
+        // via handleStrokeStart, but redo strokes need to be added here
+        const alreadyExists = strokes.some((s) => s.id === stroke.id)
+        if (!alreadyExists) {
+          strokes = [...strokes, stroke]
+          canvasComponent?.addRemoteStroke(stroke)
+          // Check if this stroke came from a redo
+          if (pendingRedoStrokes.has(stroke.id)) {
+            pendingRedoStrokes.delete(stroke.id)
+            // Add to undo stack for redo strokes
+            undoStack = pushBoundedUndo(
+              undoStack,
+              { type: 'stroke', strokeId: stroke.id, stroke },
+              MAX_UNDO_DEPTH
+            )
+          }
+        }
       },
       onStrokeUpdate: (strokeId, point) => {
         const index = strokes.findIndex((s) => s.id === strokeId)
@@ -247,6 +264,7 @@
         undoStack = []
         redoStack = []
         pendingRedoFills = new Set()
+        pendingRedoStrokes = new Set()
         canvasComponent?.clearCanvas()
       },
       onChat: (message) => {
@@ -431,6 +449,8 @@
     fills = next.fills
 
     if (next.action?.type === 'send-stroke') {
+      // Track this as a pending redo stroke so onStroke handler can add to undoStack
+      pendingRedoStrokes.add(next.action.stroke.id)
       ws?.sendStroke(next.action.stroke)
     } else if (next.action?.type === 'send-fill') {
       const key = `${next.action.x}:${next.action.y}:${next.action.color}`
@@ -465,6 +485,8 @@
     fills = []
     undoStack = []
     redoStack = []
+    pendingRedoFills = new Set()
+    pendingRedoStrokes = new Set()
     canvasComponent?.clearCanvas()
     ws?.sendClear()
   }
@@ -487,6 +509,7 @@
     undoStack = []
     redoStack = []
     pendingRedoFills = new Set()
+    pendingRedoStrokes = new Set()
     canvasComponent?.clearCanvas()
   }
 </script>
