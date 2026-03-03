@@ -118,7 +118,7 @@ describe('draw-page-state helpers', () => {
     expect(fillRedo.undoStack).toHaveLength(0)
   })
 
-  it('applyRedoState returns updated fills for fill-type redo', () => {
+  it('applyRedoState does not optimistically append fills for fill-type redo', () => {
     const fill: FillOperation = {
       id: 'f1',
       playerId: 'p1',
@@ -138,8 +138,8 @@ describe('draw-page-state helpers', () => {
 
     const result = applyRedoState([{ type: 'fill', fillId: 'f1', fill }], [], [], [existingFill])
     expect(result.action).toEqual({ type: 'send-fill', x: 10, y: 10, color: '#FF6B6B' })
-    expect(result.fills).toHaveLength(2)
-    expect(result.fills[1].id).toBe('f1')
+    expect(result.fills).toHaveLength(1)
+    expect(result.fills[0].id).toBe('f0')
     // Fill redo does NOT add to undo stack (server generates new fill ID, onFill handler adds it)
     expect(result.undoStack).toHaveLength(0)
   })

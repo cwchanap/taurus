@@ -87,6 +87,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private strokeStorageQueue: Promise<void> = Promise.resolve() // Serialize stroke storage write/delete ops
   private pendingStrokeWrite: Promise<void> | null = null // Track latest in-flight stroke storage operation
   private fillStorageQueue: Promise<void> = Promise.resolve() // Serialize fill storage write/delete ops
+  private pendingFillWrite: Promise<void> | null = null // Track latest in-flight fill storage operation
+  private strokeStorageDirty = false
+  private fillStorageDirty = false
 
   // Sliding window rate limiting
   private playerMessageTimestamps: Map<string, RateLimitState> = new Map()
@@ -283,35 +286,59 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     return op
   }
 
-  private queueFillWrite(): void {
-    this.ctx.waitUntil(
-      this.enqueueFillStorageOperation(() => this.storagePutWithRetry('fills', this.fills)).catch(
-        (e) => console.error('Failed to persist fills:', e)
-      )
-    )
+  private queueFillWrite(): Promise<void> {
+    return this.enqueueFillStorageOperation(() => this.storagePutWithRetry('fills', this.fills))
   }
 
   private queueFillDelete(): Promise<void> {
     return this.enqueueFillStorageOperation(() => this.storageDeleteWithRetry('fills'))
   }
 
-  private scheduleStorageWrite() {
+  private scheduleStorageWrite(kind: 'strokes' | 'fills') {
+    if (kind === 'strokes') {
+      this.strokeStorageDirty = true
+    } else {
+      this.fillStorageDirty = true
+    }
+
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
     }
 
     this.storageWriteTimer = setTimeout(() => {
       this.storageWriteTimer = null
-      // Track the in-flight write while preserving operation ordering with deletes
-      this.pendingStrokeWrite = this.queueStrokeWrite()
-        .catch((e) => {
-          console.error('Background storage save failed:', e)
-          throw e
-        })
-        .finally(() => {
-          this.pendingStrokeWrite = null
-        })
-      this.ctx.waitUntil(this.pendingStrokeWrite)
+      const pendingWrites: Promise<void>[] = []
+
+      if (this.strokeStorageDirty) {
+        this.strokeStorageDirty = false
+        // Track the in-flight write while preserving operation ordering with deletes
+        this.pendingStrokeWrite = this.queueStrokeWrite()
+          .catch((e) => {
+            console.error('Background stroke storage save failed:', e)
+            throw e
+          })
+          .finally(() => {
+            this.pendingStrokeWrite = null
+          })
+        pendingWrites.push(this.pendingStrokeWrite)
+      }
+
+      if (this.fillStorageDirty) {
+        this.fillStorageDirty = false
+        this.pendingFillWrite = this.queueFillWrite()
+          .catch((e) => {
+            console.error('Background fill storage save failed:', e)
+            throw e
+          })
+          .finally(() => {
+            this.pendingFillWrite = null
+          })
+        pendingWrites.push(this.pendingFillWrite)
+      }
+
+      if (pendingWrites.length > 0) {
+        this.ctx.waitUntil(Promise.all(pendingWrites).then(() => undefined))
+      }
     }, this.storageWriteDelay)
   }
 
@@ -730,7 +757,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     this.strokes.push(stroke)
     // Schedule debounced storage write
-    this.scheduleStorageWrite()
+    this.scheduleStorageWrite('strokes')
 
     this.broadcast(
       {
@@ -803,7 +830,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       stroke.points.push(data.point)
 
       // Schedule debounced storage write
-      this.scheduleStorageWrite()
+      this.scheduleStorageWrite('strokes')
 
       this.broadcast(
         {
@@ -841,6 +868,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
+    this.strokeStorageDirty = false
+    this.fillStorageDirty = false
 
     try {
       await this.queueStrokeDelete()
@@ -881,7 +910,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
 
     this.strokes.splice(idx, 1)
-    this.scheduleStorageWrite()
+    this.scheduleStorageWrite('strokes')
 
     this.broadcast({ type: 'stroke-removed', strokeId: trimmedId })
   }
@@ -906,7 +935,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
 
     this.fills.splice(idx, 1)
-    this.queueFillWrite()
+    this.scheduleStorageWrite('fills')
 
     this.broadcast({ type: 'fill-removed', fillId: trimmedId })
   }
@@ -945,7 +974,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
 
     this.fills.push(fill)
-    this.queueFillWrite()
+    this.scheduleStorageWrite('fills')
 
     this.broadcast({
       type: 'fill',
@@ -1171,6 +1200,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
+    this.strokeStorageDirty = false
+    this.fillStorageDirty = false
     // Wait for any in-flight stroke write to complete before deleting to prevent
     // delayed stale delete from racing with newer stroke writes
     this.ctx.waitUntil(
@@ -1256,6 +1287,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
+    this.strokeStorageDirty = false
+    this.fillStorageDirty = false
     // Wait for any in-flight stroke write to complete before deleting to prevent
     // delayed stale delete from racing with newer stroke writes
     this.ctx.waitUntil(
@@ -1498,6 +1531,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
+    this.strokeStorageDirty = false
+    this.fillStorageDirty = false
     // Wait for any in-flight stroke write to complete before deleting to prevent
     // delayed stale delete from racing with newer stroke writes
     this.ctx.waitUntil(

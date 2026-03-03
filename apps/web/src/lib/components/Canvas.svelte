@@ -280,7 +280,7 @@
 
     // Don't fill if already the same color
     if (targetR === fillColor.r && targetG === fillColor.g && targetB === fillColor.b) {
-      fillGraphics.set(fill.id, null as unknown as Graphics)
+      fillGraphics.set(fill.id, null)
       return
     }
 

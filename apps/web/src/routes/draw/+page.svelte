@@ -216,7 +216,7 @@
         strokes = strokes.filter((s) => s.id !== strokeId)
       },
       onFill: (fill) => {
-        // Deduplicate: skip if fill already applied locally (e.g., from redo)
+        // Deduplicate by server fill id
         const alreadyApplied = fills.some((f) => f.id === fill.id)
         if (!alreadyApplied) {
           fills = [...fills, fill]
@@ -449,11 +449,12 @@
 
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
     const ctrlOrCmd = isMac ? event.metaKey : event.ctrlKey
+    const key = event.key.toLowerCase()
 
-    if (ctrlOrCmd && event.shiftKey && event.key === 'Z') {
+    if (ctrlOrCmd && event.shiftKey && key === 'z') {
       event.preventDefault()
       handleRedo()
-    } else if (ctrlOrCmd && event.key === 'z') {
+    } else if (ctrlOrCmd && !event.shiftKey && key === 'z') {
       event.preventDefault()
       handleUndo()
     }

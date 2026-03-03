@@ -304,6 +304,56 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect(mockStoragePut).toHaveBeenCalledWith('strokes', expect.any(Array))
   })
 
+  test('debounces fill writes and persists latest fills once', async () => {
+    // Speed up debounced scheduler for test
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).storageWriteDelay = 0
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).fills = [
+      {
+        id: 'fill-1',
+        playerId: 'p1',
+        x: 10,
+        y: 10,
+        color: '#FF6B6B',
+        timestamp: Date.now(),
+      },
+    ]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).scheduleStorageWrite('fills')
+
+    // Update fills again before timer flushes; only latest state should be persisted
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).fills = [
+      {
+        id: 'fill-1',
+        playerId: 'p1',
+        x: 10,
+        y: 10,
+        color: '#FF6B6B',
+        timestamp: Date.now(),
+      },
+      {
+        id: 'fill-2',
+        playerId: 'p1',
+        x: 20,
+        y: 20,
+        color: '#4ECDC4',
+        timestamp: Date.now(),
+      },
+    ]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).scheduleStorageWrite('fills')
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushPromises()
+
+    const fillPutCalls = mockStoragePut.mock.calls.filter((call) => call[0] === 'fills')
+    expect(fillPutCalls).toHaveLength(1)
+    expect(fillPutCalls[0]?.[1]).toHaveLength(2)
+  })
+
   test('ensureInitialized recovers from invalid persisted game state', async () => {
     const originalError = console.error
     console.error = mock(() => {})
