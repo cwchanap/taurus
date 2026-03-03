@@ -18,6 +18,7 @@ export interface Stroke {
   size: number
   points: Point[]
   eraser?: boolean
+  timestamp: number
 }
 
 /**

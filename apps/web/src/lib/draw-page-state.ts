@@ -95,10 +95,15 @@ export function applyRedoState(
   const nextRedo = redoStack.slice(0, -1)
 
   if (item.type === 'stroke') {
+    // Note: Unlike fill redo, stroke redo reuses the original stroke ID.
+    // We do NOT optimistically add to strokes or undoStack here because:
+    // 1. The server broadcasts 'stroke' to ALL players (including sender) for redo
+    // 2. The onStroke handler will add the stroke when echoed back
+    // 3. This avoids race conditions with pending 'stroke-removed' broadcasts
     return {
       redoStack: nextRedo,
-      undoStack: [...undoStack, item],
-      strokes: [...strokes, item.stroke],
+      undoStack,
+      strokes,
       fills,
       action: { type: 'send-stroke', stroke: item.stroke },
     }

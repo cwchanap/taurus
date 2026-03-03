@@ -220,5 +220,6 @@ export function validateStroke(
     color: data.color as string,
     size: data.size as number,
     ...(data.eraser === true ? { eraser: true } : {}),
+    timestamp: Date.now(),
   }
 }

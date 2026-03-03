@@ -49,11 +49,13 @@
   let currentIsEraser = false
   let initError = $state<string | null>(null)
 
-  // Reconcile strokes whenever strokes prop changes
+  // Combined reconciliation of strokes and fills in timestamp order
+  // This ensures correct z-ordering regardless of operation type
   $effect(() => {
     if (!app || !drawingContainer) return
     try {
       const currentStrokeIds = new Set(strokes.map((s) => s.id))
+      const currentFillIds = new Set(fills.map((f) => f.id))
 
       if (import.meta.env.DEV && currentStrokeIds.size !== strokes.length) {
         console.error('Canvas: Duplicate stroke IDs detected!')
@@ -67,23 +69,6 @@
         }
       }
 
-      // Add new strokes
-      for (const stroke of strokes) {
-        if (!strokeGraphics.has(stroke.id)) {
-          drawStroke(stroke)
-        }
-      }
-    } catch (e) {
-      console.error('Canvas: Stroke reconciliation failed:', e)
-    }
-  })
-
-  // Reconcile fills whenever fills prop changes
-  $effect(() => {
-    if (!app || !drawingContainer) return
-    try {
-      const currentFillIds = new Set(fills.map((f) => f.id))
-
       // Remove deleted fills
       for (const [id, graphics] of fillGraphics.entries()) {
         if (!currentFillIds.has(id)) {
@@ -92,16 +77,49 @@
         }
       }
 
-      // Add new fills
-      for (const fill of fills) {
-        if (!fillGraphics.has(fill.id)) {
-          applyFill(fill)
+      // Build a combined list of operations sorted by timestamp
+      // This ensures fills and strokes are rendered in the correct order
+      const operations = [
+        ...strokes.map((s) => ({ type: 'stroke' as const, data: s, timestamp: s.timestamp })),
+        ...fills.map((f) => ({ type: 'fill' as const, data: f, timestamp: f.timestamp })),
+      ].sort((a, b) => a.timestamp - b.timestamp)
+
+      // Process operations in order, adding new ones at the correct position
+      for (const op of operations) {
+        if (op.type === 'stroke') {
+          if (!strokeGraphics.has(op.data.id)) {
+            drawStroke(op.data)
+          }
+        } else {
+          if (!fillGraphics.has(op.data.id)) {
+            applyFill(op.data)
+          }
         }
       }
+
+      // Reorder graphics in drawingContainer to match timestamp order
+      // This ensures correct z-ordering for operations added out of order
+      reorderGraphicsByTimestamp(operations)
     } catch (e) {
-      console.error('Canvas: Fill reconciliation failed:', e)
+      console.error('Canvas: Operation reconciliation failed:', e)
     }
   })
+
+  // Reorder graphics in drawingContainer to match the sorted operations
+  function reorderGraphicsByTimestamp(
+    operations: Array<{ type: 'stroke' | 'fill'; data: { id: string }; timestamp: number }>
+  ) {
+    if (!drawingContainer) return
+
+    for (const op of operations) {
+      const graphics =
+        op.type === 'stroke' ? strokeGraphics.get(op.data.id) : fillGraphics.get(op.data.id)
+      if (graphics) {
+        // Move to end (top of z-order) in the correct sequence
+        drawingContainer.addChild(graphics)
+      }
+    }
+  }
 
   onMount(async () => {
     mounted = true
@@ -186,6 +204,7 @@
       color: strokeColor,
       size: strokeSize,
       ...(currentIsEraser ? { eraser: true } : {}),
+      timestamp: Date.now(),
     }
 
     onStrokeStart(stroke)
