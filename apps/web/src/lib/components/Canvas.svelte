@@ -43,7 +43,7 @@
   let isDrawing = false
   let lastPoint: Point | null = null
   let strokeGraphics: Map<string, Graphics> = new Map()
-  let fillGraphics: Map<string, Graphics> = new Map()
+  let fillGraphics: Map<string, Graphics | null> = new Map()
   let strokeColor = ''
   let strokeSize = 0
   let currentIsEraser = false
@@ -87,7 +87,7 @@
       // Remove deleted fills
       for (const [id, graphics] of fillGraphics.entries()) {
         if (!currentFillIds.has(id)) {
-          graphics.destroy()
+          graphics?.destroy()
           fillGraphics.delete(id)
         }
       }
@@ -313,7 +313,7 @@
       }
     }
 
-    drawingContainer.addChildAt(graphics, 0)
+    drawingContainer.addChild(graphics)
     fillGraphics.set(fill.id, graphics)
   }
 
@@ -415,7 +415,7 @@
     }
     strokeGraphics.clear()
     for (const graphics of fillGraphics.values()) {
-      graphics.destroy()
+      graphics?.destroy()
     }
     fillGraphics.clear()
   }
