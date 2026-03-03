@@ -169,6 +169,7 @@
         fills = fillList
         undoStack = []
         redoStack = []
+        pendingRedoFills = new Set()
         chatMessages = chatHistory
         // Initialize game state from server
         gameStatus = initialGameState.status
@@ -245,6 +246,7 @@
         fills = []
         undoStack = []
         redoStack = []
+        pendingRedoFills = new Set()
         canvasComponent?.clearCanvas()
       },
       onChat: (message) => {
@@ -481,6 +483,9 @@
     // Clear local strokes immediately for better UX
     strokes = []
     fills = []
+    undoStack = []
+    redoStack = []
+    pendingRedoFills = new Set()
     canvasComponent?.clearCanvas()
   }
 </script>
