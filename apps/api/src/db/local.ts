@@ -8,17 +8,26 @@ let localDB: ReturnType<typeof drizzle> | null = null
 export function initializeLocalDB() {
   if (localDB) return localDB
 
-  // Resolve paths relative to package root (apps/api/)
-  // This ensures consistency with drizzle.config.dev.ts
   const dbPath = join(process.cwd(), 'dev.db')
-  const sqlite = new Database(dbPath)
-
-  localDB = drizzle(sqlite)
-
-  // Run migrations
   const migrationsFolder = join(process.cwd(), 'drizzle')
-  migrate(localDB, { migrationsFolder })
 
+  let sqlite: Database
+  try {
+    sqlite = new Database(dbPath)
+  } catch (e) {
+    throw new Error(`Failed to open SQLite database at "${dbPath}": ${e}`)
+  }
+
+  const db = drizzle(sqlite)
+
+  try {
+    migrate(db, { migrationsFolder })
+  } catch (e) {
+    sqlite.close()
+    throw new Error(`Failed to run migrations from "${migrationsFolder}": ${e}`)
+  }
+
+  localDB = db
   return localDB
 }
 
