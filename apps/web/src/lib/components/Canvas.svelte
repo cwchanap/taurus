@@ -285,7 +285,10 @@
     const targetX = Math.round(fill.x)
     const targetY = Math.round(fill.y)
 
-    if (targetX < 0 || targetX >= width || targetY < 0 || targetY >= height) return
+    if (targetX < 0 || targetX >= width || targetY < 0 || targetY >= height) {
+      fillGraphics.set(fill.id, null)
+      return
+    }
 
     // Parse fill color (hex string like '#FF6B6B') to RGB
     const fillColor = hexToRgb(fill.color)

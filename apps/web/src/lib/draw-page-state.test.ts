@@ -291,6 +291,7 @@ describe('draw-page-state helpers', () => {
       points: [{ x: 1, y: 1 }],
       color: '#000',
       size: 4,
+      timestamp: 1000,
     } as Stroke
 
     const next = pushBoundedUndo([], { type: 'stroke', strokeId: 's1', stroke }, 5)
