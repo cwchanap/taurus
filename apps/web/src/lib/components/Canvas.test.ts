@@ -176,6 +176,7 @@ describe('Canvas', () => {
           ],
           color: '#4ECDC4',
           size: 8,
+          timestamp: Date.now(),
         },
       ],
       fills: [
@@ -206,6 +207,7 @@ describe('Canvas', () => {
       ],
       color: '#4ECDC4',
       size: 8,
+      timestamp: Date.now(),
     })
 
     expect(component.updateRemoteStroke('missing', { x: 3, y: 3 })).toBe(false)
@@ -285,6 +287,7 @@ describe('Canvas', () => {
           ],
           color: '#000',
           size: 4,
+          timestamp: Date.now(),
         },
         {
           id: 's2',
@@ -295,6 +298,7 @@ describe('Canvas', () => {
           ],
           color: '#000',
           size: 4,
+          timestamp: Date.now(),
         },
       ],
       fills: [],
@@ -322,6 +326,7 @@ describe('Canvas', () => {
           ],
           color: '#000',
           size: 4,
+          timestamp: Date.now(),
         },
       ],
       fills: [],

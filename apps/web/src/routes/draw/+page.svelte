@@ -206,8 +206,12 @@
       onStroke: (stroke) => {
         // Deduplicate by stroke id - new strokes are already added optimistically
         // via handleStrokeStart, but redo strokes need to be added here
-        const alreadyExists = strokes.some((s) => s.id === stroke.id)
-        if (!alreadyExists) {
+        const existingIndex = strokes.findIndex((s) => s.id === stroke.id)
+        if (existingIndex !== -1) {
+          // Update with server timestamp to ensure correct z-ordering
+          strokes[existingIndex] = { ...strokes[existingIndex], timestamp: stroke.timestamp }
+          strokes = [...strokes]
+        } else {
           strokes = [...strokes, stroke]
           canvasComponent?.addRemoteStroke(stroke)
           // Check if this stroke came from a redo

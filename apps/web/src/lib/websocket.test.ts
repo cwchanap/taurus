@@ -353,7 +353,14 @@ describe('handleMessage dispatch', () => {
   it('dispatches stroke to onStroke', () => {
     const onStroke = vi.fn()
     createConnectedWs({ onStroke })
-    const stroke = { id: 's1', playerId: 'p1', points: [], color: '#000', size: 4 }
+    const stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [],
+      color: '#000',
+      size: 4,
+      timestamp: Date.now(),
+    }
     receive({ type: 'stroke', stroke })
     expect(onStroke).toHaveBeenCalledWith(stroke)
   })
@@ -515,7 +522,14 @@ describe('handleMessage dispatch', () => {
     const sendSpy = vi.spyOn(mockSocket, 'send')
     mockSocket.simulateOpen()
 
-    const stroke = { id: 's1', playerId: 'p1', points: [{ x: 1, y: 1 }], color: '#000', size: 4 }
+    const stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#000',
+      size: 4,
+      timestamp: Date.now(),
+    }
     gameWs.sendStroke(stroke)
     gameWs.sendStrokeUpdate('s1', { x: 5, y: 10 })
 
