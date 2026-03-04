@@ -84,8 +84,10 @@
   let fills = $state<FillOperation[]>([])
   let undoStack = $state<UndoItem[]>([])
   let redoStack = $state<UndoItem[]>([])
-  let pendingRedoFills = $state<Map<string, { x: number; y: number; color: string }>>(new Map())
-  let pendingRedoStrokes = $state<Set<string>>(new Set())
+  let pendingRedoFills = $state<
+    Map<string, { x: number; y: number; color: string; timestamp: number }>
+  >(new Map())
+  let pendingRedoStrokes = $state<Map<string, number>>(new Map())
 
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
@@ -171,7 +173,7 @@
         undoStack = []
         redoStack = []
         pendingRedoFills = new Map()
-        pendingRedoStrokes = new Set()
+        pendingRedoStrokes = new Map()
         chatMessages = chatHistory
         // Initialize game state from server
         gameStatus = initialGameState.status
@@ -215,14 +217,26 @@
           strokes = [...strokes, stroke]
           canvasComponent?.addRemoteStroke(stroke)
           // Check if this stroke came from a redo
-          if (pendingRedoStrokes.has(stroke.id)) {
+          const redoTimestamp = pendingRedoStrokes.get(stroke.id)
+          if (redoTimestamp !== undefined) {
             pendingRedoStrokes.delete(stroke.id)
-            // Add to undo stack for redo strokes
-            undoStack = pushBoundedUndo(
-              undoStack,
-              { type: 'stroke', strokeId: stroke.id, stroke },
-              MAX_UNDO_DEPTH
-            )
+            // Insert redo stroke at correct position based on timestamp to maintain order
+            const newItem: UndoItem = { type: 'stroke', strokeId: stroke.id, stroke }
+            const insertIndex = undoStack.findIndex((item) => {
+              const itemTimestamp =
+                item.type === 'stroke' ? item.stroke.timestamp : item.fill.timestamp
+              return itemTimestamp > redoTimestamp
+            })
+            if (insertIndex === -1) {
+              undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)
+            } else {
+              // Insert at position to maintain chronological order
+              undoStack = [
+                ...undoStack.slice(0, insertIndex),
+                newItem,
+                ...undoStack.slice(insertIndex),
+              ].slice(0, MAX_UNDO_DEPTH)
+            }
           }
         }
       },
@@ -251,8 +265,26 @@
             )
             // Check if this fill came from a redo - if so, don't clear redoStack
             // Use nonce for unique matching instead of coordinates to handle repeated fills
-            if (fill.nonce && pendingRedoFills.has(fill.nonce)) {
-              pendingRedoFills.delete(fill.nonce)
+            const redoFillInfo = fill.nonce ? pendingRedoFills.get(fill.nonce) : undefined
+            if (redoFillInfo) {
+              pendingRedoFills.delete(fill.nonce!)
+              // Insert redo fill at correct position based on timestamp to maintain order
+              const newItem: UndoItem = { type: 'fill', fillId: fill.id, fill }
+              const insertIndex = undoStack.findIndex((item) => {
+                const itemTimestamp =
+                  item.type === 'stroke' ? item.stroke.timestamp : item.fill.timestamp
+                return itemTimestamp > redoFillInfo.timestamp
+              })
+              if (insertIndex === -1) {
+                undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)
+              } else {
+                // Insert at position to maintain chronological order
+                undoStack = [
+                  ...undoStack.slice(0, insertIndex),
+                  newItem,
+                  ...undoStack.slice(insertIndex),
+                ].slice(0, MAX_UNDO_DEPTH)
+              }
             } else {
               redoStack = [] // Clear redo stack only for new actions, not redo echoes
             }
@@ -268,7 +300,7 @@
         undoStack = []
         redoStack = []
         pendingRedoFills = new Map()
-        pendingRedoStrokes = new Set()
+        pendingRedoStrokes = new Map()
         canvasComponent?.clearCanvas()
       },
       onChat: (message) => {
@@ -454,7 +486,8 @@
 
     if (next.action?.type === 'send-stroke') {
       // Track this as a pending redo stroke so onStroke handler can add to undoStack
-      pendingRedoStrokes.add(next.action.stroke.id)
+      // Store timestamp to preserve ordering when server echo arrives
+      pendingRedoStrokes.set(next.action.stroke.id, Date.now())
       ws?.sendStroke(next.action.stroke)
     } else if (next.action?.type === 'send-fill') {
       // Generate unique nonce for this redo fill to distinguish from other fills
@@ -464,6 +497,7 @@
         x: next.action.x,
         y: next.action.y,
         color: next.action.color,
+        timestamp: Date.now(),
       })
       ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce)
     }
@@ -496,7 +530,7 @@
     undoStack = []
     redoStack = []
     pendingRedoFills = new Map()
-    pendingRedoStrokes = new Set()
+    pendingRedoStrokes = new Map()
     canvasComponent?.clearCanvas()
     ws?.sendClear()
   }
@@ -519,7 +553,7 @@
     undoStack = []
     redoStack = []
     pendingRedoFills = new Map()
-    pendingRedoStrokes = new Set()
+    pendingRedoStrokes = new Map()
     canvasComponent?.clearCanvas()
   }
 </script>
