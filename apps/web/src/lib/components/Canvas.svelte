@@ -48,6 +48,7 @@
   let strokeSize = 0
   let currentIsEraser = false
   let initError = $state<string | null>(null)
+  let lastOperationsSig = ''
 
   // Combined reconciliation of strokes and fills in timestamp order
   // This ensures correct z-ordering regardless of operation type
@@ -97,9 +98,13 @@
         }
       }
 
-      // Reorder graphics in drawingContainer to match timestamp order
-      // This ensures correct z-ordering for operations added out of order
-      reorderGraphicsByTimestamp(operations)
+      // Reorder graphics only when operations are added/removed (signature changes)
+      // Avoids O(n) reordering on every stroke point update which causes frame drops
+      const operationsSig = operations.map((op) => op.data.id).join(',')
+      if (operationsSig !== lastOperationsSig) {
+        lastOperationsSig = operationsSig
+        reorderGraphicsByTimestamp(operations)
+      }
     } catch (e) {
       console.error('Canvas: Operation reconciliation failed:', e)
     }

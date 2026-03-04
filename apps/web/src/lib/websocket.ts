@@ -167,6 +167,7 @@ export class GameWebSocket {
           y: data.y,
           color: data.color,
           timestamp: data.timestamp,
+          nonce: data.nonce,
         })
         break
       case 'fill-removed':
@@ -275,8 +276,8 @@ export class GameWebSocket {
     this.send({ type: 'undo-fill', fillId })
   }
 
-  sendFill(x: number, y: number, color: string) {
-    this.send({ type: 'fill', x, y, color })
+  sendFill(x: number, y: number, color: string, nonce?: string) {
+    this.send({ type: 'fill', x, y, color, nonce })
   }
 
   sendClear() {

@@ -984,6 +984,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       y: fill.y,
       color: fill.color,
       timestamp: fill.timestamp,
+      nonce: data.nonce,
     })
   }
 
