@@ -42,6 +42,7 @@ export interface FillOperation {
   y: number
   color: string
   timestamp: number
+  nonce?: string
 }
 
 /** Drawing palette colors — single source of truth shared by frontend and backend */
@@ -76,7 +77,7 @@ export type ClientMessage =
   | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'undo-stroke'; strokeId: string }
   | { type: 'undo-fill'; fillId: string }
-  | { type: 'fill'; x: number; y: number; color: string }
+  | { type: 'fill'; x: number; y: number; color: string; nonce?: string }
   | { type: 'clear' }
   | { type: 'start-game' }
   | { type: 'reset-game' }
@@ -108,6 +109,7 @@ export type ServerMessage =
       y: number
       color: string
       timestamp: number
+      nonce?: string
     }
   | { type: 'fill-removed'; fillId: string }
   | { type: 'clear' }

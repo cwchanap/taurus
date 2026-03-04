@@ -84,7 +84,7 @@
   let fills = $state<FillOperation[]>([])
   let undoStack = $state<UndoItem[]>([])
   let redoStack = $state<UndoItem[]>([])
-  let pendingRedoFills = $state<Set<string>>(new Set())
+  let pendingRedoFills = $state<Map<string, { x: number; y: number; color: string }>>(new Map())
   let pendingRedoStrokes = $state<Set<string>>(new Set())
 
   let ws: GameWebSocket | null = null
@@ -170,7 +170,7 @@
         fills = fillList
         undoStack = []
         redoStack = []
-        pendingRedoFills = new Set()
+        pendingRedoFills = new Map()
         pendingRedoStrokes = new Set()
         chatMessages = chatHistory
         // Initialize game state from server
@@ -250,9 +250,9 @@
               MAX_UNDO_DEPTH
             )
             // Check if this fill came from a redo - if so, don't clear redoStack
-            const redoKey = `${fill.x}:${fill.y}:${fill.color}`
-            if (pendingRedoFills.has(redoKey)) {
-              pendingRedoFills.delete(redoKey)
+            // Use nonce for unique matching instead of coordinates to handle repeated fills
+            if (fill.nonce && pendingRedoFills.has(fill.nonce)) {
+              pendingRedoFills.delete(fill.nonce)
             } else {
               redoStack = [] // Clear redo stack only for new actions, not redo echoes
             }
@@ -267,7 +267,7 @@
         fills = []
         undoStack = []
         redoStack = []
-        pendingRedoFills = new Set()
+        pendingRedoFills = new Map()
         pendingRedoStrokes = new Set()
         canvasComponent?.clearCanvas()
       },
@@ -457,9 +457,15 @@
       pendingRedoStrokes.add(next.action.stroke.id)
       ws?.sendStroke(next.action.stroke)
     } else if (next.action?.type === 'send-fill') {
-      const key = `${next.action.x}:${next.action.y}:${next.action.color}`
-      pendingRedoFills.add(key)
-      ws?.sendFill(next.action.x, next.action.y, next.action.color)
+      // Generate unique nonce for this redo fill to distinguish from other fills
+      // with same coordinates/color
+      const nonce = crypto.randomUUID()
+      pendingRedoFills.set(nonce, {
+        x: next.action.x,
+        y: next.action.y,
+        color: next.action.color,
+      })
+      ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce)
     }
   }
 
@@ -489,7 +495,7 @@
     fills = []
     undoStack = []
     redoStack = []
-    pendingRedoFills = new Set()
+    pendingRedoFills = new Map()
     pendingRedoStrokes = new Set()
     canvasComponent?.clearCanvas()
     ws?.sendClear()
@@ -512,7 +518,7 @@
     fills = []
     undoStack = []
     redoStack = []
-    pendingRedoFills = new Set()
+    pendingRedoFills = new Map()
     pendingRedoStrokes = new Set()
     canvasComponent?.clearCanvas()
   }
