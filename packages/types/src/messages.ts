@@ -1,4 +1,5 @@
-import type { GameStatus, ScoreEntry, RoundResult, Winner, ChatMessage } from './game'
+import type { GameStatus, ScoreEntry, RoundResult, Winner, ChatMessage, PaletteColor } from './game'
+import { PALETTE_COLORS } from './game'
 
 export interface Player {
   id: string
@@ -14,7 +15,7 @@ export interface Point {
 export interface Stroke {
   id: string
   playerId: string
-  color: string
+  color: PaletteColor
   size: number
   points: Point[]
   eraser?: boolean
@@ -40,22 +41,17 @@ export interface FillOperation {
   playerId: string
   x: number
   y: number
-  color: string
+  color: PaletteColor
   timestamp: number
+  /**
+   * Client-generated correlation token for optimistic undo/redo tracking.
+   * Never persisted on the server. Echoed back verbatim to the originating client only.
+   */
   nonce?: string
 }
 
-/** Drawing palette colors — single source of truth shared by frontend and backend */
-export const PALETTE_COLORS = [
-  '#FF6B6B',
-  '#4ECDC4',
-  '#45B7D1',
-  '#96CEB4',
-  '#FFEAA7',
-  '#DDA0DD',
-  '#FFFFFF',
-  '#1a1a2e',
-] as const
+// Re-export PALETTE_COLORS so consumers can import from either file
+export { PALETTE_COLORS }
 
 // Wire format for GameState (what goes over WebSocket)
 export interface GameStateWire {
@@ -77,7 +73,17 @@ export type ClientMessage =
   | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'undo-stroke'; strokeId: string }
   | { type: 'undo-fill'; fillId: string }
-  | { type: 'fill'; x: number; y: number; color: string; nonce?: string }
+  | {
+      type: 'fill'
+      x: number
+      y: number
+      color: PaletteColor
+      /**
+       * Client-generated nonce for undo/redo correlation.
+       * The server echoes this back verbatim and never persists it.
+       */
+      nonce?: string
+    }
   | { type: 'clear' }
   | { type: 'start-game' }
   | { type: 'reset-game' }
@@ -101,16 +107,7 @@ export type ServerMessage =
   | { type: 'stroke'; stroke: Stroke }
   | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'stroke-removed'; strokeId: string }
-  | {
-      type: 'fill'
-      id: string
-      playerId: string
-      x: number
-      y: number
-      color: string
-      timestamp: number
-      nonce?: string
-    }
+  | ({ type: 'fill' } & FillOperation)
   | { type: 'fill-removed'; fillId: string }
   | { type: 'clear' }
   | { type: 'chat'; message: ChatMessage }

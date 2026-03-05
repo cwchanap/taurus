@@ -1,4 +1,4 @@
-import type { Stroke } from '@repo/types'
+import type { Stroke, PaletteColor } from '@repo/types'
 import { PALETTE_COLORS } from '@repo/types'
 
 import {
@@ -108,7 +108,7 @@ export function isValidStrokeId(strokeId: unknown): strokeId is string {
 /**
  * Validates a fill operation's coordinates and color
  */
-export function validateFill(data: unknown): { x: number; y: number; color: string } | null {
+export function validateFill(data: unknown): { x: number; y: number; color: PaletteColor } | null {
   if (!data || typeof data !== 'object') {
     return null
   }
@@ -127,7 +127,7 @@ export function validateFill(data: unknown): { x: number; y: number; color: stri
     return null
   }
 
-  return { x: Math.floor(d.x), y: Math.floor(d.y), color: d.color }
+  return { x: Math.floor(d.x), y: Math.floor(d.y), color: d.color as PaletteColor }
 }
 
 /**
@@ -217,7 +217,7 @@ export function validateStroke(
     id: strokeId,
     playerId,
     points: points.map((p) => ({ x: Number(p.x), y: Number(p.y) })),
-    color: data.color as string,
+    color: data.color as PaletteColor,
     size: data.size as number,
     ...(data.eraser === true ? { eraser: true } : {}),
     timestamp: Date.now(),
