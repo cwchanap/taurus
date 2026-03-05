@@ -897,6 +897,81 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     expect(msgs.some((m) => m?.type === 'fill')).toBe(false)
   })
 
+  test('handleFill: valid fill from drawer is persisted and broadcast to all players', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    const observerWs = createMockWs('player-2', 'Observer')
+    mockGetWebSockets.mockReturnValue([drawerWs, observerWs])
+    setPlayingState('player-1')
+    // Speed up debounced scheduler so storage put fires synchronously in test
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).storageWriteDelay = 0
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'fill', x: 100, y: 200, color: '#FF6B6B' })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushPromises()
+
+    // Both sockets should have received the fill broadcast
+    const drawerMsgs = getSentMessages(drawerWs)
+    const observerMsgs = getSentMessages(observerWs)
+    expect(
+      drawerMsgs.some(
+        (m) =>
+          m?.type === 'fill' &&
+          m.playerId === 'player-1' &&
+          m.x === 100 &&
+          m.y === 200 &&
+          m.color === '#FF6B6B'
+      )
+    ).toBe(true)
+    expect(
+      observerMsgs.some(
+        (m) =>
+          m?.type === 'fill' &&
+          m.playerId === 'player-1' &&
+          m.x === 100 &&
+          m.y === 200 &&
+          m.color === '#FF6B6B'
+      )
+    ).toBe(true)
+
+    // Storage put should have been called for fills
+    const fillPutCalls = mockStoragePut.mock.calls.filter((call) => call[0] === 'fills')
+    expect(fillPutCalls.length).toBeGreaterThan(0)
+  })
+
+  test('handleFill: fill with out-of-bounds x coordinate is rejected and nothing broadcast', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'fill', x: -1, y: 200, color: '#FF6B6B' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    expect(msgs.some((m) => m?.type === 'fill')).toBe(false)
+  })
+
+  test('handleFill: fill with invalid color is rejected and nothing broadcast', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'fill', x: 100, y: 200, color: 'red' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    expect(msgs.some((m) => m?.type === 'fill')).toBe(false)
+  })
+
   test('handleUndoStroke: does not broadcast stroke-removed when player is not the drawer', async () => {
     const ws = createMockWs('non-drawer', 'NonDrawer')
     mockGetWebSockets.mockReturnValue([ws])
