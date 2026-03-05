@@ -522,11 +522,11 @@ describe('handleMessage dispatch', () => {
     const sendSpy = vi.spyOn(mockSocket, 'send')
     mockSocket.simulateOpen()
 
-    const stroke = {
+    const stroke: Stroke = {
       id: 's1',
       playerId: 'p1',
       points: [{ x: 1, y: 1 }],
-      color: '#000',
+      color: '#1a1a2e',
       size: 4,
       timestamp: Date.now(),
     }

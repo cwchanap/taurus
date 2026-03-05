@@ -1,15 +1,16 @@
 <script lang="ts">
   import { PALETTE_COLORS } from '@repo/types'
+  import type { PaletteColor } from '@repo/types'
 
   type Tool = 'pencil' | 'eraser' | 'fill'
 
   interface Props {
-    color: string
+    color: PaletteColor
     brushSize: number
     tool: Tool
     canUndo: boolean
     canRedo: boolean
-    onColorChange: (color: string) => void
+    onColorChange: (color: PaletteColor) => void
     onBrushSizeChange: (size: number) => void
     onToolChange: (tool: Tool) => void
     onUndo: () => void
@@ -39,7 +40,7 @@
 
   const sizes = [4, 8, 16]
 
-  function handleColorChange(c: string) {
+  function handleColorChange(c: PaletteColor) {
     // Selecting a color auto-switches back to pencil from eraser
     if (tool === 'eraser') {
       onToolChange('pencil')

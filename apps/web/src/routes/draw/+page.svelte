@@ -36,6 +36,7 @@
     RoundResult,
     Winner,
     ScoreEntry,
+    PaletteColor,
   } from '$lib/types'
 
   type Tool = 'pencil' | 'eraser' | 'fill'
@@ -78,14 +79,14 @@
   let systemNotification = $state<string | null>(null)
   let systemNotificationTimeoutId: ReturnType<typeof setTimeout> | null = null
 
-  let color = $state('#4ECDC4')
+  let color = $state<PaletteColor>('#4ECDC4')
   let brushSize = $state(8)
   let tool = $state<Tool>('pencil')
   let fills = $state<FillOperation[]>([])
   let undoStack = $state<UndoItem[]>([])
   let redoStack = $state<UndoItem[]>([])
   let pendingRedoFills = $state<
-    Map<string, { x: number; y: number; color: string; timestamp: number }>
+    Map<string, { x: number; y: number; color: PaletteColor; timestamp: number }>
   >(new Map())
   let pendingRedoStrokes = $state<Map<string, number>>(new Map())
 
@@ -456,7 +457,7 @@
     }
   }
 
-  function handleFill(x: number, y: number, fillColor: string) {
+  function handleFill(x: number, y: number, fillColor: PaletteColor) {
     const sent = ws?.sendFill(x, y, fillColor)
     if (sent === false) {
       console.error('Canvas: Failed to send fill — WebSocket not open')

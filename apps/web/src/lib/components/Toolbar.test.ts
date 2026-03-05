@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, fireEvent, screen, cleanup } from '@testing-library/svelte'
 import Toolbar from './Toolbar.svelte'
+import type { PaletteColor } from '@repo/types'
 
 afterEach(() => {
   cleanup()
@@ -10,12 +11,12 @@ afterEach(() => {
 type Tool = 'pencil' | 'eraser' | 'fill'
 
 interface ToolbarProps {
-  color: string
+  color: PaletteColor
   brushSize: number
   tool: Tool
   canUndo: boolean
   canRedo: boolean
-  onColorChange: (color: string) => void
+  onColorChange: (color: PaletteColor) => void
   onBrushSizeChange: (size: number) => void
   onToolChange: (tool: Tool) => void
   onUndo: () => void

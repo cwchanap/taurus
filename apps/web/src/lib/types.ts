@@ -10,6 +10,7 @@ export type {
   Stroke,
   Point,
   FillOperation,
+  PaletteColor,
   GameStateWire as GameState,
 } from '@repo/types'
 
