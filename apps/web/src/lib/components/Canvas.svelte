@@ -1,12 +1,12 @@
 <script lang="ts">
   import { Application, Graphics, Container } from 'pixi.js'
   import { onMount, onDestroy } from 'svelte'
-  import type { Point, Stroke, FillOperation } from '@repo/types'
+  import type { Point, Stroke, FillOperation, PaletteColor } from '@repo/types'
 
   type Tool = 'pencil' | 'eraser' | 'fill'
 
   interface Props {
-    color: string
+    color: PaletteColor
     brushSize: number
     tool: Tool
     strokes: Stroke[]
@@ -15,7 +15,7 @@
     disabled?: boolean
     onStrokeStart: (stroke: Stroke) => void
     onStrokeUpdate: (strokeId: string, point: Point) => void
-    onFill: (x: number, y: number, color: string) => void
+    onFill: (x: number, y: number, color: PaletteColor) => void
   }
 
   let {
@@ -44,7 +44,7 @@
   let lastPoint: Point | null = null
   let strokeGraphics: Map<string, Graphics> = new Map()
   let fillGraphics: Map<string, Graphics | null> = new Map()
-  let strokeColor = ''
+  let strokeColor: PaletteColor = '#1a1a2e'
   let strokeSize = 0
   let currentIsEraser = false
   let initError = $state<string | null>(null)

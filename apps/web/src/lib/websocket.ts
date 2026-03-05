@@ -8,7 +8,7 @@ import type {
   Winner,
   ScoreEntry,
 } from './types'
-import type { ServerMessage, ClientMessage } from '@repo/types'
+import type { ServerMessage, ClientMessage, PaletteColor } from '@repo/types'
 
 export type GameEventHandler = {
   onInit?: (
@@ -279,7 +279,7 @@ export class GameWebSocket {
     this.send({ type: 'undo-fill', fillId })
   }
 
-  sendFill(x: number, y: number, color: string, nonce?: string): boolean {
+  sendFill(x: number, y: number, color: PaletteColor, nonce?: string): boolean {
     return this.send({ type: 'fill', x, y, color, nonce })
   }
 

@@ -1,6 +1,7 @@
 import type {
   FillOperation,
   GameStatus,
+  PaletteColor,
   Player,
   Point,
   RoundResult,
@@ -84,7 +85,7 @@ export function applyRedoState(
   fills: FillOperation[]
   action:
     | { type: 'send-stroke'; stroke: Stroke }
-    | { type: 'send-fill'; x: number; y: number; color: string }
+    | { type: 'send-fill'; x: number; y: number; color: PaletteColor }
     | null
 } {
   if (redoStack.length === 0) {
