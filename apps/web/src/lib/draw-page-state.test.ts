@@ -25,7 +25,7 @@ describe('draw-page-state helpers', () => {
       id: 's3',
       playerId: 'p1',
       points: [{ x: 1, y: 1 }],
-      color: '#000',
+      color: '#1a1a2e',
       size: 4,
       timestamp: 1000,
     } as Stroke
@@ -47,7 +47,7 @@ describe('draw-page-state helpers', () => {
         id: 's1',
         playerId: 'p1',
         points: [{ x: 1, y: 1 }],
-        color: '#000',
+        color: '#1a1a2e',
         size: 4,
         timestamp: 1000,
       },
@@ -65,7 +65,7 @@ describe('draw-page-state helpers', () => {
       id: 's1',
       playerId: 'p1',
       points: [{ x: 1, y: 1 }],
-      color: '#000',
+      color: '#1a1a2e',
       size: 4,
       timestamp: 1000,
     }
@@ -74,7 +74,7 @@ describe('draw-page-state helpers', () => {
       playerId: 'p1',
       x: 10,
       y: 10,
-      color: '#fff',
+      color: '#FFFFFF',
       timestamp: Date.now(),
     }
 
@@ -86,10 +86,14 @@ describe('draw-page-state helpers', () => {
     )
     expect(strokeResult.action).toEqual({ type: 'undo-stroke', strokeId: 's1' })
     expect(strokeResult.strokes).toHaveLength(0)
+    expect(strokeResult.redoStack).toHaveLength(1)
+    expect(strokeResult.redoStack[0]).toMatchObject({ type: 'stroke', strokeId: 's1' })
 
     const fillResult = applyUndoState([{ type: 'fill', fillId: 'f1', fill }], [], [stroke], [fill])
     expect(fillResult.action).toEqual({ type: 'undo-fill', fillId: 'f1' })
     expect(fillResult.fills).toHaveLength(0)
+    expect(fillResult.redoStack).toHaveLength(1)
+    expect(fillResult.redoStack[0]).toMatchObject({ type: 'fill', fillId: 'f1' })
   })
 
   it('applyRedoState handles stroke and fill redo branches', () => {
@@ -97,7 +101,7 @@ describe('draw-page-state helpers', () => {
       id: 's1',
       playerId: 'p1',
       points: [{ x: 1, y: 1 }],
-      color: '#000',
+      color: '#1a1a2e',
       size: 4,
       timestamp: 1000,
     }
@@ -106,7 +110,7 @@ describe('draw-page-state helpers', () => {
       playerId: 'p1',
       x: 10,
       y: 10,
-      color: '#fff',
+      color: '#FFFFFF',
       timestamp: Date.now(),
     }
 
@@ -118,7 +122,7 @@ describe('draw-page-state helpers', () => {
     expect(strokeRedo.undoStack).toHaveLength(0)
 
     const fillRedo = applyRedoState([{ type: 'fill', fillId: 'f1', fill }], [], [], [])
-    expect(fillRedo.action).toEqual({ type: 'send-fill', x: 10, y: 10, color: '#fff' })
+    expect(fillRedo.action).toEqual({ type: 'send-fill', x: 10, y: 10, color: '#FFFFFF' })
     // Fill redo does NOT add to undo stack (server generates new fill ID, onFill handler adds it)
     expect(fillRedo.undoStack).toHaveLength(0)
   })
@@ -246,7 +250,7 @@ describe('draw-page-state helpers', () => {
         id: 's1',
         playerId: 'p1',
         points: [{ x: 1, y: 1 }],
-        color: '#000',
+        color: '#1a1a2e',
         size: 4,
         timestamp: 1000,
       },
@@ -289,7 +293,7 @@ describe('draw-page-state helpers', () => {
       id: 's1',
       playerId: 'p1',
       points: [{ x: 1, y: 1 }],
-      color: '#000',
+      color: '#1a1a2e',
       size: 4,
       timestamp: 1000,
     } as Stroke
