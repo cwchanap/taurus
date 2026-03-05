@@ -285,7 +285,7 @@ describe('Canvas', () => {
             { x: 1, y: 1 },
             { x: 2, y: 2 },
           ],
-          color: '#000',
+          color: '#1a1a2e',
           size: 4,
           timestamp: Date.now(),
         },
@@ -296,7 +296,7 @@ describe('Canvas', () => {
             { x: 3, y: 3 },
             { x: 4, y: 4 },
           ],
-          color: '#000',
+          color: '#1a1a2e',
           size: 4,
           timestamp: Date.now(),
         },
@@ -324,7 +324,7 @@ describe('Canvas', () => {
             { x: 3, y: 3 },
             { x: 4, y: 4 },
           ],
-          color: '#000',
+          color: '#1a1a2e',
           size: 4,
           timestamp: Date.now(),
         },
@@ -339,5 +339,77 @@ describe('Canvas', () => {
 
     await tick()
     // No assertion needed beyond no-throw – the reconciliation removes the graphics object
+  })
+
+  it('removes deleted fills during reconciliation', async () => {
+    // The mock renderer.extract.pixels returns an 8x8 pixel buffer with RGB (10, 10, 10).
+    // Fill color '#FF6B6B' is rgb(255,107,107) which differs from (10,10,10), so applyFill
+    // proceeds and creates a Graphics object stored in fillGraphics.
+    const fillTimestamp = Date.now()
+
+    const { rerender } = render(Canvas, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [],
+      fills: [
+        {
+          id: 'f1',
+          playerId: 'p1',
+          x: 2,
+          y: 2,
+          color: '#FF6B6B',
+          timestamp: fillTimestamp,
+        },
+      ],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    // Two ticks: first lets onMount's async init() resolve and sets app,
+    // second lets the $effect re-run with app set (which calls applyFill).
+    await tick()
+    await tick()
+
+    const app = pixiState.apps[0] as {
+      stage: { children: unknown[] }
+      renderer: { extract: { pixels: ReturnType<typeof vi.fn> } }
+    }
+
+    // applyFill should have called extract.pixels to read the canvas pixel data
+    expect(app.renderer.extract.pixels).toHaveBeenCalled()
+
+    // The drawing container (stage child index 1) holds the fill's Graphics object.
+    // Capture all children before the fill is removed.
+    const { Graphics: MockGraphics } = await import('pixi.js')
+    const drawingContainer = app.stage.children[1] as { children: unknown[] }
+    const childrenBeforeRemoval = [...(drawingContainer?.children ?? [])]
+
+    // Now remove the fill by re-rendering with an empty fills array
+    await rerender({
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [],
+      fills: [],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+    await tick()
+
+    // After reconciliation, the Graphics object that was created for the fill should be
+    // destroyed. We check against the children snapshot taken before removal.
+    const destroyed = childrenBeforeRemoval.filter(
+      (child) => child instanceof MockGraphics && (child as { destroyed: boolean }).destroyed
+    )
+    expect(destroyed.length).toBeGreaterThan(0)
   })
 })
