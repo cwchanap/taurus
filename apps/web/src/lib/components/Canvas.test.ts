@@ -412,4 +412,49 @@ describe('Canvas', () => {
     )
     expect(destroyed.length).toBeGreaterThan(0)
   })
+
+  it('marks out-of-bounds fills as processed to prevent repeated retries', async () => {
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const fillId = 'fill-out-of-bounds'
+    const fillTimestamp = Date.now()
+
+    render(Canvas, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [],
+      fills: [
+        {
+          id: fillId,
+          playerId: 'player-1',
+          x: 100, // Out of bounds for 8x8 canvas
+          y: 100,
+          color: '#FF6B6B',
+          timestamp: fillTimestamp,
+        },
+      ],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+    await tick()
+
+    const app = pixiState.apps[0] as {
+      renderer: { extract: { pixels: ReturnType<typeof vi.fn> } }
+    }
+
+    // applyFill should have called extract.pixels to check bounds
+    expect(app.renderer.extract.pixels).toHaveBeenCalled()
+
+    // Should have warned about out-of-bounds fill
+    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('out of bounds'))
+    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining(fillId))
+
+    consoleWarnSpy.mockRestore()
+  })
 })
