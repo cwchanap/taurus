@@ -1019,6 +1019,42 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     expect(msgs.some((m) => m?.type === 'fill-removed')).toBe(false)
   })
 
+  test('handleUndoStroke: non-existent strokeId sends error and does not broadcast stroke-removed', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'undo-stroke', strokeId: 'non-existent-stroke-id' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    // Should NOT have a stroke-removed message
+    expect(msgs.some((m) => m?.type === 'stroke-removed')).toBe(false)
+    // Should have an error message
+    expect(msgs.some((m) => m?.type === 'error')).toBe(true)
+  })
+
+  test('handleUndoFill: non-existent fillId sends error and does not broadcast fill-removed', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'undo-fill', fillId: 'non-existent-fill-id' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    // Should NOT have a fill-removed message
+    expect(msgs.some((m) => m?.type === 'fill-removed')).toBe(false)
+    // Should have an error message
+    expect(msgs.some((m) => m?.type === 'error')).toBe(true)
+  })
+
   test('handleClear: rejects clear from non-drawer during playing state', async () => {
     const ws = createMockWs('non-drawer', 'NonDrawer')
     mockGetWebSockets.mockReturnValue([ws])
