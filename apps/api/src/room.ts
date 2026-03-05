@@ -306,38 +306,47 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
 
     this.storageWriteTimer = setTimeout(() => {
-      this.storageWriteTimer = null
-      const pendingWrites: Promise<void>[] = []
+      try {
+        this.storageWriteTimer = null
+        const pendingWrites: Promise<void>[] = []
 
-      if (this.strokeStorageDirty) {
-        this.strokeStorageDirty = false
-        // Track the in-flight write while preserving operation ordering with deletes
-        this.pendingStrokeWrite = this.queueStrokeWrite()
-          .catch((e) => {
-            console.error('Background stroke storage save failed:', e)
-            throw e
-          })
-          .finally(() => {
-            this.pendingStrokeWrite = null
-          })
-        pendingWrites.push(this.pendingStrokeWrite)
-      }
+        if (this.strokeStorageDirty) {
+          this.strokeStorageDirty = false
+          this.pendingStrokeWrite = this.queueStrokeWrite()
+            .catch((e) => {
+              console.error('Background stroke storage save failed:', e)
+              throw e
+            })
+            .finally(() => {
+              this.pendingStrokeWrite = null
+            })
+          pendingWrites.push(this.pendingStrokeWrite)
+        }
 
-      if (this.fillStorageDirty) {
-        this.fillStorageDirty = false
-        this.pendingFillWrite = this.queueFillWrite()
-          .catch((e) => {
-            console.error('Background fill storage save failed:', e)
-            throw e
-          })
-          .finally(() => {
-            this.pendingFillWrite = null
-          })
-        pendingWrites.push(this.pendingFillWrite)
-      }
+        if (this.fillStorageDirty) {
+          this.fillStorageDirty = false
+          this.pendingFillWrite = this.queueFillWrite()
+            .catch((e) => {
+              console.error('Background fill storage save failed:', e)
+              throw e
+            })
+            .finally(() => {
+              this.pendingFillWrite = null
+            })
+          pendingWrites.push(this.pendingFillWrite)
+        }
 
-      if (pendingWrites.length > 0) {
-        this.ctx.waitUntil(Promise.all(pendingWrites).then(() => undefined))
+        if (pendingWrites.length > 0) {
+          this.ctx.waitUntil(
+            Promise.all(pendingWrites)
+              .then(() => undefined)
+              .catch((e) => {
+                console.error('Deferred canvas storage write failed permanently:', e)
+              })
+          )
+        }
+      } catch (e) {
+        console.error('scheduleStorageWrite: Unexpected synchronous error in deferred write:', e)
       }
     }, this.storageWriteDelay)
   }
