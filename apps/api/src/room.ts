@@ -606,19 +606,28 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Send current state to the new player (include existing players)
     await this.ensureInitialized()
 
-    ws.send(
-      JSON.stringify({
-        type: 'init',
-        playerId,
-        player,
-        players: [...existingPlayers, player],
-        strokes: this.strokes,
-        fills: this.fills,
-        chatHistory: this.chatHistory.getMessages(),
-        isHost: playerId === this.hostPlayerId,
-        gameState: gameStateToWire(this.gameState, playerId === this.gameState.currentDrawerId),
-      })
-    )
+    try {
+      ws.send(
+        JSON.stringify({
+          type: 'init',
+          playerId,
+          player,
+          players: [...existingPlayers, player],
+          strokes: this.strokes,
+          fills: this.fills,
+          chatHistory: this.chatHistory.getMessages(),
+          isHost: playerId === this.hostPlayerId,
+          gameState: gameStateToWire(this.gameState, playerId === this.gameState.currentDrawerId),
+        })
+      )
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'InvalidStateError') {
+        console.warn(`Failed to send init to player ${playerId}: socket already closed`)
+        return
+      }
+      console.error('Unexpected error sending init message:', e)
+      throw e
+    }
 
     // Notify others about the new player
     this.broadcast(
@@ -937,6 +946,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const idx = this.strokes.findLastIndex((s) => s.id === trimmedId && s.playerId === playerId)
     if (idx === -1) {
       console.warn(`Stroke ${trimmedId} not found for undo by player ${playerId}`)
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Undo failed: stroke not found. Canvas may be out of sync.',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
       return
     }
 
@@ -962,6 +981,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const idx = this.fills.findLastIndex((f) => f.id === trimmedId && f.playerId === playerId)
     if (idx === -1) {
       console.warn(`Fill ${trimmedId} not found for undo by player ${playerId}`)
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Undo failed: fill not found. Canvas may be out of sync.',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
       return
     }
 
@@ -1015,7 +1044,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       y: fill.y,
       color: fill.color,
       timestamp: fill.timestamp,
-      nonce: data.nonce,
+      nonce: typeof data.nonce === 'string' && data.nonce.length <= 36 ? data.nonce : undefined,
     })
   }
 
