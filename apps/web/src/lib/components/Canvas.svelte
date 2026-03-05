@@ -107,6 +107,7 @@
       }
     } catch (e) {
       console.error('Canvas: Operation reconciliation failed:', e)
+      initError = 'Canvas rendering error. Try refreshing the page.'
     }
   })
 
@@ -300,7 +301,13 @@
 
     // Parse fill color (hex string like '#FF6B6B') to RGB
     const fillColor = hexToRgb(fill.color)
-    if (!fillColor) return
+    if (!fillColor) {
+      console.error(
+        `Canvas: Cannot parse fill color "${fill.color}" for fill ${fill.id}. Skipping.`
+      )
+      fillGraphics.set(fill.id, null)
+      return
+    }
 
     // Get target color at click point
     const idx = (targetY * width + targetX) * 4
@@ -310,6 +317,16 @@
 
     // Don't fill if already the same color
     if (targetR === fillColor.r && targetG === fillColor.g && targetB === fillColor.b) {
+      fillGraphics.set(fill.id, null)
+      return
+    }
+
+    // Guard against browser freeze on very large canvas fills
+    const MAX_FILL_PIXELS = 2_000_000
+    if (width * height > MAX_FILL_PIXELS) {
+      console.warn(
+        `Canvas: Fill ${fill.id} skipped — canvas too large (${width * height} pixels > ${MAX_FILL_PIXELS} limit)`
+      )
       fillGraphics.set(fill.id, null)
       return
     }
