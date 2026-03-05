@@ -412,7 +412,19 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     // Ensure state is restored from storage after potential hibernation
-    await this.ensureInitialized()
+    try {
+      await this.ensureInitialized()
+    } catch (e) {
+      console.error('Failed to initialize room state from storage:', e)
+      try {
+        ws.send(
+          JSON.stringify({ type: 'error', message: 'Room state unavailable. Please reconnect.' })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
 
     // Parse message - client error if this fails
     let data: Message
@@ -528,12 +540,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   }
 
   async webSocketClose(ws: WebSocket) {
-    await this.ensureInitialized()
+    try {
+      await this.ensureInitialized()
+    } catch (e) {
+      console.error('ensureInitialized failed in webSocketClose:', e)
+      // Must still run handleLeave even if init failed to clean up player state
+    }
     this.handleLeave(ws)
   }
 
   async webSocketError(ws: WebSocket) {
-    await this.ensureInitialized()
+    try {
+      await this.ensureInitialized()
+    } catch (e) {
+      console.error('ensureInitialized failed in webSocketError:', e)
+      // Must still run handleLeave even if init failed
+    }
     this.handleLeave(ws)
   }
 
