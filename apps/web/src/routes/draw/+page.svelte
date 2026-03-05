@@ -480,16 +480,13 @@
 
   function handleRedo() {
     const next = applyRedoState(redoStack, undoStack, strokes, fills)
-    redoStack = next.redoStack
-    undoStack = next.undoStack
-    strokes = next.strokes
-    fills = next.fills
+    let sendSucceeded = false
 
     if (next.action?.type === 'send-stroke') {
       // Track this as a pending redo stroke so onStroke handler can add to undoStack
       // Store timestamp to preserve ordering when server echo arrives
       pendingRedoStrokes.set(next.action.stroke.id, Date.now())
-      ws?.sendStroke(next.action.stroke)
+      sendSucceeded = ws?.sendStroke(next.action.stroke) ?? false
     } else if (next.action?.type === 'send-fill') {
       // Generate unique nonce for this redo fill to distinguish from other fills
       // with same coordinates/color
@@ -500,7 +497,20 @@
         color: next.action.color,
         timestamp: Date.now(),
       })
-      ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce)
+      sendSucceeded = ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce) ?? false
+    } else {
+      // No network action needed, commit immediately
+      sendSucceeded = true
+    }
+
+    // Only commit state changes if send succeeded or no network action was needed
+    if (sendSucceeded) {
+      redoStack = next.redoStack
+      undoStack = next.undoStack
+      strokes = next.strokes
+      fills = next.fills
+    } else {
+      console.error('handleRedo: Failed to send redo action to server, preserving redo stack')
     }
   }
 

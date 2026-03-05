@@ -263,8 +263,8 @@ export class GameWebSocket {
     return false
   }
 
-  sendStroke(stroke: Stroke) {
-    this.send({ type: 'stroke', stroke })
+  sendStroke(stroke: Stroke): boolean {
+    return this.send({ type: 'stroke', stroke })
   }
 
   sendStrokeUpdate(strokeId: string, point: { x: number; y: number }) {

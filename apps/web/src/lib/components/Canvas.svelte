@@ -292,9 +292,11 @@
     const targetY = Math.round(fill.y)
 
     if (targetX < 0 || targetX >= width || targetY < 0 || targetY >= height) {
-      // Don't mark as processed - let reconciliation retry when canvas resizes
+      // Mark as processed to prevent repeated retries
+      // Use null to indicate this fill was skipped (already handled by cleanup logic)
+      fillGraphics.set(fill.id, null)
       console.warn(
-        `Canvas: Fill ${fill.id} at (${targetX},${targetY}) out of bounds (${width}x${height}), will retry on next reconciliation`
+        `Canvas: Fill ${fill.id} at (${targetX},${targetY}) out of bounds (${width}x${height}), skipping`
       )
       return
     }

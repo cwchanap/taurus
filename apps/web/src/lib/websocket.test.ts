@@ -542,6 +542,39 @@ describe('handleMessage dispatch', () => {
     })
   })
 
+  it('returns true when sending stroke successfully', () => {
+    const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+    gameWs.connect()
+    mockSocket.simulateOpen()
+
+    const stroke: Stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: Date.now(),
+    }
+    const result = gameWs.sendStroke(stroke)
+    expect(result).toBe(true)
+  })
+
+  it('returns false when sending stroke while not connected', () => {
+    const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+    gameWs.connect()
+    // Socket is in CONNECTING state, not OPEN
+    const stroke: Stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: Date.now(),
+    }
+    const result = gameWs.sendStroke(stroke)
+    expect(result).toBe(false)
+  })
+
   it('warns and returns false when sending while not connected', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
