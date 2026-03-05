@@ -220,6 +220,9 @@ export class GameWebSocket {
         console.error('Server error:', data.message)
         this.handlers.onServerError?.(data.message)
         break
+      default:
+        console.warn(`GameWebSocket: Unhandled message type "${(data as { type: string }).type}"`)
+        break
     }
   }
 
