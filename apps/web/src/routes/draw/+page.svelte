@@ -255,20 +255,13 @@
         const alreadyApplied = fills.some((f) => f.id === fill.id)
         if (!alreadyApplied) {
           fills = [...fills, fill]
-          // Add to undo stack for both new fills and redo echoes
-          // (redo no longer pre-adds to undoStack since server generates new fill ID)
           if (isCurrentDrawer) {
-            undoStack = pushBoundedUndo(
-              undoStack,
-              { type: 'fill', fillId: fill.id, fill },
-              MAX_UNDO_DEPTH
-            )
             // Check if this fill came from a redo - if so, don't clear redoStack
             // Use nonce for unique matching instead of coordinates to handle repeated fills
             const redoFillInfo = fill.nonce ? pendingRedoFills.get(fill.nonce) : undefined
             if (redoFillInfo) {
+              // Redo echo: insert at chronological position, do NOT clear redoStack
               pendingRedoFills.delete(fill.nonce!)
-              // Insert redo fill at correct position based on timestamp to maintain order
               const newItem: UndoItem = { type: 'fill', fillId: fill.id, fill }
               const insertIndex = undoStack.findIndex((item) => {
                 const itemTimestamp =
@@ -286,7 +279,13 @@
                 ].slice(0, MAX_UNDO_DEPTH)
               }
             } else {
-              redoStack = [] // Clear redo stack only for new actions, not redo echoes
+              // New fill: push once to undo stack and clear redo stack
+              undoStack = pushBoundedUndo(
+                undoStack,
+                { type: 'fill', fillId: fill.id, fill },
+                MAX_UNDO_DEPTH
+              )
+              redoStack = []
             }
           }
         }
