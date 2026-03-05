@@ -458,9 +458,10 @@
   }
 
   function handleFill(x: number, y: number, fillColor: string) {
-    // Fill is immediately reflected server-side; we'll add to fills when server echoes back
-    ws?.sendFill(x, y, fillColor)
-    // Redo stack is cleared when server confirms the fill (in onFill handler)
+    const sent = ws?.sendFill(x, y, fillColor)
+    if (sent === false) {
+      console.error('Canvas: Failed to send fill — WebSocket not open')
+    }
   }
 
   function handleUndo() {
@@ -525,6 +526,11 @@
   }
 
   function handleClear() {
+    const sent = ws?.sendClear()
+    if (sent === false) {
+      console.error('handleClear: WebSocket not open, clear was not sent to server')
+      return
+    }
     strokes = []
     fills = []
     undoStack = []
@@ -532,7 +538,6 @@
     pendingRedoFills = new Map()
     pendingRedoStrokes = new Map()
     canvasComponent?.clearCanvas()
-    ws?.sendClear()
   }
 
   function handleSendMessage(content: string) {

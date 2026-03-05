@@ -276,12 +276,12 @@ export class GameWebSocket {
     this.send({ type: 'undo-fill', fillId })
   }
 
-  sendFill(x: number, y: number, color: string, nonce?: string) {
-    this.send({ type: 'fill', x, y, color, nonce })
+  sendFill(x: number, y: number, color: string, nonce?: string): boolean {
+    return this.send({ type: 'fill', x, y, color, nonce })
   }
 
-  sendClear() {
-    this.send({ type: 'clear' })
+  sendClear(): boolean {
+    return this.send({ type: 'clear' })
   }
 
   sendChat(content: string) {
