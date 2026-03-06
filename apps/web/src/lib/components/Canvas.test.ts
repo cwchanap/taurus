@@ -458,11 +458,40 @@ describe('Canvas', () => {
     consoleWarnSpy.mockRestore()
   })
 
-  it('does not mark large canvas fills as processed so they can be retried', async () => {
+  it('marks oversized canvas fills as processed to prevent repeated retries', async () => {
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const fillId = 'fill-large-canvas'
+    const fillId = 'fill-oversized'
     const fillTimestamp = Date.now()
+
+    // Get the original app from pixiState
+    const originalApp = pixiState.apps[0]
+
+    // Create a mock with large canvas dimensions
+    const mockApp = {
+      canvas: document.createElement('canvas'),
+      screen: { width: 2000, height: 1001 }, // 2,002,000 pixels > MAX_FILL_PIXELS
+      stage: (
+        originalApp as {
+          stage: { emit: (e: string, p: { global: { x: number; y: number } }) => void }
+        }
+      ).stage,
+      init: vi.fn(async () => {}),
+      destroy: vi.fn(),
+      renderer: {
+        on: vi.fn(),
+        extract: {
+          pixels: vi.fn(() => {
+            // Return a large canvas: 2000x1001 = 2,002,000 pixels (> MAX_FILL_PIXELS)
+            return { pixels: new Uint8ClampedArray(2000 * 1001 * 4), width: 2000, height: 1001 }
+          }),
+        },
+      },
+    }
+
+    // Replace the app in pixiState
+    pixiState.apps[0] = mockApp
 
     render(Canvas, {
       color: '#4ECDC4',
@@ -489,14 +518,16 @@ describe('Canvas', () => {
     await tick()
     await tick()
 
-    // The default mock returns 8x8 canvas, so fill should work
-    // To test the large canvas scenario, we would need to mock a larger canvas
-    // which requires modifying the mock before render, which is complex.
-    // Instead, we verify the existing behavior works and rely on the code fix.
+    // The warning about oversized canvas should be shown
+    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('canvas too large'))
+    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining(fillId))
 
-    // For now, verify that the component renders without error with fills
-    expect(pixiState.apps.length).toBeGreaterThan(0)
+    // Verify extract.pixels was called
+    expect(mockApp.renderer.extract.pixels).toHaveBeenCalled()
 
+    // Restore
+    pixiState.apps[0] = originalApp
     consoleWarnSpy.mockRestore()
+    consoleErrorSpy.mockRestore()
   })
 })
