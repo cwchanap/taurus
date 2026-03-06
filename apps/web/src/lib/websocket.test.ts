@@ -957,6 +957,42 @@ describe('WebSocket reconnection', () => {
       )
     })
 
+    it('sendUndoStroke returns true when connected', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+      gameWs.connect()
+      mockWebSocketInstances[0].simulateOpen()
+
+      const result = gameWs.sendUndoStroke('stroke-1')
+      expect(result).toBe(true)
+    })
+
+    it('sendUndoStroke returns false when not connected', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+      gameWs.connect()
+      // Socket is in CONNECTING state, not OPEN
+
+      const result = gameWs.sendUndoStroke('stroke-1')
+      expect(result).toBe(false)
+    })
+
+    it('sendUndoFill returns true when connected', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+      gameWs.connect()
+      mockWebSocketInstances[0].simulateOpen()
+
+      const result = gameWs.sendUndoFill('fill-1')
+      expect(result).toBe(true)
+    })
+
+    it('sendUndoFill returns false when not connected', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+      gameWs.connect()
+      // Socket is in CONNECTING state, not OPEN
+
+      const result = gameWs.sendUndoFill('fill-1')
+      expect(result).toBe(false)
+    })
+
     it('logs parse errors for malformed server payloads without disconnecting', () => {
       const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
       const onConnectionChange = vi.fn()

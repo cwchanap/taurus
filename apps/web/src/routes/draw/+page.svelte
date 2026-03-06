@@ -466,15 +466,26 @@
 
   function handleUndo() {
     const next = applyUndoState(undoStack, redoStack, strokes, fills)
-    undoStack = next.undoStack
-    redoStack = next.redoStack
-    strokes = next.strokes
-    fills = next.fills
 
+    // Send undo message and check if it succeeded
+    let sendSucceeded = false
     if (next.action?.type === 'undo-stroke') {
-      ws?.sendUndoStroke(next.action.strokeId)
+      sendSucceeded = ws?.sendUndoStroke(next.action.strokeId) ?? false
     } else if (next.action?.type === 'undo-fill') {
-      ws?.sendUndoFill(next.action.fillId)
+      sendSucceeded = ws?.sendUndoFill(next.action.fillId) ?? false
+    } else {
+      // No action needed (empty stack), nothing to commit
+      return
+    }
+
+    // Only commit state changes if send succeeded
+    if (sendSucceeded) {
+      undoStack = next.undoStack
+      redoStack = next.redoStack
+      strokes = next.strokes
+      fills = next.fills
+    } else {
+      console.error('handleUndo: Failed to send undo action to server, preserving undo stack')
     }
   }
 
