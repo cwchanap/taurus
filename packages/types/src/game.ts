@@ -46,3 +46,6 @@ export const PALETTE_COLORS = [
 
 /** A color that is guaranteed to be one of the valid drawing palette colors */
 export type PaletteColor = (typeof PALETTE_COLORS)[number]
+
+/** Drawing tool types */
+export type Tool = 'pencil' | 'eraser' | 'fill'
