@@ -232,11 +232,15 @@
               undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)
             } else {
               // Insert at position to maintain chronological order
+              // Cap from the end to preserve newest entries
               undoStack = [
                 ...undoStack.slice(0, insertIndex),
                 newItem,
                 ...undoStack.slice(insertIndex),
-              ].slice(0, MAX_UNDO_DEPTH)
+              ]
+              if (undoStack.length > MAX_UNDO_DEPTH) {
+                undoStack = undoStack.slice(undoStack.length - MAX_UNDO_DEPTH)
+              }
             }
           }
         }
@@ -273,11 +277,15 @@
                 undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)
               } else {
                 // Insert at position to maintain chronological order
+                // Cap from the end to preserve newest entries
                 undoStack = [
                   ...undoStack.slice(0, insertIndex),
                   newItem,
                   ...undoStack.slice(insertIndex),
-                ].slice(0, MAX_UNDO_DEPTH)
+                ]
+                if (undoStack.length > MAX_UNDO_DEPTH) {
+                  undoStack = undoStack.slice(undoStack.length - MAX_UNDO_DEPTH)
+                }
               }
             } else {
               // New fill: push once to undo stack and clear redo stack

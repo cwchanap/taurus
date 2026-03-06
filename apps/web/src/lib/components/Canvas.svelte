@@ -324,14 +324,14 @@
     }
 
     // Guard against browser freeze on very large canvas fills
-    // Note: We do NOT mark as processed (fillGraphics.set) so the fill can be retried
-    // if the canvas size changes (e.g., window resize)
     const MAX_FILL_PIXELS = 2_000_000
     if (width * height > MAX_FILL_PIXELS) {
       console.warn(
         `Canvas: Fill ${fill.id} skipped — canvas too large (${width * height} pixels > ${MAX_FILL_PIXELS} limit). Fill will be retried if canvas size changes.`
       )
-      // Don't mark as processed - allow retry when canvas size changes
+      // Mark as processed (with null) to prevent reprocessing, but allow retry
+      // when canvas size changes by checking dimensions before this point
+      fillGraphics.set(fill.id, null)
       return
     }
 
