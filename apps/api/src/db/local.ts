@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import { join } from 'path'
 
 let localDB: ReturnType<typeof drizzle> | null = null
+let sqliteInstance: Database | null = null
 
 export function initializeLocalDB() {
   if (localDB) return localDB
@@ -27,8 +28,17 @@ export function initializeLocalDB() {
     throw new Error(`Failed to run migrations from "${migrationsFolder}": ${e}`)
   }
 
+  sqliteInstance = sqlite
   localDB = db
   return localDB
+}
+
+export function closeLocalDB() {
+  if (sqliteInstance) {
+    sqliteInstance.close()
+    sqliteInstance = null
+  }
+  localDB = null
 }
 
 export function getLocalDB() {

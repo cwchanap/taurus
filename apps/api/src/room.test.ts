@@ -393,7 +393,9 @@ describe('DrawingRoom - Player Leave During Game', () => {
     mockStorageGet.mockImplementation((key: string) => {
       switch (key) {
         case 'strokes':
-          return Promise.resolve([{ id: 's1', playerId: 'p1', points: [], color: '#000', size: 4 }])
+          return Promise.resolve([
+            { id: 's1', playerId: 'p1', points: [], color: '#000', size: 4, timestamp: Date.now() },
+          ])
         case 'fills':
           return Promise.resolve([])
         case 'created':

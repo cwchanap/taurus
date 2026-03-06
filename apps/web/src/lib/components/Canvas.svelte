@@ -1,9 +1,7 @@
 <script lang="ts">
   import { Application, Graphics, Container } from 'pixi.js'
   import { onMount, onDestroy } from 'svelte'
-  import type { Point, Stroke, FillOperation, PaletteColor } from '@repo/types'
-
-  type Tool = 'pencil' | 'eraser' | 'fill'
+  import type { Point, Stroke, FillOperation, PaletteColor, Tool } from '@repo/types'
 
   interface Props {
     color: PaletteColor

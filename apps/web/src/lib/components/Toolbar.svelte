@@ -1,8 +1,6 @@
 <script lang="ts">
   import { PALETTE_COLORS } from '@repo/types'
-  import type { PaletteColor } from '@repo/types'
-
-  type Tool = 'pencil' | 'eraser' | 'fill'
+  import type { PaletteColor, Tool } from '@repo/types'
 
   interface Props {
     color: PaletteColor
