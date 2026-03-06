@@ -465,35 +465,8 @@ describe('Canvas', () => {
     const fillId = 'fill-oversized'
     const fillTimestamp = Date.now()
 
-    // Get the original app from pixiState
-    const originalApp = pixiState.apps[0]
-
-    // Create a mock with large canvas dimensions
-    const mockApp = {
-      canvas: document.createElement('canvas'),
-      screen: { width: 2000, height: 1001 }, // 2,002,000 pixels > MAX_FILL_PIXELS
-      stage: (
-        originalApp as {
-          stage: { emit: (e: string, p: { global: { x: number; y: number } }) => void }
-        }
-      ).stage,
-      init: vi.fn(async () => {}),
-      destroy: vi.fn(),
-      renderer: {
-        on: vi.fn(),
-        extract: {
-          pixels: vi.fn(() => {
-            // Return a large canvas: 2000x1001 = 2,002,000 pixels (> MAX_FILL_PIXELS)
-            return { pixels: new Uint8ClampedArray(2000 * 1001 * 4), width: 2000, height: 1001 }
-          }),
-        },
-      },
-    }
-
-    // Replace the app in pixiState
-    pixiState.apps[0] = mockApp
-
-    render(Canvas, {
+    // Render initially
+    const { rerender } = render(Canvas, {
       color: '#4ECDC4',
       brushSize: 8,
       tool: 'pencil',
@@ -502,8 +475,8 @@ describe('Canvas', () => {
         {
           id: fillId,
           playerId: 'player-1',
-          x: 100,
-          y: 100,
+          x: 3,
+          y: 4,
           color: '#FF6B6B',
           timestamp: fillTimestamp,
         },
@@ -518,15 +491,50 @@ describe('Canvas', () => {
     await tick()
     await tick()
 
+    const app = pixiState.apps[0] as {
+      screen: { width: number; height: number }
+      renderer: { extract: { pixels: ReturnType<typeof vi.fn> } }
+    }
+
+    // Modify screen to simulate large canvas after it's been created
+    app.screen = { width: 2000, height: 1001 }
+    app.renderer.extract.pixels = vi.fn(() => {
+      return { pixels: new Uint8ClampedArray(2000 * 1001 * 4), width: 2000, height: 1001 }
+    })
+
+    // Re-render with a new fill to trigger processing with large canvas
+    await rerender({
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [],
+      fills: [
+        {
+          id: fillId + '-new',
+          playerId: 'player-1',
+          x: 100,
+          y: 100,
+          color: '#FF6B6B',
+          timestamp: fillTimestamp + 1,
+        },
+      ],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+    await tick()
+
     // The warning about oversized canvas should be shown
     expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('canvas too large'))
-    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining(fillId))
+    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining(fillId + '-new'))
 
     // Verify extract.pixels was called
-    expect(mockApp.renderer.extract.pixels).toHaveBeenCalled()
+    expect(app.renderer.extract.pixels).toHaveBeenCalled()
 
-    // Restore
-    pixiState.apps[0] = originalApp
     consoleWarnSpy.mockRestore()
     consoleErrorSpy.mockRestore()
   })
