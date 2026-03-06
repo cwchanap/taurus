@@ -271,12 +271,12 @@ export class GameWebSocket {
     this.send({ type: 'stroke-update', strokeId, point })
   }
 
-  sendUndoStroke(strokeId: string) {
-    this.send({ type: 'undo-stroke', strokeId })
+  sendUndoStroke(strokeId: string): boolean {
+    return this.send({ type: 'undo-stroke', strokeId })
   }
 
-  sendUndoFill(fillId: string) {
-    this.send({ type: 'undo-fill', fillId })
+  sendUndoFill(fillId: string): boolean {
+    return this.send({ type: 'undo-fill', fillId })
   }
 
   sendFill(x: number, y: number, color: PaletteColor, nonce?: string): boolean {
