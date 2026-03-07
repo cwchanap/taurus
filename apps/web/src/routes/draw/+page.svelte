@@ -85,6 +85,7 @@
   let fills = $state<FillOperation[]>([])
   let undoStack = $state<UndoItem[]>([])
   let redoStack = $state<UndoItem[]>([])
+  let redoInProgress = $state(false)
   let pendingRedoFills = $state<Map<string, { item: UndoItem; timestamp: number }>>(new Map())
   let pendingRedoStrokes = $state<Map<string, UndoItem>>(new Map())
   let pendingUndoStrokes = $state<Map<string, UndoItem>>(new Map())
@@ -173,6 +174,7 @@
         fills = fillList
         undoStack = []
         redoStack = []
+        redoInProgress = false
         pendingRedoFills = new Map()
         pendingRedoStrokes = new Map()
         pendingUndoStrokes = new Map()
@@ -223,6 +225,8 @@
           const redoItem = pendingRedoStrokes.get(stroke.id)
           if (redoItem && redoItem.type === 'stroke') {
             pendingRedoStrokes.delete(stroke.id)
+            // Clear the in-progress flag as we've received server confirmation
+            redoInProgress = false
             // Remove the confirmed redo entry from redoStack to prevent repeated redos
             redoStack = redoStack.filter((item) => item !== redoItem)
             // Insert redo stroke at correct position based on timestamp to maintain order
@@ -279,6 +283,8 @@
             if (redoFillInfo) {
               // Redo echo: insert at chronological position, remove from redoStack
               pendingRedoFills.delete(fill.nonce!)
+              // Clear the in-progress flag as we've received server confirmation
+              redoInProgress = false
               // Remove the confirmed redo entry from redoStack to prevent repeated redos
               redoStack = redoStack.filter((item) => item !== redoFillInfo.item)
               const newItem: UndoItem = { type: 'fill', fillId: fill.id, fill }
@@ -329,6 +335,7 @@
         fills = []
         undoStack = []
         redoStack = []
+        redoInProgress = false
         pendingRedoFills = new Map()
         pendingRedoStrokes = new Map()
         pendingUndoStrokes = new Map()
@@ -376,6 +383,7 @@
         lastRoundResult = next.lastRoundResult
         undoStack = next.undoStack
         redoStack = next.redoStack
+        redoInProgress = false
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
         // Clear any pending correct-guess timeout before resetting notification
@@ -442,6 +450,7 @@
         fills = next.fills
         undoStack = next.undoStack
         redoStack = next.redoStack
+        redoInProgress = false
         correctGuessNotification = next.correctGuessNotification
         systemNotification = next.systemNotification
         pendingUndoStrokes = new Map()
@@ -540,6 +549,12 @@
   }
 
   function handleRedo() {
+    // Prevent duplicate redo submissions while waiting for server acknowledgment
+    if (redoInProgress) {
+      console.log('handleRedo: Redo already in progress, ignoring duplicate request')
+      return
+    }
+
     // Capture the item BEFORE applyRedoState removes it from the stack
     const item = redoStack[redoStack.length - 1]
     const next = applyRedoState(redoStack, undoStack, strokes, fills)
@@ -566,7 +581,13 @@
 
     if (!sendSucceeded) {
       console.error('handleRedo: Failed to send redo action to server, preserving redo stack')
+      redoInProgress = false
+      return
     }
+
+    // Set flag to prevent duplicate submissions while waiting for server acknowledgment
+    redoInProgress = true
+
     // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server
     // confirmation via onStroke/onFill handlers to prevent desync when server
     // rejects the redo (e.g., round ended, sender is not the drawer)
@@ -604,6 +625,7 @@
     fills = []
     undoStack = []
     redoStack = []
+    redoInProgress = false
     pendingRedoFills = new Map()
     pendingRedoStrokes = new Map()
     pendingUndoStrokes = new Map()
@@ -628,6 +650,7 @@
     fills = []
     undoStack = []
     redoStack = []
+    redoInProgress = false
     pendingRedoFills = new Map()
     pendingRedoStrokes = new Map()
     pendingUndoStrokes = new Map()
