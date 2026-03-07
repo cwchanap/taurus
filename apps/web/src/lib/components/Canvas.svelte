@@ -290,12 +290,10 @@
     const targetY = Math.round(fill.y)
 
     if (targetX < 0 || targetX >= width || targetY < 0 || targetY >= height) {
-      // Mark as processed to prevent repeated retries
-      // Use null to indicate this fill was skipped (already handled by cleanup logic)
-      fillGraphics.set(fill.id, null)
       console.warn(
-        `Canvas: Fill ${fill.id} at (${targetX},${targetY}) out of bounds (${width}x${height}), skipping`
+        `Canvas: Fill ${fill.id} at (${targetX},${targetY}) out of bounds (${width}x${height}), retrying on next reconciliation`
       )
+      // Don't mark as processed to allow retry when canvas size changes
       return
     }
 
@@ -303,8 +301,9 @@
     const fillColor = hexToRgb(fill.color)
     if (!fillColor) {
       console.error(
-        `Canvas: Cannot parse fill color "${fill.color}" for fill ${fill.id}. Skipping.`
+        `Canvas: Cannot parse fill color "${fill.color}" for fill ${fill.id}. Permanently skipping.`
       )
+      // Mark as permanently failed - invalid color won't change
       fillGraphics.set(fill.id, null)
       return
     }
@@ -317,19 +316,18 @@
 
     // Don't fill if already the same color
     if (targetR === fillColor.r && targetG === fillColor.g && targetB === fillColor.b) {
-      fillGraphics.set(fill.id, null)
+      // Don't mark as processed - color could change if other drawings occur
       return
     }
 
     // Guard against browser freeze on very large canvas fills
-    const MAX_FILL_PIXELS = 2_000_000
+    // Increased to 12M to handle high-DPI/retina displays (e.g., 4K 3840x2160 = 8.3M)
+    const MAX_FILL_PIXELS = 12_000_000
     if (width * height > MAX_FILL_PIXELS) {
       console.warn(
-        `Canvas: Fill ${fill.id} skipped — canvas too large (${width * height} pixels > ${MAX_FILL_PIXELS} limit). Fill will be retried if canvas size changes.`
+        `Canvas: Fill ${fill.id} skipped — canvas too large (${width * height} pixels > ${MAX_FILL_PIXELS} limit). Retrying on next reconciliation.`
       )
-      // Mark as processed (with null) to prevent reprocessing, but allow retry
-      // when canvas size changes by checking dimensions before this point
-      fillGraphics.set(fill.id, null)
+      // Don't mark as processed to allow retry when canvas size changes
       return
     }
 

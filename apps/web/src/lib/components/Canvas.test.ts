@@ -3,12 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/svelte'
 import { tick } from 'svelte'
 import Canvas from './Canvas.svelte'
+import type { FillOperation } from '@repo/types'
 
-const pixiState = vi.hoisted(() => {
-  return {
-    apps: [] as unknown[],
-  }
-})
+// Shared state for mock apps
+const pixiState: { apps: unknown[] } = { apps: [] }
 
 vi.mock('pixi.js', () => {
   class MockGraphics {
@@ -413,7 +411,7 @@ describe('Canvas', () => {
     expect(destroyed.length).toBeGreaterThan(0)
   })
 
-  it('marks out-of-bounds fills as processed to prevent repeated retries', async () => {
+  it('warns on out-of-bounds fills and retries on next reconciliation', async () => {
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const fillId = 'fill-out-of-bounds'
@@ -458,7 +456,7 @@ describe('Canvas', () => {
     consoleWarnSpy.mockRestore()
   })
 
-  it('marks oversized canvas fills as processed to prevent repeated retries', async () => {
+  it('warns on oversized canvas fills and retries on next reconciliation', async () => {
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
@@ -496,10 +494,11 @@ describe('Canvas', () => {
       renderer: { extract: { pixels: ReturnType<typeof vi.fn> } }
     }
 
-    // Modify screen to simulate large canvas after it's been created
-    app.screen = { width: 2000, height: 1001 }
+    // Modify screen to simulate very large canvas after it's been created
+    // 15000x1000 = 15M pixels, exceeds the 12M limit
+    app.screen = { width: 15000, height: 1000 }
     app.renderer.extract.pixels = vi.fn(() => {
-      return { pixels: new Uint8ClampedArray(2000 * 1001 * 4), width: 2000, height: 1001 }
+      return { pixels: new Uint8ClampedArray(15000 * 1000 * 4), width: 15000, height: 1000 }
     })
 
     // Re-render with a new fill to trigger processing with large canvas
@@ -536,6 +535,53 @@ describe('Canvas', () => {
     expect(app.renderer.extract.pixels).toHaveBeenCalled()
 
     consoleWarnSpy.mockRestore()
+    consoleErrorSpy.mockRestore()
+  })
+
+  it('marks permanently invalid fills (invalid color) as processed to prevent retries', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const fillId = 'fill-invalid-color'
+    const fillTimestamp = Date.now()
+
+    render(Canvas, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [],
+      // Test invalid color handling at runtime by casting to FillOperation
+      fills: [
+        {
+          id: fillId,
+          playerId: 'player-1',
+          x: 3,
+          y: 4,
+          color: 'not-a-color', // Invalid color format
+          timestamp: fillTimestamp,
+        } as unknown as FillOperation,
+      ],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+    await tick()
+
+    const app = pixiState.apps[0] as {
+      renderer: { extract: { pixels: ReturnType<typeof vi.fn> } }
+    }
+
+    // Should have called extract.pixels to check bounds before color parsing
+    expect(app.renderer.extract.pixels).toHaveBeenCalled()
+
+    // Should have logged an error about invalid color
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Cannot parse fill color'))
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(fillId))
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Permanently skipping'))
+
     consoleErrorSpy.mockRestore()
   })
 })
