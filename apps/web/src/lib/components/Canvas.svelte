@@ -327,7 +327,9 @@
 
     // Don't fill if already the same color
     if (targetR === fillColor.r && targetG === fillColor.g && targetB === fillColor.b) {
-      // Don't mark as processed - color could change if other drawings occur
+      // Mark as processed with null to prevent repeated pixel extraction
+      // No-op fills should not be re-evaluated even if the seed pixel changes later
+      fillGraphics.set(fill.id, null)
       return
     }
 

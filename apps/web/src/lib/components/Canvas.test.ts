@@ -584,4 +584,82 @@ describe('Canvas', () => {
 
     consoleErrorSpy.mockRestore()
   })
+
+  it('handles no-op fills without infinite loops or errors', async () => {
+    const fillId = 'fill-noop'
+    const fillTimestamp = Date.now()
+
+    const { rerender } = render(Canvas, {
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [],
+      fills: [
+        {
+          id: fillId,
+          playerId: 'player-1',
+          x: 3,
+          y: 4,
+          color: '#FF6B6B',
+          timestamp: fillTimestamp,
+        },
+      ],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+    await tick()
+
+    const app = pixiState.apps[0] as {
+      renderer: { extract: { pixels: ReturnType<typeof vi.fn> } }
+    }
+
+    const initialCallCount = app.renderer.extract.pixels.mock.calls.length
+
+    // Trigger reconciliation multiple times by adding strokes
+    await rerender({
+      color: '#4ECDC4',
+      brushSize: 8,
+      tool: 'pencil',
+      strokes: [
+        {
+          id: 's1',
+          playerId: 'player-1',
+          points: [{ x: 1, y: 1 }],
+          color: '#4ECDC4',
+          size: 8,
+          timestamp: fillTimestamp + 1,
+        },
+      ],
+      fills: [
+        {
+          id: fillId,
+          playerId: 'player-1',
+          x: 3,
+          y: 4,
+          color: '#FF6B6B',
+          timestamp: fillTimestamp,
+        },
+      ],
+      playerId: 'player-1',
+      onStrokeStart: vi.fn(),
+      onStrokeUpdate: vi.fn(),
+      onFill: vi.fn(),
+      disabled: false,
+    })
+
+    await tick()
+    await tick()
+
+    // After reconciliation, extract.pixels should have been called one more time
+    // for the fill's initial processing (if it was a no-op)
+    const finalCallCount = app.renderer.extract.pixels.mock.calls.length
+
+    // The call count should not have increased dramatically (would indicate infinite loop)
+    expect(finalCallCount - initialCallCount).toBeLessThan(3)
+  })
 })
