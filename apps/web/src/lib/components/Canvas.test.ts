@@ -531,8 +531,8 @@ describe('Canvas', () => {
     expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('canvas too large'))
     expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining(fillId + '-new'))
 
-    // Verify extract.pixels was called
-    expect(app.renderer.extract.pixels).toHaveBeenCalled()
+    // Verify the cheap screen-size guard prevented pixel extraction
+    expect(app.renderer.extract.pixels).not.toHaveBeenCalled()
 
     consoleWarnSpy.mockRestore()
     consoleErrorSpy.mockRestore()

@@ -30,6 +30,7 @@
   }: Props = $props()
 
   const CANVAS_BG = '#1a1a2e'
+  const MAX_FILL_PIXELS = 12_000_000
 
   let container: HTMLDivElement
   let mounted = false
@@ -267,6 +268,16 @@
   function applyFill(fill: FillOperation) {
     if (!app || !drawingContainer) return
 
+    const screenWidth = app.screen.width
+    const screenHeight = app.screen.height
+
+    if (screenWidth > 0 && screenHeight > 0 && screenWidth * screenHeight > MAX_FILL_PIXELS) {
+      console.warn(
+        `Canvas: Fill ${fill.id} skipped — canvas too large (${screenWidth * screenHeight} pixels > ${MAX_FILL_PIXELS} limit). Retrying on next reconciliation.`
+      )
+      return
+    }
+
     // Extract from the full stage (includes background layer) so empty canvas areas
     // read as the background color rather than transparent, preventing runaway fills.
     let extracted: { pixels: Uint8ClampedArray; width: number; height: number }
@@ -317,17 +328,6 @@
     // Don't fill if already the same color
     if (targetR === fillColor.r && targetG === fillColor.g && targetB === fillColor.b) {
       // Don't mark as processed - color could change if other drawings occur
-      return
-    }
-
-    // Guard against browser freeze on very large canvas fills
-    // Increased to 12M to handle high-DPI/retina displays (e.g., 4K 3840x2160 = 8.3M)
-    const MAX_FILL_PIXELS = 12_000_000
-    if (width * height > MAX_FILL_PIXELS) {
-      console.warn(
-        `Canvas: Fill ${fill.id} skipped — canvas too large (${width * height} pixels > ${MAX_FILL_PIXELS} limit). Retrying on next reconciliation.`
-      )
-      // Don't mark as processed to allow retry when canvas size changes
       return
     }
 
@@ -383,11 +383,13 @@
     fillColor: { r: number; g: number; b: number }
   ): Uint8Array {
     const filled = new Uint8Array(width * height)
+    const visited = new Uint8Array(width * height)
     const stack: number[] = [startY * width + startX]
 
     while (stack.length > 0) {
       const pos = stack.pop()!
-      if (filled[pos]) continue
+      if (visited[pos]) continue
+      visited[pos] = 1
 
       const x = pos % width
       const y = Math.floor(pos / width)
