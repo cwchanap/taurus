@@ -85,10 +85,8 @@
   let fills = $state<FillOperation[]>([])
   let undoStack = $state<UndoItem[]>([])
   let redoStack = $state<UndoItem[]>([])
-  let pendingRedoFills = $state<
-    Map<string, { x: number; y: number; color: PaletteColor; timestamp: number }>
-  >(new Map())
-  let pendingRedoStrokes = $state<Map<string, number>>(new Map())
+  let pendingRedoFills = $state<Map<string, { item: UndoItem; timestamp: number }>>(new Map())
+  let pendingRedoStrokes = $state<Map<string, UndoItem>>(new Map())
   let pendingUndoStrokes = $state<Map<string, UndoItem>>(new Map())
   let pendingUndoFills = $state<Map<string, UndoItem>>(new Map())
 
@@ -222,15 +220,17 @@
           strokes = [...strokes, stroke]
           canvasComponent?.addRemoteStroke(stroke)
           // Check if this stroke came from a redo
-          const redoTimestamp = pendingRedoStrokes.get(stroke.id)
-          if (redoTimestamp !== undefined) {
+          const redoItem = pendingRedoStrokes.get(stroke.id)
+          if (redoItem && redoItem.type === 'stroke') {
             pendingRedoStrokes.delete(stroke.id)
+            // Remove the confirmed redo entry from redoStack to prevent repeated redos
+            redoStack = redoStack.filter((item) => item !== redoItem)
             // Insert redo stroke at correct position based on timestamp to maintain order
             const newItem: UndoItem = { type: 'stroke', strokeId: stroke.id, stroke }
             const insertIndex = undoStack.findIndex((item) => {
               const itemTimestamp =
                 item.type === 'stroke' ? item.stroke.timestamp : item.fill.timestamp
-              return itemTimestamp > redoTimestamp
+              return itemTimestamp > redoItem.stroke.timestamp
             })
             if (insertIndex === -1) {
               undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)
@@ -277,8 +277,10 @@
             // Use nonce for unique matching instead of coordinates to handle repeated fills
             const redoFillInfo = fill.nonce ? pendingRedoFills.get(fill.nonce) : undefined
             if (redoFillInfo) {
-              // Redo echo: insert at chronological position, do NOT clear redoStack
+              // Redo echo: insert at chronological position, remove from redoStack
               pendingRedoFills.delete(fill.nonce!)
+              // Remove the confirmed redo entry from redoStack to prevent repeated redos
+              redoStack = redoStack.filter((item) => item !== redoFillInfo.item)
               const newItem: UndoItem = { type: 'fill', fillId: fill.id, fill }
               const insertIndex = undoStack.findIndex((item) => {
                 const itemTimestamp =
@@ -538,6 +540,8 @@
   }
 
   function handleRedo() {
+    // Capture the item BEFORE applyRedoState removes it from the stack
+    const item = redoStack[redoStack.length - 1]
     const next = applyRedoState(redoStack, undoStack, strokes, fills)
 
     // Check if there's an action to send
@@ -547,21 +551,16 @@
     }
 
     let sendSucceeded = false
-    if (next.action?.type === 'send-stroke') {
-      // Track this as a pending redo stroke so onStroke handler can add to undoStack
-      // Store timestamp to preserve ordering when server echo arrives
-      pendingRedoStrokes.set(next.action.stroke.id, Date.now())
+    if (item.type === 'stroke' && next.action?.type === 'send-stroke') {
+      // Track the UndoItem from redoStack so onStroke can remove it when confirmed
+      pendingRedoStrokes.set(next.action.stroke.id, item)
       sendSucceeded = ws?.sendStroke(next.action.stroke) ?? false
-    } else if (next.action?.type === 'send-fill') {
+    } else if (item.type === 'fill' && next.action?.type === 'send-fill') {
       // Generate unique nonce for this redo fill to distinguish from other fills
       // with same coordinates/color
       const nonce = crypto.randomUUID()
-      pendingRedoFills.set(nonce, {
-        x: next.action.x,
-        y: next.action.y,
-        color: next.action.color,
-        timestamp: Date.now(),
-      })
+      // Track the UndoItem from redoStack and timestamp for ordering
+      pendingRedoFills.set(nonce, { item, timestamp: Date.now() })
       sendSucceeded = ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce) ?? false
     }
 
@@ -571,7 +570,7 @@
     // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server
     // confirmation via onStroke/onFill handlers to prevent desync when server
     // rejects the redo (e.g., round ended, sender is not the drawer)
-    // The onStroke/onFill handlers already have logic to handle pending redo operations
+    // The onStroke/onFill handlers will remove the item from redoStack when confirmed
   }
 
   function handleKeyDown(event: KeyboardEvent) {
