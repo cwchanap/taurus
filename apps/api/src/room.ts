@@ -111,7 +111,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
   private async ensureInitialized() {
     if (!this.initialized) {
-      this.strokes = (await this.ctx.storage.get<Stroke[]>('strokes')) || []
+      const storedStrokes = (await this.ctx.storage.get<Stroke[]>('strokes')) || []
+      this.strokes = storedStrokes.map((stroke, index) => {
+        if (typeof stroke.timestamp === 'number' && Number.isFinite(stroke.timestamp)) {
+          return stroke
+        }
+
+        return {
+          ...stroke,
+          timestamp: index,
+        }
+      })
       this.fills = (await this.ctx.storage.get<FillOperation[]>('fills')) || []
       this.created = (await this.ctx.storage.get<boolean>('created')) || false
       const storedChatHistory = (await this.ctx.storage.get<ChatMessage[]>('chatHistory')) || []
@@ -1036,7 +1046,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.fills.push(fill)
     this.scheduleStorageWrite('fills')
 
-    this.broadcast({
+    const fillMessage = {
       type: 'fill',
       id: fill.id,
       playerId: fill.playerId,
@@ -1044,8 +1054,20 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       y: fill.y,
       color: fill.color,
       timestamp: fill.timestamp,
-      nonce: typeof data.nonce === 'string' && data.nonce.length <= 36 ? data.nonce : undefined,
-    })
+    }
+    const nonce = typeof data.nonce === 'string' && data.nonce.length <= 36 ? data.nonce : undefined
+
+    if (nonce) {
+      this.broadcast(fillMessage, ws)
+      try {
+        ws.send(JSON.stringify({ ...fillMessage, nonce }))
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
+
+    this.broadcast(fillMessage)
   }
 
   private async handleChat(ws: WebSocket, data: Message & { content: string }) {

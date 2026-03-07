@@ -417,6 +417,53 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect(mockStoragePut).toHaveBeenCalledWith('created', true)
   })
 
+  test('ensureInitialized backfills missing legacy stroke timestamps', async () => {
+    const validTimestamp = Date.now()
+
+    mockStorageGet.mockImplementation((key: string) => {
+      switch (key) {
+        case 'strokes':
+          return Promise.resolve([
+            {
+              id: 'legacy-stroke',
+              playerId: 'p1',
+              points: [{ x: 1, y: 1 }],
+              color: '#FF6B6B',
+              size: 4,
+            },
+            {
+              id: 'modern-stroke',
+              playerId: 'p2',
+              points: [{ x: 2, y: 2 }],
+              color: '#4ECDC4',
+              size: 6,
+              timestamp: validTimestamp,
+            },
+          ])
+        case 'fills':
+          return Promise.resolve([])
+        case 'created':
+          return Promise.resolve(true)
+        case 'chatHistory':
+          return Promise.resolve([])
+        case 'hostPlayerId':
+          return Promise.resolve(null)
+        case 'gameState':
+          return Promise.resolve(undefined)
+        default:
+          return Promise.resolve(undefined)
+      }
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).ensureInitialized()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).strokes[0].timestamp).toBe(0)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).strokes[1].timestamp).toBe(validTimestamp)
+  })
+
   test('resumeGameFlowFromState ends expired playing round immediately', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
@@ -942,6 +989,31 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     // Storage put should have been called for fills
     const fillPutCalls = mockStoragePut.mock.calls.filter((call) => call[0] === 'fills')
     expect(fillPutCalls.length).toBeGreaterThan(0)
+  })
+
+  test('handleFill: echoes nonce only to the originating client', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    const observerWs = createMockWs('player-2', 'Observer')
+    mockGetWebSockets.mockReturnValue([drawerWs, observerWs])
+    setPlayingState('player-1')
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({
+        type: 'fill',
+        x: 100,
+        y: 200,
+        color: '#FF6B6B',
+        nonce: 'nonce-123',
+      })
+    )
+    await flushPromises()
+
+    const drawerFill = getSentMessages(drawerWs).find((m) => m?.type === 'fill')
+    const observerFill = getSentMessages(observerWs).find((m) => m?.type === 'fill')
+
+    expect(drawerFill?.nonce).toBe('nonce-123')
+    expect(observerFill?.nonce).toBeUndefined()
   })
 
   test('handleFill: fill with out-of-bounds x coordinate is rejected and nothing broadcast', async () => {
