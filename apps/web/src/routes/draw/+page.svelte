@@ -89,6 +89,8 @@
     Map<string, { x: number; y: number; color: PaletteColor; timestamp: number }>
   >(new Map())
   let pendingRedoStrokes = $state<Map<string, number>>(new Map())
+  let pendingUndoStrokes = $state<Map<string, UndoItem>>(new Map())
+  let pendingUndoFills = $state<Map<string, UndoItem>>(new Map())
 
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
@@ -175,6 +177,8 @@
         redoStack = []
         pendingRedoFills = new Map()
         pendingRedoStrokes = new Map()
+        pendingUndoStrokes = new Map()
+        pendingUndoFills = new Map()
         chatMessages = chatHistory
         // Initialize game state from server
         gameStatus = initialGameState.status
@@ -254,6 +258,14 @@
       },
       onStrokeRemoved: (strokeId) => {
         strokes = strokes.filter((s) => s.id !== strokeId)
+        // Check if this is a pending undo operation
+        const pendingItem = pendingUndoStrokes.get(strokeId)
+        if (pendingItem) {
+          // Server confirmed the undo - commit the state changes
+          undoStack = undoStack.filter((item) => item !== pendingItem)
+          redoStack = pushBoundedUndo(redoStack, pendingItem, MAX_UNDO_DEPTH)
+          pendingUndoStrokes.delete(strokeId)
+        }
       },
       onFill: (fill) => {
         // Deduplicate by server fill id
@@ -301,6 +313,14 @@
       },
       onFillRemoved: (fillId) => {
         fills = fills.filter((f) => f.id !== fillId)
+        // Check if this is a pending undo operation
+        const pendingItem = pendingUndoFills.get(fillId)
+        if (pendingItem) {
+          // Server confirmed the undo - commit the state changes
+          undoStack = undoStack.filter((item) => item !== pendingItem)
+          redoStack = pushBoundedUndo(redoStack, pendingItem, MAX_UNDO_DEPTH)
+          pendingUndoFills.delete(fillId)
+        }
       },
       onClear: () => {
         strokes = []
@@ -309,6 +329,8 @@
         redoStack = []
         pendingRedoFills = new Map()
         pendingRedoStrokes = new Map()
+        pendingUndoStrokes = new Map()
+        pendingUndoFills = new Map()
         canvasComponent?.clearCanvas()
       },
       onChat: (message) => {
@@ -352,6 +374,8 @@
         lastRoundResult = next.lastRoundResult
         undoStack = next.undoStack
         redoStack = next.redoStack
+        pendingUndoStrokes = new Map()
+        pendingUndoFills = new Map()
         // Clear any pending correct-guess timeout before resetting notification
         if (correctGuessTimeoutId) {
           clearTimeout(correctGuessTimeoutId)
@@ -418,6 +442,8 @@
         redoStack = next.redoStack
         correctGuessNotification = next.correctGuessNotification
         systemNotification = next.systemNotification
+        pendingUndoStrokes = new Map()
+        pendingUndoFills = new Map()
         canvasComponent?.clearCanvas()
       },
     })
@@ -475,32 +501,52 @@
   function handleUndo() {
     const next = applyUndoState(undoStack, redoStack, strokes, fills)
 
-    // Send undo message and check if it succeeded
-    let sendSucceeded = false
-    if (next.action?.type === 'undo-stroke') {
-      sendSucceeded = ws?.sendUndoStroke(next.action.strokeId) ?? false
-    } else if (next.action?.type === 'undo-fill') {
-      sendSucceeded = ws?.sendUndoFill(next.action.fillId) ?? false
-    } else {
+    // Check if there's an action to send
+    if (!next.action) {
       // No action needed (empty stack), nothing to commit
       return
     }
 
-    // Only commit state changes if send succeeded
-    if (sendSucceeded) {
-      undoStack = next.undoStack
-      redoStack = next.redoStack
-      strokes = next.strokes
-      fills = next.fills
-    } else {
+    // Send undo message to server
+    let sendSucceeded = false
+    if (next.action?.type === 'undo-stroke') {
+      sendSucceeded = ws?.sendUndoStroke(next.action.strokeId) ?? false
+      if (sendSucceeded) {
+        // Track as pending undo - server will confirm with stroke-removed
+        const item = undoStack[undoStack.length - 1]
+        if (item) {
+          pendingUndoStrokes.set(next.action.strokeId, item)
+        }
+      }
+    } else if (next.action?.type === 'undo-fill') {
+      sendSucceeded = ws?.sendUndoFill(next.action.fillId) ?? false
+      if (sendSucceeded) {
+        // Track as pending undo - server will confirm with fill-removed
+        const item = undoStack[undoStack.length - 1]
+        if (item) {
+          pendingUndoFills.set(next.action.fillId, item)
+        }
+      }
+    }
+
+    if (!sendSucceeded) {
       console.error('handleUndo: Failed to send undo action to server, preserving undo stack')
     }
+    // NOTE: We do NOT commit state changes here. We wait for server confirmation
+    // via onStrokeRemoved/onFillRemoved handlers to prevent desync when server
+    // rejects the undo (e.g., round ended, sender is not the drawer)
   }
 
   function handleRedo() {
     const next = applyRedoState(redoStack, undoStack, strokes, fills)
-    let sendSucceeded = false
 
+    // Check if there's an action to send
+    if (!next.action) {
+      // No action needed (empty stack), nothing to commit
+      return
+    }
+
+    let sendSucceeded = false
     if (next.action?.type === 'send-stroke') {
       // Track this as a pending redo stroke so onStroke handler can add to undoStack
       // Store timestamp to preserve ordering when server echo arrives
@@ -517,20 +563,15 @@
         timestamp: Date.now(),
       })
       sendSucceeded = ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce) ?? false
-    } else {
-      // No network action needed, commit immediately
-      sendSucceeded = true
     }
 
-    // Only commit state changes if send succeeded or no network action was needed
-    if (sendSucceeded) {
-      redoStack = next.redoStack
-      undoStack = next.undoStack
-      strokes = next.strokes
-      fills = next.fills
-    } else {
+    if (!sendSucceeded) {
       console.error('handleRedo: Failed to send redo action to server, preserving redo stack')
     }
+    // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server
+    // confirmation via onStroke/onFill handlers to prevent desync when server
+    // rejects the redo (e.g., round ended, sender is not the drawer)
+    // The onStroke/onFill handlers already have logic to handle pending redo operations
   }
 
   function handleKeyDown(event: KeyboardEvent) {
@@ -566,6 +607,8 @@
     redoStack = []
     pendingRedoFills = new Map()
     pendingRedoStrokes = new Map()
+    pendingUndoStrokes = new Map()
+    pendingUndoFills = new Map()
     canvasComponent?.clearCanvas()
   }
 
@@ -588,6 +631,8 @@
     redoStack = []
     pendingRedoFills = new Map()
     pendingRedoStrokes = new Map()
+    pendingUndoStrokes = new Map()
+    pendingUndoFills = new Map()
     canvasComponent?.clearCanvas()
   }
 </script>

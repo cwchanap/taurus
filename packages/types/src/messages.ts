@@ -30,7 +30,7 @@ export interface Stroke {
 export interface ClientStrokePayload {
   id?: string // Optional - server generates if not provided or if collision
   playerId?: string // Optional and IGNORED - server uses authenticated session ID
-  color: string
+  color: PaletteColor
   size: number
   points: Point[]
   eraser?: boolean
