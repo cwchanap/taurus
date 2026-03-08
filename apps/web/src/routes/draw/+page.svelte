@@ -183,6 +183,10 @@
         errorMessage = message
         // Clear redo lock on server errors to allow retry
         redoInProgress = false
+        // Clear any pending undo operations since the server rejected them
+        // This prevents canUndo from staying false forever when undo fails
+        pendingUndoStrokes = new Map()
+        pendingUndoFills = new Map()
       },
       onInit: (
         id,
@@ -760,6 +764,10 @@
       console.warn('handleRedo: No acknowledgment received from server, clearing redo lock')
       redoInProgress = false
       redoTimeoutId = null
+      // Clear pending redo maps to prevent stale entries from blocking canRedo
+      // The redo item remains in redoStack for potential retry
+      pendingRedoStrokes = new Map()
+      pendingRedoFills = new Map()
     }, REDO_ACK_TIMEOUT_MS)
 
     // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server
