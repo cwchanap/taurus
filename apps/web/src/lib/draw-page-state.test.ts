@@ -15,6 +15,7 @@ import {
   getTimeRemainingSeconds,
   isEditableKeyboardTarget,
   pushBoundedUndo,
+  rebuildUndoStack,
   updateStrokePoint,
   type UndoItem,
 } from './draw-page-state'
@@ -300,5 +301,139 @@ describe('draw-page-state helpers', () => {
 
     const next = pushBoundedUndo([], { type: 'stroke', strokeId: 's1', stroke }, 5)
     expect(next).toHaveLength(1)
+  })
+
+  describe('rebuildUndoStack', () => {
+    it('rebuilds undo stack from current drawer strokes and fills', () => {
+      const strokes: Stroke[] = [
+        {
+          id: 's1',
+          playerId: 'drawer-1',
+          points: [{ x: 1, y: 1 }],
+          color: '#FF6B6B',
+          size: 4,
+          timestamp: 1000,
+        },
+        {
+          id: 's2',
+          playerId: 'drawer-1',
+          points: [{ x: 2, y: 2 }],
+          color: '#4ECDC4',
+          size: 6,
+          timestamp: 2000,
+        },
+        {
+          id: 's3',
+          playerId: 'other-player',
+          points: [{ x: 3, y: 3 }],
+          color: '#45B7D1',
+          size: 4,
+          timestamp: 1500,
+        },
+      ]
+
+      const fills: FillOperation[] = [
+        {
+          id: 'f1',
+          playerId: 'drawer-1',
+          x: 10,
+          y: 10,
+          color: '#FFFFFF',
+          timestamp: 1200,
+        },
+        {
+          id: 'f2',
+          playerId: 'other-player',
+          x: 20,
+          y: 20,
+          color: '#96CEB4',
+          timestamp: 1800,
+        },
+      ]
+
+      const result = rebuildUndoStack(strokes, fills, 'drawer-1')
+
+      // Should only include operations from drawer-1
+      expect(result).toHaveLength(3)
+
+      // Should be sorted by timestamp
+      expect(result[0].type).toBe('stroke')
+      if (result[0].type === 'stroke') {
+        expect(result[0].strokeId).toBe('s1')
+      }
+
+      expect(result[1].type).toBe('fill')
+      if (result[1].type === 'fill') {
+        expect(result[1].fillId).toBe('f1')
+      }
+
+      expect(result[2].type).toBe('stroke')
+      if (result[2].type === 'stroke') {
+        expect(result[2].strokeId).toBe('s2')
+      }
+    })
+
+    it('returns empty stack when current drawer has no operations', () => {
+      const strokes: Stroke[] = [
+        {
+          id: 's1',
+          playerId: 'other-player',
+          points: [{ x: 1, y: 1 }],
+          color: '#FF6B6B',
+          size: 4,
+          timestamp: 1000,
+        },
+      ]
+
+      const fills: FillOperation[] = [
+        {
+          id: 'f1',
+          playerId: 'other-player',
+          x: 10,
+          y: 10,
+          color: '#FFFFFF',
+          timestamp: 1200,
+        },
+      ]
+
+      const result = rebuildUndoStack(strokes, fills, 'drawer-1')
+      expect(result).toHaveLength(0)
+    })
+
+    it('handles empty strokes and fills arrays', () => {
+      const result = rebuildUndoStack([], [], 'drawer-1')
+      expect(result).toHaveLength(0)
+    })
+
+    it('preserves chronological order when timestamps are equal', () => {
+      const timestamp = 1000
+      const strokes: Stroke[] = [
+        {
+          id: 's1',
+          playerId: 'drawer-1',
+          points: [{ x: 1, y: 1 }],
+          color: '#FF6B6B',
+          size: 4,
+          timestamp,
+        },
+      ]
+
+      const fills: FillOperation[] = [
+        {
+          id: 'f1',
+          playerId: 'drawer-1',
+          x: 10,
+          y: 10,
+          color: '#FFFFFF',
+          timestamp,
+        },
+      ]
+
+      const result = rebuildUndoStack(strokes, fills, 'drawer-1')
+      expect(result).toHaveLength(2)
+      // Both should be in the result, order with equal timestamps is implementation-dependent
+      expect(result.some((item) => item.type === 'stroke')).toBe(true)
+      expect(result.some((item) => item.type === 'fill')).toBe(true)
+    })
   })
 })

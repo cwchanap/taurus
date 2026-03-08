@@ -22,6 +22,30 @@ export function pushBoundedUndo(
   return [...undoStack.slice(-(maxDepth - 1)), item]
 }
 
+export function rebuildUndoStack(
+  strokes: Stroke[],
+  fills: FillOperation[],
+  currentDrawerId: string
+): UndoItem[] {
+  // Filter operations by the current drawer's ID and sort by timestamp
+  const drawerStrokes = strokes
+    .filter((s) => s.playerId === currentDrawerId)
+    .map((s) => ({ type: 'stroke' as const, strokeId: s.id, stroke: s }))
+
+  const drawerFills = fills
+    .filter((f) => f.playerId === currentDrawerId)
+    .map((f) => ({ type: 'fill' as const, fillId: f.id, fill: f }))
+
+  // Combine and sort by timestamp to maintain chronological order
+  const allOperations = [...drawerStrokes, ...drawerFills].sort((a, b) => {
+    const aTimestamp = a.type === 'stroke' ? a.stroke.timestamp : a.fill.timestamp
+    const bTimestamp = b.type === 'stroke' ? b.stroke.timestamp : b.fill.timestamp
+    return aTimestamp - bTimestamp
+  })
+
+  return allOperations
+}
+
 export function updateStrokePoint(strokes: Stroke[], strokeId: string, point: Point): Stroke[] {
   const index = strokes.findIndex((stroke) => stroke.id === strokeId)
   if (index === -1) {
