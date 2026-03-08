@@ -94,6 +94,11 @@
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
   let correctGuessTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let redoTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+  // Clear redoInProgress flag after timeout if no acknowledgment received
+  // This handles cases where server silently drops the redo (e.g., round ended)
+  const REDO_ACK_TIMEOUT_MS = 5000
 
   // Derived state
   const isCurrentDrawer = $derived(playerId === currentDrawerId)
@@ -234,7 +239,7 @@
           if (redoItem && redoItem.type === 'stroke') {
             pendingRedoStrokes.delete(stroke.id)
             // Clear the in-progress flag as we've received server confirmation
-            redoInProgress = false
+            clearRedoLock()
             // Remove the confirmed redo entry from redoStack to prevent repeated redos
             redoStack = redoStack.filter((item) => item !== redoItem)
             // Insert redo stroke at correct position based on timestamp to maintain order
@@ -292,7 +297,7 @@
               // Redo echo: insert at chronological position, remove from redoStack
               pendingRedoFills.delete(fill.nonce!)
               // Clear the in-progress flag as we've received server confirmation
-              redoInProgress = false
+              clearRedoLock()
               // Remove the confirmed redo entry from redoStack to prevent repeated redos
               redoStack = redoStack.filter((item) => item !== redoFillInfo.item)
               const newItem: UndoItem = { type: 'fill', fillId: fill.id, fill }
@@ -478,6 +483,9 @@
     if (systemNotificationTimeoutId) {
       clearTimeout(systemNotificationTimeoutId)
     }
+    if (redoTimeoutId) {
+      clearTimeout(redoTimeoutId)
+    }
   })
 
   function handleStrokeStart(stroke: Stroke) {
@@ -596,10 +604,29 @@
     // Set flag to prevent duplicate submissions while waiting for server acknowledgment
     redoInProgress = true
 
+    // Set timeout to clear the flag if no acknowledgment is received
+    // This handles cases where server silently drops the redo (e.g., round ended)
+    if (redoTimeoutId) {
+      clearTimeout(redoTimeoutId)
+    }
+    redoTimeoutId = setTimeout(() => {
+      console.warn('handleRedo: No acknowledgment received from server, clearing redo lock')
+      redoInProgress = false
+      redoTimeoutId = null
+    }, REDO_ACK_TIMEOUT_MS)
+
     // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server
     // confirmation via onStroke/onFill handlers to prevent desync when server
     // rejects the redo (e.g., round ended, sender is not the drawer)
     // The onStroke/onFill handlers will remove the item from redoStack when confirmed
+  }
+
+  function clearRedoLock() {
+    if (redoTimeoutId) {
+      clearTimeout(redoTimeoutId)
+      redoTimeoutId = null
+    }
+    redoInProgress = false
   }
 
   function handleKeyDown(event: KeyboardEvent) {
