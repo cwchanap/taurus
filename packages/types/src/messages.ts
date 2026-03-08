@@ -1,5 +1,4 @@
 import type { GameStatus, ScoreEntry, RoundResult, Winner, ChatMessage, PaletteColor } from './game'
-import { PALETTE_COLORS } from './game'
 
 export interface Player {
   id: string
@@ -49,9 +48,6 @@ export interface FillOperation {
    */
   nonce?: string
 }
-
-// Re-export PALETTE_COLORS so consumers can import from either file
-export { PALETTE_COLORS }
 
 // Wire format for GameState (what goes over WebSocket)
 export interface GameStateWire {
