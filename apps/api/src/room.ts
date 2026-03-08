@@ -1635,25 +1635,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.strokeStorageDirty = false
     this.fillStorageDirty = false
 
-    // Wait for storage deletion to complete before clearing in-memory arrays
-    // to prevent stale data from being reloaded if delete fails
-    const strokeDeletePromise = this.queueStrokeDelete()
-      .then(() => {
-        this.strokes = []
-      })
-      .catch((e) => {
-        console.error('Failed to delete strokes from storage:', e)
-        this.strokeStorageDirty = true
-      })
+    // Clear in-memory state immediately to prevent stale data in handleJoin
+    // Storage deletion happens asynchronously and failures are logged but don't
+    // block state transition - we persist empty state later anyway
+    this.strokes = []
+    this.fills = []
 
-    const fillDeletePromise = this.queueFillDelete()
-      .then(() => {
-        this.fills = []
-      })
-      .catch((e) => {
-        console.error('Failed to delete fills from storage:', e)
-        this.fillStorageDirty = true
-      })
+    // Attempt storage deletion asynchronously (failures are logged but don't block)
+    const strokeDeletePromise = this.queueStrokeDelete().catch((e) => {
+      console.error('Failed to delete strokes from storage:', e)
+      this.strokeStorageDirty = true
+    })
+
+    const fillDeletePromise = this.queueFillDelete().catch((e) => {
+      console.error('Failed to delete fills from storage:', e)
+      this.fillStorageDirty = true
+    })
 
     this.ctx.waitUntil(strokeDeletePromise)
     this.ctx.waitUntil(fillDeletePromise)
