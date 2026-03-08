@@ -23,6 +23,7 @@
     getTimeRemainingSeconds,
     isEditableKeyboardTarget,
     pushBoundedUndo,
+    rebuildUndoStack,
     updateStrokePoint,
   } from '$lib/draw-page-state'
   import { onDestroy } from 'svelte'
@@ -185,7 +186,12 @@
         canvasComponent?.clearCanvas()
         strokes = strokeList
         fills = fillList
-        undoStack = []
+        // Rebuild undo stack from restored operations if we're the current drawer
+        // This preserves undo capability after reconnection
+        undoStack =
+          id === initialGameState.currentDrawerId
+            ? rebuildUndoStack(strokeList, fillList, initialGameState.currentDrawerId)
+            : []
         redoStack = []
         redoInProgress = false
         pendingRedoFills = new Map()
@@ -285,21 +291,36 @@
         }
       },
       onFill: (fill) => {
-        // Deduplicate by server fill id
-        const alreadyApplied = fills.some((f) => f.id === fill.id)
-        if (!alreadyApplied) {
-          fills = [...fills, fill]
-          if (isCurrentDrawer) {
-            // Check if this fill came from a redo - if so, don't clear redoStack
-            // Use nonce for unique matching instead of coordinates to handle repeated fills
-            const redoFillInfo = fill.nonce ? pendingRedoFills.get(fill.nonce) : undefined
-            if (redoFillInfo) {
-              // Redo echo: insert at chronological position, remove from redoStack
-              pendingRedoFills.delete(fill.nonce!)
-              // Clear the in-progress flag as we've received server confirmation
-              clearRedoLock()
-              // Remove the confirmed redo entry from redoStack to prevent repeated redos
-              redoStack = redoStack.filter((item) => item !== redoFillInfo.item)
+        if (isCurrentDrawer) {
+          // Check if this fill came from a redo - if so, don't clear redoStack
+          // Use nonce for unique matching instead of coordinates to handle repeated fills
+          const redoFillInfo = fill.nonce ? pendingRedoFills.get(fill.nonce) : undefined
+          if (redoFillInfo) {
+            // Redo echo: insert at chronological position, remove from redoStack
+            pendingRedoFills.delete(fill.nonce!)
+            // Clear the in-progress flag as we've received server confirmation
+            clearRedoLock()
+            // Remove the confirmed redo entry from redoStack to prevent repeated redos
+            redoStack = redoStack.filter((item) => item !== redoFillInfo.item)
+
+            // Check if this fill was already applied optimistically (has nonce)
+            const existingOptimisticFill = fill.nonce
+              ? fills.find((f) => f.nonce === fill.nonce && f.id.startsWith('temp-fill-'))
+              : undefined
+
+            if (existingOptimisticFill) {
+              // Replace optimistic fill with server fill in the fills array
+              fills = fills.map((f) => (f.nonce === fill.nonce ? fill : f))
+              // Update undo stack to use server's fill ID instead of temporary ID
+              undoStack = undoStack.map((item) => {
+                if (item.type === 'fill' && item.fillId === existingOptimisticFill.id) {
+                  return { type: 'fill' as const, fillId: fill.id, fill }
+                }
+                return item
+              })
+            } else {
+              // New fill from redo that wasn't optimistically added
+              fills = [...fills, fill]
               const newItem: UndoItem = { type: 'fill', fillId: fill.id, fill }
               const insertIndex = undoStack.findIndex((item) => {
                 const itemTimestamp =
@@ -320,15 +341,43 @@
                   undoStack = undoStack.slice(undoStack.length - MAX_UNDO_DEPTH)
                 }
               }
-            } else {
-              // New fill: push once to undo stack and clear redo stack
-              undoStack = pushBoundedUndo(
-                undoStack,
-                { type: 'fill', fillId: fill.id, fill },
-                MAX_UNDO_DEPTH
-              )
-              redoStack = []
             }
+          } else {
+            // Check if this fill was already applied optimistically
+            const existingOptimisticFill = fill.nonce
+              ? fills.find((f) => f.nonce === fill.nonce && f.id.startsWith('temp-fill-'))
+              : undefined
+
+            if (existingOptimisticFill) {
+              // Replace optimistic fill with server fill
+              fills = fills.map((f) => (f.nonce === fill.nonce ? fill : f))
+              // Update undo stack to use server's fill ID
+              undoStack = undoStack.map((item) => {
+                if (item.type === 'fill' && item.fillId === existingOptimisticFill.id) {
+                  return { type: 'fill', fillId: fill.id, fill }
+                }
+                return item
+              })
+            } else {
+              // Deduplicate by server fill id (for non-optimistic fills from other players)
+              const alreadyApplied = fills.some((f) => f.id === fill.id)
+              if (!alreadyApplied) {
+                fills = [...fills, fill]
+                // New fill: push once to undo stack and clear redo stack
+                undoStack = pushBoundedUndo(
+                  undoStack,
+                  { type: 'fill', fillId: fill.id, fill },
+                  MAX_UNDO_DEPTH
+                )
+                redoStack = []
+              }
+            }
+          }
+        } else {
+          // Non-drawer: just add the fill if not already present
+          const alreadyApplied = fills.some((f) => f.id === fill.id)
+          if (!alreadyApplied) {
+            fills = [...fills, fill]
           }
         }
       },
@@ -519,9 +568,40 @@
   }
 
   function handleFill(x: number, y: number, fillColor: PaletteColor) {
-    const sent = ws?.sendFill(x, y, fillColor)
+    // Generate unique nonce for optimistic update tracking
+    const nonce = crypto.randomUUID()
+    // Create temporary ID for optimistic fill (will be replaced by server ID)
+    const tempId = `temp-fill-${nonce}`
+
+    // Create optimistic fill operation
+    const optimisticFill: FillOperation = {
+      id: tempId,
+      playerId,
+      x,
+      y,
+      color: fillColor,
+      timestamp: Date.now(),
+      nonce,
+    }
+
+    // Optimistically add fill to local state
+    fills = [...fills, optimisticFill]
+
+    // Add to undo stack and clear redo stack (consistent with stroke handling)
+    redoStack = []
+    undoStack = pushBoundedUndo(
+      undoStack,
+      { type: 'fill', fillId: tempId, fill: optimisticFill },
+      MAX_UNDO_DEPTH
+    )
+
+    // Send fill message to server with nonce for correlation
+    const sent = ws?.sendFill(x, y, fillColor, nonce)
     if (sent === false) {
       console.error('Canvas: Failed to send fill — WebSocket not open')
+      // Remove optimistic fill on failure to prevent desync
+      fills = fills.filter((f) => f.id !== tempId)
+      undoStack = undoStack.filter((item) => !(item.type === 'fill' && item.fillId === tempId))
     }
   }
 
