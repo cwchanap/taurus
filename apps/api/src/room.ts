@@ -1277,24 +1277,37 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     await this.persistGameState()
 
     // Clear strokes/fills and storage to prevent stale canvas on next game
-    this.strokes = []
-    this.fills = []
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
     this.strokeStorageDirty = false
     this.fillStorageDirty = false
-    // Wait for any in-flight stroke write to complete before deleting to prevent
-    // delayed stale delete from racing with newer stroke writes
-    this.ctx.waitUntil(
-      this.queueStrokeDelete().catch((e) =>
+
+    // Wait for storage deletion to complete before clearing in-memory arrays
+    // to prevent stale data from being reloaded if delete fails
+    const strokeDeletePromise = this.queueStrokeDelete()
+      .then(() => {
+        this.strokes = []
+      })
+      .catch((e) => {
         console.error('Failed to delete strokes from storage:', e)
-      )
-    )
-    this.ctx.waitUntil(
-      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
-    )
+        // Re-mark as dirty so the next storage write will retry
+        this.strokeStorageDirty = true
+      })
+
+    const fillDeletePromise = this.queueFillDelete()
+      .then(() => {
+        this.fills = []
+      })
+      .catch((e) => {
+        console.error('Failed to delete fills from storage:', e)
+        // Re-mark as dirty so the next storage write will retry
+        this.fillStorageDirty = true
+      })
+
+    this.ctx.waitUntil(strokeDeletePromise)
+    this.ctx.waitUntil(fillDeletePromise)
 
     // Broadcast reset to all players
     this.broadcast({
@@ -1363,25 +1376,36 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
     )
 
-    // Clear canvas for new round
-    this.strokes = []
-    this.fills = []
+    // Clear canvas for new round - wait for storage deletion before clearing in-memory arrays
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
     this.strokeStorageDirty = false
     this.fillStorageDirty = false
-    // Wait for any in-flight stroke write to complete before deleting to prevent
-    // delayed stale delete from racing with newer stroke writes
-    this.ctx.waitUntil(
-      this.queueStrokeDelete().catch((e) =>
+
+    // Wait for storage deletion to complete before clearing in-memory arrays
+    // to prevent stale data from being reloaded if delete fails
+    const strokeDeletePromise = this.queueStrokeDelete()
+      .then(() => {
+        this.strokes = []
+      })
+      .catch((e) => {
         console.error('Failed to delete strokes from storage:', e)
-      )
-    )
-    this.ctx.waitUntil(
-      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
-    )
+        this.strokeStorageDirty = true
+      })
+
+    const fillDeletePromise = this.queueFillDelete()
+      .then(() => {
+        this.fills = []
+      })
+      .catch((e) => {
+        console.error('Failed to delete fills from storage:', e)
+        this.fillStorageDirty = true
+      })
+
+    this.ctx.waitUntil(strokeDeletePromise)
+    this.ctx.waitUntil(fillDeletePromise)
 
     // Broadcast round start to all players
     // Note: Send word only to the drawer
@@ -1608,24 +1632,35 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     })
 
     // Clear strokes/fills to prevent stale canvas on next game
-    this.strokes = []
-    this.fills = []
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
     this.strokeStorageDirty = false
     this.fillStorageDirty = false
-    // Wait for any in-flight stroke write to complete before deleting to prevent
-    // delayed stale delete from racing with newer stroke writes
-    this.ctx.waitUntil(
-      this.queueStrokeDelete().catch((e) =>
+
+    // Wait for storage deletion to complete before clearing in-memory arrays
+    // to prevent stale data from being reloaded if delete fails
+    const strokeDeletePromise = this.queueStrokeDelete()
+      .then(() => {
+        this.strokes = []
+      })
+      .catch((e) => {
         console.error('Failed to delete strokes from storage:', e)
-      )
-    )
-    this.ctx.waitUntil(
-      this.queueFillDelete().catch((e) => console.error('Failed to delete fills from storage:', e))
-    )
+        this.strokeStorageDirty = true
+      })
+
+    const fillDeletePromise = this.queueFillDelete()
+      .then(() => {
+        this.fills = []
+      })
+      .catch((e) => {
+        console.error('Failed to delete fills from storage:', e)
+        this.fillStorageDirty = true
+      })
+
+    this.ctx.waitUntil(strokeDeletePromise)
+    this.ctx.waitUntil(fillDeletePromise)
 
     // Set status to game-over (don't reset immediately) so new/reconnecting players see results
     // handleResetGame will be the sole path back to lobby

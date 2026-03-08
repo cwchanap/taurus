@@ -105,8 +105,10 @@
   const isCurrentDrawer = $derived(playerId === currentDrawerId)
   const canDraw = $derived(gameStatus === 'playing' && isCurrentDrawer)
   const canStartGame = $derived(isHost && gameStatus === 'lobby' && players.length >= 2)
-  const canUndo = $derived(canDraw && undoStack.length > 0)
-  const canRedo = $derived(canDraw && redoStack.length > 0)
+  const undoInFlightCount = $derived(pendingUndoStrokes.size + pendingUndoFills.size)
+  const redoInFlightCount = $derived(pendingRedoStrokes.size + pendingRedoFills.size)
+  const canUndo = $derived(canDraw && undoStack.length > undoInFlightCount)
+  const canRedo = $derived(canDraw && redoStack.length > redoInFlightCount && !redoInProgress)
 
   async function createRoom() {
     isLoading = true
@@ -249,11 +251,12 @@
             // Remove the confirmed redo entry from redoStack to prevent repeated redos
             redoStack = redoStack.filter((item) => item !== redoItem)
             // Insert redo stroke at correct position based on timestamp to maintain order
+            // Use server-confirmed stroke.timestamp instead of redoItem.stroke.timestamp
             const newItem: UndoItem = { type: 'stroke', strokeId: stroke.id, stroke }
             const insertIndex = undoStack.findIndex((item) => {
               const itemTimestamp =
                 item.type === 'stroke' ? item.stroke.timestamp : item.fill.timestamp
-              return itemTimestamp > redoItem.stroke.timestamp
+              return itemTimestamp > stroke.timestamp
             })
             if (insertIndex === -1) {
               undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)
@@ -322,10 +325,11 @@
               // New fill from redo that wasn't optimistically added
               fills = [...fills, fill]
               const newItem: UndoItem = { type: 'fill', fillId: fill.id, fill }
+              // Use server-confirmed fill.timestamp instead of redoFillInfo.timestamp
               const insertIndex = undoStack.findIndex((item) => {
                 const itemTimestamp =
                   item.type === 'stroke' ? item.stroke.timestamp : item.fill.timestamp
-                return itemTimestamp > redoFillInfo.timestamp
+                return itemTimestamp > fill.timestamp
               })
               if (insertIndex === -1) {
                 undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)

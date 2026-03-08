@@ -99,9 +99,9 @@
         }
       }
 
-      // Reorder graphics only when operations are added/removed (signature changes)
+      // Reorder graphics only when operations are added/removed or timestamps change (signature changes)
       // Avoids O(n) reordering on every stroke point update which causes frame drops
-      const operationsSig = operations.map((op) => op.data.id).join(',')
+      const operationsSig = operations.map((op) => `${op.data.id}:${op.timestamp}`).join(',')
       if (operationsSig !== lastOperationsSig) {
         lastOperationsSig = operationsSig
         reorderGraphicsByTimestamp(operations)
@@ -190,7 +190,7 @@
     const point = { x: event.global.x, y: event.global.y }
 
     if (tool === 'fill') {
-      onFill(point.x, point.y, color)
+      onFill(Math.floor(point.x), Math.floor(point.y), color)
       return
     }
 
