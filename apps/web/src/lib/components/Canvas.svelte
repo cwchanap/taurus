@@ -43,6 +43,7 @@
   let lastPoint: Point | null = null
   let strokeGraphics: Map<string, Graphics> = new Map()
   let fillGraphics: Map<string, Graphics | null> = new Map()
+  let oobFills: Set<string> = new Set() // Track out-of-bounds fills to avoid repeated expensive pixel extraction
   let strokeColor: PaletteColor = '#1a1a2e'
   let strokeSize = 0
   let currentIsEraser = false
@@ -74,6 +75,7 @@
         if (!currentFillIds.has(id)) {
           graphics?.destroy()
           fillGraphics.delete(id)
+          oobFills.delete(id)
         }
       }
 
@@ -162,6 +164,8 @@
         bg.clear()
         bg.rect(0, 0, width, height)
         bg.fill(CANVAS_BG)
+        // Clear OOB fill cache when canvas resizes - fills that were OOB may now be valid
+        oobFills.clear()
       })
 
       if (!mounted) {
@@ -278,6 +282,12 @@
       return
     }
 
+    // Check if this fill was previously marked as out-of-bounds to avoid repeated expensive extraction
+    if (oobFills.has(fill.id)) {
+      // Fill remains out-of-bounds, skip expensive pixel extraction
+      return
+    }
+
     // Extract from the full stage (includes background layer) so empty canvas areas
     // read as the background color rather than transparent, preventing runaway fills.
     let extracted: { pixels: Uint8ClampedArray; width: number; height: number }
@@ -302,9 +312,11 @@
 
     if (targetX < 0 || targetX >= width || targetY < 0 || targetY >= height) {
       console.warn(
-        `Canvas: Fill ${fill.id} at (${targetX},${targetY}) out of bounds (${width}x${height}), retrying on next reconciliation`
+        `Canvas: Fill ${fill.id} at (${targetX},${targetY}) out of bounds (${width}x${height}), skipping until canvas resizes`
       )
-      // Don't mark as processed to allow retry when canvas size changes
+      // Mark as out-of-bounds to avoid repeated expensive pixel extraction
+      // Will be retried if canvas size changes (resize handler clears this cache)
+      oobFills.add(fill.id)
       return
     }
 
