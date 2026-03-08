@@ -114,7 +114,13 @@
   const canStartGame = $derived(isHost && gameStatus === 'lobby' && players.length >= 2)
   const undoInFlightCount = $derived(pendingUndoStrokes.size + pendingUndoFills.size)
   const redoInFlightCount = $derived(pendingRedoStrokes.size + pendingRedoFills.size)
-  const canUndo = $derived(canDraw && undoStack.length > undoInFlightCount)
+  const topUndoItemHasTempId = $derived(() => {
+    const top = undoStack[undoStack.length - 1]
+    return top?.type === 'fill' && top.fillId.startsWith('temp-fill-')
+  })
+  const canUndo = $derived(
+    canDraw && undoStack.length > 0 && !topUndoItemHasTempId && undoInFlightCount === 0
+  )
   const canRedo = $derived(canDraw && redoStack.length > redoInFlightCount && !redoInProgress)
 
   async function createRoom() {
@@ -465,9 +471,10 @@
         undoStack = next.undoStack
         redoStack = next.redoStack
         redoInProgress = false
+        pendingRedoStrokes = new Map()
+        pendingRedoFills = new Map()
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
-        // Clear any pending optimistic fills since canvas is cleared
         pendingOptimisticFills = new Map()
         // Clear any pending correct-guess timeout before resetting notification
         if (correctGuessTimeoutId) {
@@ -536,9 +543,10 @@
         redoInProgress = false
         correctGuessNotification = next.correctGuessNotification
         systemNotification = next.systemNotification
+        pendingRedoStrokes = new Map()
+        pendingRedoFills = new Map()
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
-        // Clear any pending optimistic fills since canvas is cleared
         pendingOptimisticFills = new Map()
         canvasComponent?.clearCanvas()
       },
