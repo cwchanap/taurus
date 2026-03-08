@@ -148,12 +148,20 @@
     ws.on({
       onConnectionChange: (connected) => {
         isConnected = connected
+        // Clear redo lock on connection changes to allow retry after reconnection
+        if (!connected) {
+          redoInProgress = false
+        }
       },
       onConnectionFailed: (reason) => {
         errorMessage = reason
+        // Clear redo lock on permanent connection failure to allow user action
+        redoInProgress = false
       },
       onServerError: (message) => {
         errorMessage = message
+        // Clear redo lock on server errors to allow retry
+        redoInProgress = false
       },
       onInit: (
         id,
