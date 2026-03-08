@@ -91,15 +91,22 @@
   let pendingRedoStrokes = $state<Map<string, UndoItem>>(new Map())
   let pendingUndoStrokes = $state<Map<string, UndoItem>>(new Map())
   let pendingUndoFills = $state<Map<string, UndoItem>>(new Map())
+  // Track optimistic fills pending server confirmation (nonce -> { tempId, timestamp })
+  let pendingOptimisticFills = $state<Map<string, { tempId: string; timestamp: number }>>(new Map())
 
   let ws: GameWebSocket | null = null
   let canvasComponent = $state<Canvas>()
   let correctGuessTimeoutId: ReturnType<typeof setTimeout> | null = null
   let redoTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let optimisticFillCleanupId: ReturnType<typeof setTimeout> | null = null
 
   // Clear redoInProgress flag after timeout if no acknowledgment received
   // This handles cases where server silently drops the redo (e.g., round ended)
   const REDO_ACK_TIMEOUT_MS = 5000
+  // Timeout for cleaning up orphaned optimistic fills (server silent rejections)
+  const OPTIMISTIC_FILL_TIMEOUT_MS = 5000
+  // Interval for checking orphaned fills
+  const OPTIMISTIC_FILL_CLEANUP_INTERVAL_MS = 1000
 
   // Derived state
   const isCurrentDrawer = $derived(playerId === currentDrawerId)
@@ -321,6 +328,10 @@
                 }
                 return item
               })
+              // Clean up from pending optimistic fills map
+              if (fill.nonce) {
+                pendingOptimisticFills.delete(fill.nonce)
+              }
             } else {
               // New fill from redo that wasn't optimistically added
               fills = [...fills, fill]
@@ -362,6 +373,10 @@
                 }
                 return item
               })
+              // Clean up from pending optimistic fills map
+              if (fill.nonce) {
+                pendingOptimisticFills.delete(fill.nonce)
+              }
             } else {
               // Deduplicate by server fill id (for non-optimistic fills from other players)
               const alreadyApplied = fills.some((f) => f.id === fill.id)
@@ -452,6 +467,8 @@
         redoInProgress = false
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
+        // Clear any pending optimistic fills since canvas is cleared
+        pendingOptimisticFills = new Map()
         // Clear any pending correct-guess timeout before resetting notification
         if (correctGuessTimeoutId) {
           clearTimeout(correctGuessTimeoutId)
@@ -521,6 +538,8 @@
         systemNotification = next.systemNotification
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
+        // Clear any pending optimistic fills since canvas is cleared
+        pendingOptimisticFills = new Map()
         canvasComponent?.clearCanvas()
       },
     })
@@ -539,7 +558,39 @@
     if (redoTimeoutId) {
       clearTimeout(redoTimeoutId)
     }
+    if (optimisticFillCleanupId) {
+      clearInterval(optimisticFillCleanupId)
+    }
   })
+
+  // Start cleanup interval for orphaned optimistic fills
+  optimisticFillCleanupId = setInterval(() => {
+    const now = Date.now()
+    const expiredNonces: string[] = []
+
+    // Find expired pending fills
+    for (const [nonce, pending] of pendingOptimisticFills.entries()) {
+      if (now - pending.timestamp > OPTIMISTIC_FILL_TIMEOUT_MS) {
+        expiredNonces.push(nonce)
+      }
+    }
+
+    // Remove expired fills
+    for (const nonce of expiredNonces) {
+      const pending = pendingOptimisticFills.get(nonce)
+      if (pending) {
+        // Remove the orphaned optimistic fill
+        fills = fills.filter((f) => f.id !== pending.tempId)
+        undoStack = undoStack.filter(
+          (item) => !(item.type === 'fill' && item.fillId === pending.tempId)
+        )
+        pendingOptimisticFills.delete(nonce)
+        console.warn(
+          `Canvas: Cleaned up orphaned optimistic fill ${pending.tempId} (server never confirmed)`
+        )
+      }
+    }
+  }, OPTIMISTIC_FILL_CLEANUP_INTERVAL_MS)
 
   function handleStrokeStart(stroke: Stroke) {
     strokes = [...strokes, stroke]
@@ -599,6 +650,9 @@
       MAX_UNDO_DEPTH
     )
 
+    // Track this optimistic fill for cleanup if server never confirms
+    pendingOptimisticFills.set(nonce, { tempId, timestamp: Date.now() })
+
     // Send fill message to server with nonce for correlation
     const sent = ws?.sendFill(x, y, fillColor, nonce)
     if (sent === false) {
@@ -606,6 +660,7 @@
       // Remove optimistic fill on failure to prevent desync
       fills = fills.filter((f) => f.id !== tempId)
       undoStack = undoStack.filter((item) => !(item.type === 'fill' && item.fillId === tempId))
+      pendingOptimisticFills.delete(nonce)
     }
   }
 

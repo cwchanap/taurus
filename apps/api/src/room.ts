@@ -1277,6 +1277,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     await this.persistGameState()
 
     // Clear strokes/fills and storage to prevent stale canvas on next game
+    // Clear in-memory arrays immediately before async storage deletion to prevent
+    // race conditions where joining players receive stale data via handleJoin
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
@@ -1284,27 +1286,23 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.strokeStorageDirty = false
     this.fillStorageDirty = false
 
-    // Wait for storage deletion to complete before clearing in-memory arrays
-    // to prevent stale data from being reloaded if delete fails
-    const strokeDeletePromise = this.queueStrokeDelete()
-      .then(() => {
-        this.strokes = []
-      })
-      .catch((e) => {
-        console.error('Failed to delete strokes from storage:', e)
-        // Re-mark as dirty so the next storage write will retry
-        this.strokeStorageDirty = true
-      })
+    // Clear in-memory arrays immediately - handleJoin sends these directly in init payload
+    // so we must clear before any player can join during the reset window
+    this.strokes = []
+    this.fills = []
 
-    const fillDeletePromise = this.queueFillDelete()
-      .then(() => {
-        this.fills = []
-      })
-      .catch((e) => {
-        console.error('Failed to delete fills from storage:', e)
-        // Re-mark as dirty so the next storage write will retry
-        this.fillStorageDirty = true
-      })
+    // Async storage deletion - errors will mark storage as dirty for retry
+    const strokeDeletePromise = this.queueStrokeDelete().catch((e) => {
+      console.error('Failed to delete strokes from storage:', e)
+      // Re-mark as dirty so the next storage write will retry
+      this.strokeStorageDirty = true
+    })
+
+    const fillDeletePromise = this.queueFillDelete().catch((e) => {
+      console.error('Failed to delete fills from storage:', e)
+      // Re-mark as dirty so the next storage write will retry
+      this.fillStorageDirty = true
+    })
 
     this.ctx.waitUntil(strokeDeletePromise)
     this.ctx.waitUntil(fillDeletePromise)
@@ -1376,7 +1374,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
     )
 
-    // Clear canvas for new round - wait for storage deletion before clearing in-memory arrays
+    // Clear canvas for new round - clear in-memory arrays immediately to prevent
+    // race conditions where new strokes/fills get added then wiped by async callback
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
@@ -1384,25 +1383,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.strokeStorageDirty = false
     this.fillStorageDirty = false
 
-    // Wait for storage deletion to complete before clearing in-memory arrays
-    // to prevent stale data from being reloaded if delete fails
-    const strokeDeletePromise = this.queueStrokeDelete()
-      .then(() => {
-        this.strokes = []
-      })
-      .catch((e) => {
-        console.error('Failed to delete strokes from storage:', e)
-        this.strokeStorageDirty = true
-      })
+    // Clear in-memory arrays immediately before async storage deletion
+    // This prevents race conditions where new drawer actions could be added
+    // and then wiped when the async delete callback runs later
+    this.strokes = []
+    this.fills = []
 
-    const fillDeletePromise = this.queueFillDelete()
-      .then(() => {
-        this.fills = []
-      })
-      .catch((e) => {
-        console.error('Failed to delete fills from storage:', e)
-        this.fillStorageDirty = true
-      })
+    // Async storage deletion - errors will mark storage as dirty for retry
+    const strokeDeletePromise = this.queueStrokeDelete().catch((e) => {
+      console.error('Failed to delete strokes from storage:', e)
+      this.strokeStorageDirty = true
+    })
+
+    const fillDeletePromise = this.queueFillDelete().catch((e) => {
+      console.error('Failed to delete fills from storage:', e)
+      this.fillStorageDirty = true
+    })
 
     this.ctx.waitUntil(strokeDeletePromise)
     this.ctx.waitUntil(fillDeletePromise)
