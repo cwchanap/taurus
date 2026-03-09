@@ -16,8 +16,6 @@ import {
   MIN_STROKE_SIZE,
   MAX_COLOR_LENGTH,
   MAX_PLAYER_NAME_LENGTH,
-  MAX_CANVAS_WIDTH,
-  MAX_CANVAS_HEIGHT,
 } from './constants'
 import { PALETTE_COLORS } from '@repo/types'
 
@@ -25,66 +23,75 @@ const VALID_FILL_COLOR = PALETTE_COLORS[0]
 const VALID_STROKE_COLOR = PALETTE_COLORS[0]
 
 describe('validateFill', () => {
-  test('accepts integer coordinates and valid palette color', () => {
-    const result = validateFill({ x: 100, y: 200, color: VALID_FILL_COLOR })
+  test('accepts normalized coordinates (0-1 range) and valid palette color', () => {
+    const result = validateFill({ x: 0.5, y: 0.75, color: VALID_FILL_COLOR })
     expect(result).not.toBeNull()
-    expect(result?.x).toBe(100)
-    expect(result?.y).toBe(200)
+    expect(result?.x).toBe(0.5)
+    expect(result?.y).toBe(0.75)
     expect(result?.color).toBe(VALID_FILL_COLOR)
   })
 
-  test('accepts and floors fractional coordinates', () => {
-    const result = validateFill({ x: 100.7, y: 200.3, color: VALID_FILL_COLOR })
+  test('accepts fractional coordinates within 0-1 range', () => {
+    const result = validateFill({ x: 0.123, y: 0.987, color: VALID_FILL_COLOR })
     expect(result).not.toBeNull()
-    expect(result?.x).toBe(100)
-    expect(result?.y).toBe(200)
+    expect(result?.x).toBe(0.123)
+    expect(result?.y).toBe(0.987)
   })
 
-  test('accepts fractional coordinates at boundary (just below max)', () => {
+  test('accepts coordinates at boundary (just below 1.0)', () => {
     const result = validateFill({
-      x: MAX_CANVAS_WIDTH - 0.5,
-      y: MAX_CANVAS_HEIGHT - 0.5,
+      x: 0.9999,
+      y: 0.9999,
       color: VALID_FILL_COLOR,
     })
     expect(result).not.toBeNull()
-    expect(result?.x).toBe(MAX_CANVAS_WIDTH - 1)
-    expect(result?.y).toBe(MAX_CANVAS_HEIGHT - 1)
+    expect(result?.x).toBe(0.9999)
+    expect(result?.y).toBe(0.9999)
   })
 
-  test('rejects x >= MAX_CANVAS_WIDTH', () => {
-    expect(validateFill({ x: MAX_CANVAS_WIDTH, y: 0, color: VALID_FILL_COLOR })).toBeNull()
+  test('accepts coordinates at 0.0 (minimum)', () => {
+    const result = validateFill({ x: 0.0, y: 0.0, color: VALID_FILL_COLOR })
+    expect(result).not.toBeNull()
+    expect(result?.x).toBe(0.0)
+    expect(result?.y).toBe(0.0)
   })
 
-  test('rejects y >= MAX_CANVAS_HEIGHT', () => {
-    expect(validateFill({ x: 0, y: MAX_CANVAS_HEIGHT, color: VALID_FILL_COLOR })).toBeNull()
+  test('rejects x > 1.0', () => {
+    expect(validateFill({ x: 1.0, y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 1.5, y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
+  })
+
+  test('rejects y > 1.0', () => {
+    expect(validateFill({ x: 0.5, y: 1.0, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 0.5, y: 2.0, color: VALID_FILL_COLOR })).toBeNull()
   })
 
   test('rejects negative x', () => {
-    expect(validateFill({ x: -1, y: 0, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: -0.1, y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
   })
 
   test('rejects negative y', () => {
-    expect(validateFill({ x: 0, y: -0.5, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 0.5, y: -0.5, color: VALID_FILL_COLOR })).toBeNull()
   })
 
   test('rejects non-finite x (NaN, Infinity)', () => {
-    expect(validateFill({ x: NaN, y: 0, color: VALID_FILL_COLOR })).toBeNull()
-    expect(validateFill({ x: Infinity, y: 0, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: NaN, y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: Infinity, y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
   })
 
   test('rejects non-finite y', () => {
-    expect(validateFill({ x: 0, y: NaN, color: VALID_FILL_COLOR })).toBeNull()
-    expect(validateFill({ x: 0, y: -Infinity, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 0.5, y: NaN, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 0.5, y: -Infinity, color: VALID_FILL_COLOR })).toBeNull()
   })
 
   test('rejects non-number coordinates', () => {
-    expect(validateFill({ x: '10', y: 0, color: VALID_FILL_COLOR })).toBeNull()
-    expect(validateFill({ x: 0, y: '10', color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: '0.5', y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 0.5, y: '0.5', color: VALID_FILL_COLOR })).toBeNull()
   })
 
   test('rejects color not in palette', () => {
-    expect(validateFill({ x: 0, y: 0, color: '#000000' })).toBeNull()
-    expect(validateFill({ x: 0, y: 0, color: 'red' })).toBeNull()
+    expect(validateFill({ x: 0.5, y: 0.5, color: '#000000' })).toBeNull()
+    expect(validateFill({ x: 0.5, y: 0.5, color: 'red' })).toBeNull()
   })
 
   test('rejects null or non-object input', () => {

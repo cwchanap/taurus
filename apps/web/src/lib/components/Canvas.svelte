@@ -225,7 +225,11 @@
     const point = { x: event.global.x, y: event.global.y }
 
     if (tool === 'fill') {
-      onFill(Math.floor(point.x), Math.floor(point.y), color)
+      // Normalize coordinates to 0-1 range before sending over the wire
+      // This ensures fills work correctly across different canvas sizes
+      const normX = point.x / app.screen.width
+      const normY = point.y / app.screen.height
+      onFill(normX, normY, color)
       return
     }
 
@@ -342,12 +346,13 @@
       return
     }
 
-    const targetX = Math.round(fill.x)
-    const targetY = Math.round(fill.y)
+    // Denormalize coordinates from 0-1 range to actual pixel positions
+    const targetX = Math.round(fill.x * width)
+    const targetY = Math.round(fill.y * height)
 
     if (targetX < 0 || targetX >= width || targetY < 0 || targetY >= height) {
       console.warn(
-        `Canvas: Fill ${fill.id} at (${targetX},${targetY}) out of bounds (${width}x${height}), skipping until canvas resizes`
+        `Canvas: Fill ${fill.id} at normalized (${fill.x},${fill.y}) -> pixel (${targetX},${targetY}) out of bounds (${width}x${height}), skipping until canvas resizes`
       )
       // Mark as out-of-bounds to avoid repeated expensive pixel extraction
       // Will be retried if canvas size changes (resize handler clears this cache)
