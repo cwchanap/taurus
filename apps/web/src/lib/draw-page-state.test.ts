@@ -10,13 +10,17 @@ import {
   buildRoundStartState,
   clearCorrectGuessNotification,
   createCorrectGuessNotification,
+  discardPendingOptimisticFills,
   deriveWinnersIfGameOver,
   getDrawerDisplayName,
   getTimeRemainingSeconds,
   isEditableKeyboardTarget,
   pushBoundedUndo,
   rebuildUndoStack,
+  rollbackPendingRedoMarker,
+  syncUndoStrokeTimestamp,
   updateStrokePoint,
+  type PendingRedoFillInfo,
   type UndoItem,
 } from './draw-page-state'
 
@@ -272,6 +276,118 @@ describe('draw-page-state helpers', () => {
     const result = applyRedoState([], [], [], [])
     expect(result.action).toBeNull()
     expect(result.strokes).toEqual([])
+  })
+
+  it('syncUndoStrokeTimestamp updates the matching undo stroke timestamp only', () => {
+    const stroke: Stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: 1000,
+    }
+    const otherStroke: Stroke = {
+      id: 's2',
+      playerId: 'p1',
+      points: [{ x: 2, y: 2 }],
+      color: '#4ECDC4',
+      size: 6,
+      timestamp: 2000,
+    }
+    const undoStack: UndoItem[] = [
+      { type: 'stroke', strokeId: 's1', stroke },
+      { type: 'stroke', strokeId: 's2', stroke: otherStroke },
+    ]
+
+    const result = syncUndoStrokeTimestamp(undoStack, 's1', 3000)
+
+    expect(result[0]).toMatchObject({ type: 'stroke', strokeId: 's1' })
+    if (result[0].type === 'stroke') {
+      expect(result[0].stroke.timestamp).toBe(3000)
+      expect(result[0].stroke.points).toEqual([{ x: 1, y: 1 }])
+    }
+    if (result[1].type === 'stroke') {
+      expect(result[1].stroke.timestamp).toBe(2000)
+    }
+  })
+
+  it('rollbackPendingRedoMarker removes only the failed pending redo marker', () => {
+    const stroke: Stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: 1000,
+    }
+    const fill: FillOperation = {
+      id: 'f1',
+      playerId: 'p1',
+      x: 10,
+      y: 10,
+      color: '#FFFFFF',
+      timestamp: 1500,
+    }
+    const pendingRedoStrokes = new Map<string, UndoItem>([
+      ['s1', { type: 'stroke', strokeId: 's1', stroke }],
+    ])
+    const pendingRedoFills = new Map<string, PendingRedoFillInfo>([
+      ['nonce-1', { item: { type: 'fill' as const, fillId: 'f1', fill }, timestamp: 1500 }],
+    ])
+
+    const strokeRollback = rollbackPendingRedoMarker(
+      pendingRedoStrokes,
+      pendingRedoFills,
+      's1',
+      undefined
+    )
+    expect(strokeRollback.pendingRedoStrokes.size).toBe(0)
+    expect(strokeRollback.pendingRedoFills.size).toBe(1)
+
+    const fillRollback = rollbackPendingRedoMarker(
+      pendingRedoStrokes,
+      pendingRedoFills,
+      undefined,
+      'nonce-1'
+    )
+    expect(fillRollback.pendingRedoStrokes.size).toBe(1)
+    expect(fillRollback.pendingRedoFills.size).toBe(0)
+  })
+
+  it('discardPendingOptimisticFills removes temp fills from fills and undo stack immediately', () => {
+    const pendingFill: FillOperation = {
+      id: 'temp-fill-1',
+      playerId: 'p1',
+      x: 10,
+      y: 10,
+      color: '#FF6B6B',
+      timestamp: 1000,
+      nonce: 'nonce-1',
+    }
+    const confirmedFill: FillOperation = {
+      id: 'fill-2',
+      playerId: 'p1',
+      x: 20,
+      y: 20,
+      color: '#4ECDC4',
+      timestamp: 2000,
+    }
+    const pendingMap = new Map([['nonce-1', { tempId: 'temp-fill-1', timestamp: 1000 }]])
+    const undoStack: UndoItem[] = [
+      { type: 'fill', fillId: 'temp-fill-1', fill: pendingFill },
+      { type: 'fill', fillId: 'fill-2', fill: confirmedFill },
+    ]
+
+    const result = discardPendingOptimisticFills(
+      [pendingFill, confirmedFill],
+      undoStack,
+      pendingMap
+    )
+
+    expect(result.fills).toEqual([confirmedFill])
+    expect(result.undoStack).toEqual([{ type: 'fill', fillId: 'fill-2', fill: confirmedFill }])
+    expect(result.pendingOptimisticFills.size).toBe(0)
   })
 
   it('isEditableKeyboardTarget returns false for null and true for editable elements', () => {
