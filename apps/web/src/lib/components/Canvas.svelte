@@ -50,6 +50,7 @@
   let initError = $state<string | null>(null)
   let lastOperationsSig = ''
   let resizeTrigger = $state(0) // Increment to trigger fill reconciliation after resize
+  let prevOperationTimestamps: Map<string, number> | null = null
 
   // Combined reconciliation of strokes and fills in timestamp order
   // This ensures correct z-ordering regardless of operation type
@@ -63,6 +64,21 @@
 
       if (import.meta.env.DEV && currentStrokeIds.size !== strokes.length) {
         console.error('Canvas: Duplicate stroke IDs detected!')
+      }
+
+      // Build current operation timestamps map
+      const currentTimestamps = new Map<string, number>()
+      for (const s of strokes) currentTimestamps.set(s.id, s.timestamp)
+      for (const f of fills) currentTimestamps.set(f.id, f.timestamp)
+
+      // Find minimum timestamp of any removed operation
+      let minRemovedTimestamp = Infinity
+      if (prevOperationTimestamps) {
+        for (const [id, ts] of prevOperationTimestamps.entries()) {
+          if (!currentTimestamps.has(id)) {
+            minRemovedTimestamp = Math.min(minRemovedTimestamp, ts)
+          }
+        }
       }
 
       // Remove deleted strokes
@@ -81,6 +97,20 @@
           oobFills.delete(id)
         }
       }
+
+      // Clear fills that need recomputation (came after a removed operation)
+      if (minRemovedTimestamp < Infinity) {
+        for (const [id, graphics] of fillGraphics.entries()) {
+          const fillTs = currentTimestamps.get(id)
+          if (fillTs !== undefined && fillTs > minRemovedTimestamp) {
+            graphics?.destroy()
+            fillGraphics.delete(id)
+            oobFills.delete(id)
+          }
+        }
+      }
+
+      prevOperationTimestamps = new Map(currentTimestamps)
 
       // Build a combined list of operations sorted by timestamp
       // This ensures fills and strokes are rendered in the correct order
@@ -486,6 +516,7 @@
       graphics?.destroy()
     }
     fillGraphics.clear()
+    prevOperationTimestamps = null
   }
 </script>
 
