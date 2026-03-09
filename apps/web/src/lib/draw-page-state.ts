@@ -14,6 +14,10 @@ export type UndoItem =
   | { type: 'stroke'; strokeId: string; stroke: Stroke }
   | { type: 'fill'; fillId: string; fill: FillOperation }
 
+export type PendingRedoFillInfo = { item: UndoItem; timestamp: number }
+
+export type PendingOptimisticFillInfo = { tempId: string; timestamp: number }
+
 export function pushBoundedUndo(
   undoStack: UndoItem[],
   item: UndoItem,
@@ -147,6 +151,83 @@ export function applyRedoState(
       y: item.fill.y,
       color: item.fill.color,
     },
+  }
+}
+
+export function syncUndoStrokeTimestamp(
+  undoStack: UndoItem[],
+  strokeId: string,
+  timestamp: number
+): UndoItem[] {
+  let changed = false
+  const nextUndo = undoStack.map((item) => {
+    if (
+      item.type !== 'stroke' ||
+      item.strokeId !== strokeId ||
+      item.stroke.timestamp === timestamp
+    ) {
+      return item
+    }
+
+    changed = true
+    return {
+      type: 'stroke' as const,
+      strokeId: item.strokeId,
+      stroke: {
+        ...item.stroke,
+        timestamp,
+      },
+    }
+  })
+
+  return changed ? nextUndo : undoStack
+}
+
+export function rollbackPendingRedoMarker(
+  pendingRedoStrokes: Map<string, UndoItem>,
+  pendingRedoFills: Map<string, PendingRedoFillInfo>,
+  strokeId?: string,
+  fillNonce?: string
+): {
+  pendingRedoStrokes: Map<string, UndoItem>
+  pendingRedoFills: Map<string, PendingRedoFillInfo>
+} {
+  const nextPendingRedoStrokes = new Map(pendingRedoStrokes)
+  const nextPendingRedoFills = new Map(pendingRedoFills)
+
+  if (strokeId) {
+    nextPendingRedoStrokes.delete(strokeId)
+  }
+
+  if (fillNonce) {
+    nextPendingRedoFills.delete(fillNonce)
+  }
+
+  return {
+    pendingRedoStrokes: nextPendingRedoStrokes,
+    pendingRedoFills: nextPendingRedoFills,
+  }
+}
+
+export function discardPendingOptimisticFills(
+  fills: FillOperation[],
+  undoStack: UndoItem[],
+  pendingOptimisticFills: Map<string, PendingOptimisticFillInfo>
+): {
+  fills: FillOperation[]
+  undoStack: UndoItem[]
+  pendingOptimisticFills: Map<string, PendingOptimisticFillInfo>
+} {
+  if (pendingOptimisticFills.size === 0) {
+    return { fills, undoStack, pendingOptimisticFills }
+  }
+
+  const tempIds = new Set(Array.from(pendingOptimisticFills.values(), (pending) => pending.tempId))
+
+  return {
+    fills: fills.filter((fill) => !tempIds.has(fill.id)),
+    undoStack: undoStack.filter((item) => !(item.type === 'fill' && tempIds.has(item.fillId))),
+    pendingOptimisticFills: new Map(),
   }
 }
 

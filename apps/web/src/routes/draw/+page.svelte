@@ -18,12 +18,15 @@
     buildRoundStartState,
     clearCorrectGuessNotification,
     createCorrectGuessNotification,
+    discardPendingOptimisticFills,
     deriveWinnersIfGameOver,
     getDrawerDisplayName,
     getTimeRemainingSeconds,
     isEditableKeyboardTarget,
     pushBoundedUndo,
     rebuildUndoStack,
+    rollbackPendingRedoMarker,
+    syncUndoStrokeTimestamp,
     updateStrokePoint,
   } from '$lib/draw-page-state'
   import { onDestroy } from 'svelte'
@@ -217,11 +220,17 @@
       onServerError: (message) => {
         errorMessage = message
         // Clear redo lock on server errors to allow retry
-        redoInProgress = false
+        clearRedoLock()
+        pendingRedoStrokes = new Map()
+        pendingRedoFills = new Map()
         // Clear any pending undo operations since the server rejected them
         // This prevents canUndo from staying false forever when undo fails
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
+        const next = discardPendingOptimisticFills(fills, undoStack, pendingOptimisticFills)
+        fills = next.fills
+        undoStack = next.undoStack
+        pendingOptimisticFills = next.pendingOptimisticFills
       },
       onInit: (
         id,
@@ -291,6 +300,7 @@
           // Update with server timestamp to ensure correct z-ordering
           strokes[existingIndex] = { ...strokes[existingIndex], timestamp: stroke.timestamp }
           strokes = [...strokes]
+          undoStack = syncUndoStrokeTimestamp(undoStack, stroke.id, stroke.timestamp)
         } else {
           strokes = [...strokes, stroke]
           canvasComponent?.addRemoteStroke(stroke)
@@ -781,9 +791,12 @@
     }
 
     let sendSucceeded = false
+    let failedRedoStrokeId: string | undefined
+    let failedRedoFillNonce: string | undefined
     if (item.type === 'stroke' && next.action?.type === 'send-stroke') {
       // Track the UndoItem from redoStack so onStroke can remove it when confirmed
       pendingRedoStrokes = mapSet(pendingRedoStrokes, next.action.stroke.id, item)
+      failedRedoStrokeId = next.action.stroke.id
       sendSucceeded = ws?.sendStroke(next.action.stroke) ?? false
     } else if (item.type === 'fill' && next.action?.type === 'send-fill') {
       // Generate unique nonce for this redo fill to distinguish from other fills
@@ -791,10 +804,19 @@
       const nonce = crypto.randomUUID()
       // Track the UndoItem from redoStack and timestamp for ordering
       pendingRedoFills = mapSetRedoInfo(pendingRedoFills, nonce, { item, timestamp: Date.now() })
+      failedRedoFillNonce = nonce
       sendSucceeded = ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce) ?? false
     }
 
     if (!sendSucceeded) {
+      const rollback = rollbackPendingRedoMarker(
+        pendingRedoStrokes,
+        pendingRedoFills,
+        failedRedoStrokeId,
+        failedRedoFillNonce
+      )
+      pendingRedoStrokes = rollback.pendingRedoStrokes
+      pendingRedoFills = rollback.pendingRedoFills
       console.error('handleRedo: Failed to send redo action to server, preserving redo stack')
       redoInProgress = false
       return
