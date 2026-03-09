@@ -108,6 +108,41 @@
   // Interval for checking orphaned fills
   const OPTIMISTIC_FILL_CLEANUP_INTERVAL_MS = 1000
 
+  // Helper functions for reactive Map mutations
+  // In Svelte 5, mutating a Map inside $state() with .set()/.delete() doesn't trigger reactivity.
+  // These helpers return new Map instances to trigger updates.
+  function mapSet<T>(map: Map<string, T>, key: string, value: T): Map<string, T> {
+    const newMap = new Map(map)
+    newMap.set(key, value)
+    return newMap
+  }
+
+  function mapDelete<T>(map: Map<string, T>, key: string): Map<string, T> {
+    const newMap = new Map(map)
+    newMap.delete(key)
+    return newMap
+  }
+
+  function mapSetRedoInfo(
+    map: Map<string, { item: UndoItem; timestamp: number }>,
+    key: string,
+    value: { item: UndoItem; timestamp: number }
+  ): Map<string, { item: UndoItem; timestamp: number }> {
+    const newMap = new Map(map)
+    newMap.set(key, value)
+    return newMap
+  }
+
+  function mapSetOptimisticInfo(
+    map: Map<string, { tempId: string; timestamp: number }>,
+    key: string,
+    value: { tempId: string; timestamp: number }
+  ): Map<string, { tempId: string; timestamp: number }> {
+    const newMap = new Map(map)
+    newMap.set(key, value)
+    return newMap
+  }
+
   // Derived state
   const isCurrentDrawer = $derived(playerId === currentDrawerId)
   const canDraw = $derived(gameStatus === 'playing' && isCurrentDrawer)
@@ -262,7 +297,7 @@
           // Check if this stroke came from a redo
           const redoItem = pendingRedoStrokes.get(stroke.id)
           if (redoItem && redoItem.type === 'stroke') {
-            pendingRedoStrokes.delete(stroke.id)
+            pendingRedoStrokes = mapDelete(pendingRedoStrokes, stroke.id)
             // Clear the in-progress flag as we've received server confirmation
             clearRedoLock()
             // Remove the confirmed redo entry from redoStack to prevent repeated redos
@@ -307,7 +342,7 @@
           // Server confirmed the undo - commit the state changes
           undoStack = undoStack.filter((item) => item !== pendingItem)
           redoStack = pushBoundedUndo(redoStack, pendingItem, MAX_UNDO_DEPTH)
-          pendingUndoStrokes.delete(strokeId)
+          pendingUndoStrokes = mapDelete(pendingUndoStrokes, strokeId)
         }
       },
       onFill: (fill) => {
@@ -317,7 +352,7 @@
           const redoFillInfo = fill.nonce ? pendingRedoFills.get(fill.nonce) : undefined
           if (redoFillInfo) {
             // Redo echo: insert at chronological position, remove from redoStack
-            pendingRedoFills.delete(fill.nonce!)
+            pendingRedoFills = mapDelete(pendingRedoFills, fill.nonce!)
             // Clear the in-progress flag as we've received server confirmation
             clearRedoLock()
             // Remove the confirmed redo entry from redoStack to prevent repeated redos
@@ -340,7 +375,7 @@
               })
               // Clean up from pending optimistic fills map
               if (fill.nonce) {
-                pendingOptimisticFills.delete(fill.nonce)
+                pendingOptimisticFills = mapDelete(pendingOptimisticFills, fill.nonce)
               }
             } else {
               // New fill from redo that wasn't optimistically added
@@ -379,13 +414,13 @@
               // Update undo stack to use server's fill ID
               undoStack = undoStack.map((item) => {
                 if (item.type === 'fill' && item.fillId === existingOptimisticFill.id) {
-                  return { type: 'fill', fillId: fill.id, fill }
+                  return { type: 'fill' as const, fillId: fill.id, fill }
                 }
                 return item
               })
               // Clean up from pending optimistic fills map
               if (fill.nonce) {
-                pendingOptimisticFills.delete(fill.nonce)
+                pendingOptimisticFills = mapDelete(pendingOptimisticFills, fill.nonce)
               }
             } else {
               // Deduplicate by server fill id (for non-optimistic fills from other players)
@@ -418,7 +453,7 @@
           // Server confirmed the undo - commit the state changes
           undoStack = undoStack.filter((item) => item !== pendingItem)
           redoStack = pushBoundedUndo(redoStack, pendingItem, MAX_UNDO_DEPTH)
-          pendingUndoFills.delete(fillId)
+          pendingUndoFills = mapDelete(pendingUndoFills, fillId)
         }
       },
       onClear: () => {
@@ -579,28 +614,38 @@
   optimisticFillCleanupId = setInterval(() => {
     const now = Date.now()
     const expiredNonces: string[] = []
+    const expiredFills: { tempId: string }[] = []
 
     // Find expired pending fills
     for (const [nonce, pending] of pendingOptimisticFills.entries()) {
       if (now - pending.timestamp > OPTIMISTIC_FILL_TIMEOUT_MS) {
         expiredNonces.push(nonce)
+        expiredFills.push(pending)
       }
     }
 
-    // Remove expired fills
-    for (const nonce of expiredNonces) {
-      const pending = pendingOptimisticFills.get(nonce)
-      if (pending) {
-        // Remove the orphaned optimistic fill
+    // Remove expired fills and update pendingOptimisticFills reactively
+    if (expiredNonces.length > 0) {
+      // Remove the orphaned optimistic fills from fills and undoStack
+      for (const pending of expiredFills) {
         fills = fills.filter((f) => f.id !== pending.tempId)
         undoStack = undoStack.filter(
           (item) => !(item.type === 'fill' && item.fillId === pending.tempId)
         )
-        pendingOptimisticFills.delete(nonce)
         console.warn(
           `Canvas: Cleaned up orphaned optimistic fill ${pending.tempId} (server never confirmed)`
         )
       }
+
+      // Remove expired entries from pendingOptimisticFills
+      // Create a new Map excluding expired nonces to trigger reactivity
+      const newMap = new Map<string, { tempId: string; timestamp: number }>()
+      for (const [nonce, pending] of pendingOptimisticFills.entries()) {
+        if (!expiredNonces.includes(nonce)) {
+          newMap.set(nonce, pending)
+        }
+      }
+      pendingOptimisticFills = newMap
     }
   }, OPTIMISTIC_FILL_CLEANUP_INTERVAL_MS)
 
@@ -663,7 +708,10 @@
     )
 
     // Track this optimistic fill for cleanup if server never confirms
-    pendingOptimisticFills.set(nonce, { tempId, timestamp: Date.now() })
+    pendingOptimisticFills = mapSetOptimisticInfo(pendingOptimisticFills, nonce, {
+      tempId,
+      timestamp: Date.now(),
+    })
 
     // Send fill message to server with nonce for correlation
     const sent = ws?.sendFill(x, y, fillColor, nonce)
@@ -672,7 +720,7 @@
       // Remove optimistic fill on failure to prevent desync
       fills = fills.filter((f) => f.id !== tempId)
       undoStack = undoStack.filter((item) => !(item.type === 'fill' && item.fillId === tempId))
-      pendingOptimisticFills.delete(nonce)
+      pendingOptimisticFills = mapDelete(pendingOptimisticFills, nonce)
     }
   }
 
@@ -693,7 +741,7 @@
         // Track as pending undo - server will confirm with stroke-removed
         const item = undoStack[undoStack.length - 1]
         if (item) {
-          pendingUndoStrokes.set(next.action.strokeId, item)
+          pendingUndoStrokes = mapSet(pendingUndoStrokes, next.action.strokeId, item)
         }
       }
     } else if (next.action?.type === 'undo-fill') {
@@ -702,7 +750,7 @@
         // Track as pending undo - server will confirm with fill-removed
         const item = undoStack[undoStack.length - 1]
         if (item) {
-          pendingUndoFills.set(next.action.fillId, item)
+          pendingUndoFills = mapSet(pendingUndoFills, next.action.fillId, item)
         }
       }
     }
@@ -735,14 +783,14 @@
     let sendSucceeded = false
     if (item.type === 'stroke' && next.action?.type === 'send-stroke') {
       // Track the UndoItem from redoStack so onStroke can remove it when confirmed
-      pendingRedoStrokes.set(next.action.stroke.id, item)
+      pendingRedoStrokes = mapSet(pendingRedoStrokes, next.action.stroke.id, item)
       sendSucceeded = ws?.sendStroke(next.action.stroke) ?? false
     } else if (item.type === 'fill' && next.action?.type === 'send-fill') {
       // Generate unique nonce for this redo fill to distinguish from other fills
       // with same coordinates/color
       const nonce = crypto.randomUUID()
       // Track the UndoItem from redoStack and timestamp for ordering
-      pendingRedoFills.set(nonce, { item, timestamp: Date.now() })
+      pendingRedoFills = mapSetRedoInfo(pendingRedoFills, nonce, { item, timestamp: Date.now() })
       sendSucceeded = ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce) ?? false
     }
 
@@ -768,6 +816,7 @@
       // The redo item remains in redoStack for potential retry
       pendingRedoStrokes = new Map()
       pendingRedoFills = new Map()
+      // Reassignment already triggers reactivity for derived values
     }, REDO_ACK_TIMEOUT_MS)
 
     // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server

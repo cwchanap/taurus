@@ -49,11 +49,14 @@
   let currentIsEraser = false
   let initError = $state<string | null>(null)
   let lastOperationsSig = ''
+  let resizeTrigger = $state(0) // Increment to trigger fill reconciliation after resize
 
   // Combined reconciliation of strokes and fills in timestamp order
   // This ensures correct z-ordering regardless of operation type
   $effect(() => {
     if (!app || !drawingContainer) return
+    // Track resizeTrigger to reprocess fills after canvas resize
+    resizeTrigger //eslint-disable-line
     try {
       const currentStrokeIds = new Set(strokes.map((s) => s.id))
       const currentFillIds = new Set(fills.map((f) => f.id))
@@ -166,6 +169,8 @@
         bg.fill(CANVAS_BG)
         // Clear OOB fill cache when canvas resizes - fills that were OOB may now be valid
         oobFills.clear()
+        // Increment trigger to force fill reconciliation
+        resizeTrigger++
       })
 
       if (!mounted) {
