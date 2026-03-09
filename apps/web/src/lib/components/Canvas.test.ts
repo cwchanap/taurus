@@ -156,7 +156,8 @@ describe('Canvas', () => {
 
     app.stage.emit('pointerdown', { global: { x: 3, y: 4 } })
 
-    expect(onFill).toHaveBeenCalledWith(3, 4, '#FF6B6B')
+    // Coordinates are normalized to 0-1 range
+    expect(onFill).toHaveBeenCalledWith(0.375, 0.5, '#FF6B6B')
   })
 
   it('supports remote stroke updates and clearing the canvas', async () => {
@@ -354,8 +355,8 @@ describe('Canvas', () => {
         {
           id: 'f1',
           playerId: 'p1',
-          x: 2,
-          y: 2,
+          x: 0.5,
+          y: 0.5,
           color: '#FF6B6B',
           timestamp: fillTimestamp,
         },
@@ -554,8 +555,8 @@ describe('Canvas', () => {
         {
           id: fillId,
           playerId: 'player-1',
-          x: 3,
-          y: 4,
+          x: 0.5,
+          y: 0.5,
           color: 'not-a-color', // Invalid color format
           timestamp: fillTimestamp,
         } as unknown as FillOperation,
