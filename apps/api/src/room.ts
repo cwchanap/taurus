@@ -944,11 +944,46 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    if (this.gameState.status !== 'playing') return
-    if (playerId !== this.gameState.currentDrawerId) return
+    if (this.gameState.status !== 'playing') {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Undo failed: game is not in progress',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
+
+    if (playerId !== this.gameState.currentDrawerId) {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Undo failed: only the current drawer can undo',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
 
     if (!isValidDrawingId(data.strokeId)) {
       console.warn(`Invalid strokeId in undo-stroke from player ${playerId}`)
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Undo failed: invalid stroke ID',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
       return
     }
 
@@ -979,11 +1014,46 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    if (this.gameState.status !== 'playing') return
-    if (playerId !== this.gameState.currentDrawerId) return
+    if (this.gameState.status !== 'playing') {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Undo failed: game is not in progress',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
+
+    if (playerId !== this.gameState.currentDrawerId) {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Undo failed: only the current drawer can undo',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
 
     if (!isValidDrawingId(data.fillId)) {
       console.warn(`Invalid fillId in undo-fill from player ${playerId}`)
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Undo failed: invalid fill ID',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
       return
     }
 

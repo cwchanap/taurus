@@ -957,7 +957,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
 
     await room.webSocketMessage(
       drawerWs,
-      JSON.stringify({ type: 'fill', x: 100, y: 200, color: '#FF6B6B' })
+      JSON.stringify({ type: 'fill', x: 0.1, y: 0.2, color: '#FF6B6B' })
     )
     await new Promise((resolve) => setTimeout(resolve, 0))
     await flushPromises()
@@ -970,8 +970,8 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
         (m) =>
           m?.type === 'fill' &&
           m.playerId === 'player-1' &&
-          m.x === 100 &&
-          m.y === 200 &&
+          m.x === 0.1 &&
+          m.y === 0.2 &&
           m.color === '#FF6B6B'
       )
     ).toBe(true)
@@ -980,8 +980,8 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
         (m) =>
           m?.type === 'fill' &&
           m.playerId === 'player-1' &&
-          m.x === 100 &&
-          m.y === 200 &&
+          m.x === 0.1 &&
+          m.y === 0.2 &&
           m.color === '#FF6B6B'
       )
     ).toBe(true)
@@ -1001,8 +1001,8 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
       drawerWs,
       JSON.stringify({
         type: 'fill',
-        x: 100,
-        y: 200,
+        x: 0.5,
+        y: 0.5,
         color: '#FF6B6B',
         nonce: 'nonce-123',
       })

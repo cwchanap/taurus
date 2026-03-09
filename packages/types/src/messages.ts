@@ -47,6 +47,11 @@ export interface FillOperation {
    * Never persisted on the server. Echoed back verbatim to the originating client only.
    */
   nonce?: string
+  /**
+   * Coordinates x and y are normalized values in the range [0, 1], representing
+   * the position relative to canvas dimensions. For example, x=0.5 means "50%
+   * across the canvas width" regardless of the actual pixel dimensions.
+   */
 }
 
 // Wire format for GameState (what goes over WebSocket)

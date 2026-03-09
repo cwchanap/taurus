@@ -9,8 +9,6 @@ import {
   MIN_STROKE_SIZE,
   MAX_STROKE_POINTS,
   MAX_COORDINATE_VALUE,
-  MAX_CANVAS_WIDTH,
-  MAX_CANVAS_HEIGHT,
 } from './constants'
 
 /**
@@ -106,7 +104,10 @@ export function isValidStrokeId(strokeId: unknown): strokeId is string {
 }
 
 /**
- * Validates a fill operation's coordinates and color
+ * Validates a fill operation's normalized coordinates and color.
+ * Coordinates x and y must be in the range [0, 1), representing the
+ * position relative to canvas dimensions. The value 1.0 is excluded
+ * to ensure the fill always targets a valid pixel within the canvas.
  */
 export function validateFill(data: unknown): { x: number; y: number; color: PaletteColor } | null {
   if (!data || typeof data !== 'object') {
@@ -115,11 +116,12 @@ export function validateFill(data: unknown): { x: number; y: number; color: Pale
 
   const d = data as Record<string, unknown>
 
-  if (typeof d.x !== 'number' || !Number.isFinite(d.x) || d.x < 0 || d.x >= MAX_CANVAS_WIDTH) {
+  // Validate normalized coordinates (0-1 range, exclusive of 1.0)
+  if (typeof d.x !== 'number' || !Number.isFinite(d.x) || d.x < 0 || d.x >= 1) {
     return null
   }
 
-  if (typeof d.y !== 'number' || !Number.isFinite(d.y) || d.y < 0 || d.y >= MAX_CANVAS_HEIGHT) {
+  if (typeof d.y !== 'number' || !Number.isFinite(d.y) || d.y < 0 || d.y >= 1) {
     return null
   }
 
@@ -127,7 +129,7 @@ export function validateFill(data: unknown): { x: number; y: number; color: Pale
     return null
   }
 
-  return { x: Math.floor(d.x), y: Math.floor(d.y), color: d.color as PaletteColor }
+  return { x: d.x, y: d.y, color: d.color as PaletteColor }
 }
 
 /**
