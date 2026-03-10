@@ -116,12 +116,12 @@ export function validateFill(data: unknown): { x: number; y: number; color: Pale
 
   const d = data as Record<string, unknown>
 
-  // Validate normalized coordinates (0-1 range, exclusive of 1.0)
-  if (typeof d.x !== 'number' || !Number.isFinite(d.x) || d.x < 0 || d.x >= 1) {
+  // Validate normalized coordinates (0-1 range, inclusive of 1.0 for canvas-edge clicks)
+  if (typeof d.x !== 'number' || !Number.isFinite(d.x) || d.x < 0 || d.x > 1) {
     return null
   }
 
-  if (typeof d.y !== 'number' || !Number.isFinite(d.y) || d.y < 0 || d.y >= 1) {
+  if (typeof d.y !== 'number' || !Number.isFinite(d.y) || d.y < 0 || d.y > 1) {
     return null
   }
 
@@ -129,7 +129,10 @@ export function validateFill(data: unknown): { x: number; y: number; color: Pale
     return null
   }
 
-  return { x: d.x, y: d.y, color: d.color as PaletteColor }
+  // Clamp exactly-1.0 edge values so downstream pixel math (floor(x * width)) stays in bounds
+  const x = Math.min(d.x, 1 - Number.EPSILON)
+  const y = Math.min(d.y, 1 - Number.EPSILON)
+  return { x, y, color: d.color as PaletteColor }
 }
 
 /**
