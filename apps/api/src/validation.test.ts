@@ -56,13 +56,25 @@ describe('validateFill', () => {
     expect(result?.y).toBe(0.0)
   })
 
+  test('accepts x == 1.0 (canvas right edge) and clamps it', () => {
+    const result = validateFill({ x: 1.0, y: 0.5, color: VALID_FILL_COLOR })
+    expect(result).not.toBeNull()
+    expect(result!.x).toBeLessThan(1)
+  })
+
+  test('accepts y == 1.0 (canvas bottom edge) and clamps it', () => {
+    const result = validateFill({ x: 0.5, y: 1.0, color: VALID_FILL_COLOR })
+    expect(result).not.toBeNull()
+    expect(result!.y).toBeLessThan(1)
+  })
+
   test('rejects x > 1.0', () => {
-    expect(validateFill({ x: 1.0, y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
     expect(validateFill({ x: 1.5, y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 2.0, y: 0.5, color: VALID_FILL_COLOR })).toBeNull()
   })
 
   test('rejects y > 1.0', () => {
-    expect(validateFill({ x: 0.5, y: 1.0, color: VALID_FILL_COLOR })).toBeNull()
+    expect(validateFill({ x: 0.5, y: 1.5, color: VALID_FILL_COLOR })).toBeNull()
     expect(validateFill({ x: 0.5, y: 2.0, color: VALID_FILL_COLOR })).toBeNull()
   })
 

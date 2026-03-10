@@ -459,7 +459,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Handle message - each handler gets its own try-catch for targeted error responses
     const sendError = (msg: string) => {
       try {
-        ws.send(JSON.stringify({ type: 'error', message: msg }))
+        ws.send(JSON.stringify({ type: 'error', action: data.type, message: msg }))
       } catch {
         // Connection may be closed
       }

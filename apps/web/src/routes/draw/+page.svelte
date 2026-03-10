@@ -217,20 +217,29 @@
         // Clear redo lock on permanent connection failure to allow user action
         redoInProgress = false
       },
-      onServerError: (message) => {
+      onServerError: (message, action) => {
         errorMessage = message
-        // Clear redo lock on server errors to allow retry
-        clearRedoLock()
-        pendingRedoStrokes = new Map()
-        pendingRedoFills = new Map()
-        // Clear any pending undo operations since the server rejected them
-        // This prevents canUndo from staying false forever when undo fails
-        pendingUndoStrokes = new Map()
-        pendingUndoFills = new Map()
-        const next = discardPendingOptimisticFills(fills, undoStack, pendingOptimisticFills)
-        fills = next.fills
-        undoStack = next.undoStack
-        pendingOptimisticFills = next.pendingOptimisticFills
+        const isDrawingAction =
+          action === 'undo-stroke' ||
+          action === 'undo-fill' ||
+          action === 'fill' ||
+          action === 'stroke' ||
+          action === 'stroke-update'
+        if (isDrawingAction) {
+          clearRedoLock()
+          pendingRedoStrokes = new Map()
+          pendingRedoFills = new Map()
+          pendingUndoStrokes = new Map()
+          pendingUndoFills = new Map()
+          const next = discardPendingOptimisticFills(fills, undoStack, pendingOptimisticFills)
+          fills = next.fills
+          undoStack = next.undoStack
+          pendingOptimisticFills = next.pendingOptimisticFills
+        } else {
+          // Non-drawing errors (chat rate limit, clear, etc.) — only release the redo lock
+          // to avoid getting stuck, but don't discard in-flight drawing state
+          clearRedoLock()
+        }
       },
       onInit: (
         id,
