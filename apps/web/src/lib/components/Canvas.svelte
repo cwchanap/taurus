@@ -1,4 +1,5 @@
 <script lang="ts">
+  import 'pixi.js/advanced-blend-modes'
   import { Application, Graphics, Container } from 'pixi.js'
   import { onMount, onDestroy } from 'svelte'
   import type { Point, Stroke, FillOperation, PaletteColor, Tool } from '@repo/types'
@@ -98,11 +99,19 @@
         }
       }
 
-      // Clear fills that need recomputation (came after a removed operation)
+      // Clear operations that need recomputation (came at/after a removed operation)
       if (minRemovedTimestamp < Infinity) {
+        for (const [id, graphics] of strokeGraphics.entries()) {
+          const strokeTs = currentTimestamps.get(id)
+          if (strokeTs !== undefined && strokeTs >= minRemovedTimestamp) {
+            graphics.destroy()
+            strokeGraphics.delete(id)
+          }
+        }
+
         for (const [id, graphics] of fillGraphics.entries()) {
           const fillTs = currentTimestamps.get(id)
-          if (fillTs !== undefined && fillTs > minRemovedTimestamp) {
+          if (fillTs !== undefined && fillTs >= minRemovedTimestamp) {
             graphics?.destroy()
             fillGraphics.delete(id)
             oobFills.delete(id)
@@ -239,6 +248,7 @@
     currentIsEraser = tool === 'eraser'
 
     currentGraphics = new Graphics()
+    currentGraphics.blendMode = currentIsEraser ? 'erase' : 'normal'
     drawingContainer.addChild(currentGraphics)
     strokeGraphics.set(currentStrokeId, currentGraphics)
 
@@ -263,15 +273,11 @@
 
     const point = { x: event.global.x, y: event.global.y }
 
-    currentGraphics
-      .moveTo(lastPoint.x, lastPoint.y)
-      .lineTo(point.x, point.y)
-      .stroke({
-        width: strokeSize,
-        color: strokeColor,
-        cap: 'round',
-        ...(currentIsEraser ? { blendMode: 'erase' } : {}),
-      })
+    currentGraphics.moveTo(lastPoint.x, lastPoint.y).lineTo(point.x, point.y).stroke({
+      width: strokeSize,
+      color: strokeColor,
+      cap: 'round',
+    })
 
     lastPoint = point
     onStrokeUpdate(currentStrokeId, point)
@@ -294,6 +300,7 @@
       strokeGraphics.set(stroke.id, graphics)
     }
 
+    graphics.blendMode = stroke.eraser ? 'erase' : 'normal'
     graphics.clear()
     for (let i = 1; i < stroke.points.length; i++) {
       graphics
@@ -303,7 +310,6 @@
           width: stroke.size,
           color: stroke.color,
           cap: 'round',
-          ...(stroke.eraser ? { blendMode: 'erase' } : {}),
         })
     }
   }
@@ -346,19 +352,18 @@
       return
     }
 
-    // Denormalize coordinates from 0-1 range to actual pixel positions
-    const targetX = Math.round(fill.x * width)
-    const targetY = Math.round(fill.y * height)
-
-    if (targetX < 0 || targetX >= width || targetY < 0 || targetY >= height) {
+    // Denormalize coordinates from 0-1 range and clamp to valid pixel bounds
+    const rawTargetX = Math.floor(fill.x * width)
+    const rawTargetY = Math.floor(fill.y * height)
+    if (!Number.isFinite(rawTargetX) || !Number.isFinite(rawTargetY)) {
       console.warn(
-        `Canvas: Fill ${fill.id} at normalized (${fill.x},${fill.y}) -> pixel (${targetX},${targetY}) out of bounds (${width}x${height}), skipping until canvas resizes`
+        `Canvas: Fill ${fill.id} has invalid normalized coordinates (${fill.x},${fill.y}), skipping`
       )
-      // Mark as out-of-bounds to avoid repeated expensive pixel extraction
-      // Will be retried if canvas size changes (resize handler clears this cache)
-      oobFills.add(fill.id)
+      fillGraphics.set(fill.id, null)
       return
     }
+    const targetX = Math.min(Math.max(rawTargetX, 0), width - 1)
+    const targetY = Math.min(Math.max(rawTargetY, 0), height - 1)
 
     // Parse fill color (hex string like '#FF6B6B') to RGB
     const fillColor = hexToRgb(fill.color)
@@ -493,15 +498,12 @@
 
     if (lastPt.x === point.x && lastPt.y === point.y) return true
 
-    graphics
-      .moveTo(lastPt.x, lastPt.y)
-      .lineTo(point.x, point.y)
-      .stroke({
-        width: existingStroke.size,
-        color: existingStroke.color,
-        cap: 'round',
-        ...(existingStroke.eraser ? { blendMode: 'erase' } : {}),
-      })
+    graphics.blendMode = existingStroke.eraser ? 'erase' : 'normal'
+    graphics.moveTo(lastPt.x, lastPt.y).lineTo(point.x, point.y).stroke({
+      width: existingStroke.size,
+      color: existingStroke.color,
+      cap: 'round',
+    })
 
     return true
   }

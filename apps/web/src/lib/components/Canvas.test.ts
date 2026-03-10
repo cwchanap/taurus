@@ -8,6 +8,8 @@ import type { FillOperation } from '@repo/types'
 // Shared state for mock apps
 const pixiState: { apps: unknown[] } = { apps: [] }
 
+vi.mock('pixi.js/advanced-blend-modes', () => ({}))
+
 vi.mock('pixi.js', () => {
   class MockGraphics {
     blendMode: string | undefined
@@ -261,7 +263,10 @@ describe('Canvas', () => {
     await tick()
 
     const app = pixiState.apps[0] as {
-      stage: { emit: (event: string, payload: { global: { x: number; y: number } }) => void }
+      stage: {
+        emit: (event: string, payload: { global: { x: number; y: number } }) => void
+        children: unknown[]
+      }
     }
 
     app.stage.emit('pointerdown', { global: { x: 5, y: 5 } })
@@ -269,6 +274,9 @@ describe('Canvas', () => {
     expect(onStrokeStart).toHaveBeenCalledTimes(1)
     const stroke = onStrokeStart.mock.calls[0][0]
     expect(stroke.eraser).toBe(true)
+    const drawingContainer = app.stage.children[1] as { children: Array<{ blendMode?: string }> }
+    const latestGraphic = drawingContainer.children[drawingContainer.children.length - 1]
+    expect(latestGraphic?.blendMode).toBe('erase')
   })
 
   it('removes deleted strokes during reconciliation', async () => {
@@ -412,7 +420,7 @@ describe('Canvas', () => {
     expect(destroyed.length).toBeGreaterThan(0)
   })
 
-  it('warns on out-of-bounds fills and retries on next reconciliation', async () => {
+  it('clamps out-of-range fill coordinates into valid canvas bounds', async () => {
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const fillId = 'fill-out-of-bounds'
@@ -447,12 +455,11 @@ describe('Canvas', () => {
       renderer: { extract: { pixels: ReturnType<typeof vi.fn> } }
     }
 
-    // applyFill should have called extract.pixels to check bounds
+    // applyFill should proceed with clamped coordinates
     expect(app.renderer.extract.pixels).toHaveBeenCalled()
 
-    // Should have warned about out-of-bounds fill
-    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('out of bounds'))
-    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining(fillId))
+    // Coordinate clamping should prevent out-of-bounds warnings
+    expect(consoleWarnSpy).not.toHaveBeenCalledWith(expect.stringContaining('out of bounds'))
 
     consoleWarnSpy.mockRestore()
   })

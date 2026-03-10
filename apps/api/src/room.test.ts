@@ -355,6 +355,35 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect(fillPutCalls[0]?.[1]).toHaveLength(2)
   })
 
+  test('re-schedules storage writes when canvas delete fails during endGame', async () => {
+    // Speed up debounced scheduler for test
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).storageWriteDelay = 0
+
+    // Force delete queue failures so endGame catch blocks run
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).queueStrokeDelete = mock(() => Promise.reject(new Error('stroke delete failed')))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).queueFillDelete = mock(() => Promise.reject(new Error('fill delete failed')))
+
+    const originalError = console.error
+    console.error = mock(() => {})
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).endGame()
+      await flushPromises()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await flushPromises()
+    } finally {
+      console.error = originalError
+    }
+
+    const strokePutCalls = mockStoragePut.mock.calls.filter((call) => call[0] === 'strokes')
+    const fillPutCalls = mockStoragePut.mock.calls.filter((call) => call[0] === 'fills')
+    expect(strokePutCalls.length).toBeGreaterThan(0)
+    expect(fillPutCalls.length).toBeGreaterThan(0)
+  })
+
   test('ensureInitialized recovers from invalid persisted game state', async () => {
     const originalError = console.error
     console.error = mock(() => {})
