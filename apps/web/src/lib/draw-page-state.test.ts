@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
-import type { FillOperation, ScoreEntry, Stroke } from './types'
+import type { FillOperation, GameStatus, ScoreEntry, Stroke } from './types'
 import {
   applyRedoState,
   applyUndoState,
@@ -183,9 +183,11 @@ describe('draw-page-state helpers', () => {
   it('derives winners only when status is game-over', () => {
     const scores: Record<string, ScoreEntry> = { p1: { name: 'A', score: 10 } }
     const derive = () => [{ playerId: 'p1', playerName: 'A', score: 10 }]
+    const gameOverStatus: GameStatus = 'game-over'
+    const playingStatus: GameStatus = 'playing'
 
-    expect(deriveWinnersIfGameOver('game-over', scores, derive)).toHaveLength(1)
-    expect(deriveWinnersIfGameOver('playing', scores, derive)).toEqual([])
+    expect(deriveWinnersIfGameOver(gameOverStatus, scores, derive)).toHaveLength(1)
+    expect(deriveWinnersIfGameOver(playingStatus, scores, derive)).toEqual([])
   })
 
   it('buildRoundStartState returns normalized playing state values', () => {

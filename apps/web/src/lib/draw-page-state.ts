@@ -273,7 +273,7 @@ export function getTimeRemainingSeconds(
 }
 
 export function deriveWinnersIfGameOver(
-  status: string,
+  status: GameStatus,
   scores: Record<string, ScoreEntry>,
   deriveGameWinners: (scores: Record<string, ScoreEntry>) => Winner[]
 ): Winner[] {

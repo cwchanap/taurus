@@ -295,8 +295,8 @@ export class GameWebSocket {
     this.send({ type: 'start-game' })
   }
 
-  sendResetGame() {
-    this.send({ type: 'reset-game' })
+  sendResetGame(): boolean {
+    return this.send({ type: 'reset-game' })
   }
 
   disconnect() {

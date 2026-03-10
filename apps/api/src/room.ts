@@ -1366,12 +1366,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       console.error('Failed to delete strokes from storage:', e)
       // Re-mark as dirty so the next storage write will retry
       this.strokeStorageDirty = true
+      this.scheduleStorageWrite('strokes')
     })
 
     const fillDeletePromise = this.queueFillDelete().catch((e) => {
       console.error('Failed to delete fills from storage:', e)
       // Re-mark as dirty so the next storage write will retry
       this.fillStorageDirty = true
+      this.scheduleStorageWrite('fills')
     })
 
     this.ctx.waitUntil(strokeDeletePromise)
@@ -1463,11 +1465,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const strokeDeletePromise = this.queueStrokeDelete().catch((e) => {
       console.error('Failed to delete strokes from storage:', e)
       this.strokeStorageDirty = true
+      this.scheduleStorageWrite('strokes')
     })
 
     const fillDeletePromise = this.queueFillDelete().catch((e) => {
       console.error('Failed to delete fills from storage:', e)
       this.fillStorageDirty = true
+      this.scheduleStorageWrite('fills')
     })
 
     this.ctx.waitUntil(strokeDeletePromise)
@@ -1715,11 +1719,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const strokeDeletePromise = this.queueStrokeDelete().catch((e) => {
       console.error('Failed to delete strokes from storage:', e)
       this.strokeStorageDirty = true
+      this.scheduleStorageWrite('strokes')
     })
 
     const fillDeletePromise = this.queueFillDelete().catch((e) => {
       console.error('Failed to delete fills from storage:', e)
       this.fillStorageDirty = true
+      this.scheduleStorageWrite('fills')
     })
 
     this.ctx.waitUntil(strokeDeletePromise)

@@ -29,7 +29,7 @@
     syncUndoStrokeTimestamp,
     updateStrokePoint,
   } from '$lib/draw-page-state'
-  import { onDestroy } from 'svelte'
+  import { onMount, onDestroy } from 'svelte'
   import type {
     Player,
     Stroke,
@@ -101,7 +101,7 @@
   let canvasComponent = $state<Canvas>()
   let correctGuessTimeoutId: ReturnType<typeof setTimeout> | null = null
   let redoTimeoutId: ReturnType<typeof setTimeout> | null = null
-  let optimisticFillCleanupId: ReturnType<typeof setTimeout> | null = null
+  let optimisticFillCleanupId: ReturnType<typeof setInterval> | null = null
 
   // Clear redoInProgress flag after timeout if no acknowledgment received
   // This handles cases where server silently drops the redo (e.g., round ended)
@@ -428,6 +428,8 @@
                 }
                 return item
               })
+              // Clear redo stack only after server confirms the optimistic fill
+              redoStack = []
               // Clean up from pending optimistic fills map
               if (fill.nonce) {
                 pendingOptimisticFills = mapDelete(pendingOptimisticFills, fill.nonce)
@@ -604,6 +606,47 @@
     ws.connect()
   }
 
+  onMount(() => {
+    // Start cleanup interval for orphaned optimistic fills after component mount
+    optimisticFillCleanupId = setInterval(() => {
+      const now = Date.now()
+      const expiredNonces: string[] = []
+      const expiredFills: { tempId: string }[] = []
+
+      // Find expired pending fills
+      for (const [nonce, pending] of pendingOptimisticFills.entries()) {
+        if (now - pending.timestamp > OPTIMISTIC_FILL_TIMEOUT_MS) {
+          expiredNonces.push(nonce)
+          expiredFills.push(pending)
+        }
+      }
+
+      // Remove expired fills and update pendingOptimisticFills reactively
+      if (expiredNonces.length > 0) {
+        // Remove the orphaned optimistic fills from fills and undoStack
+        for (const pending of expiredFills) {
+          fills = fills.filter((f) => f.id !== pending.tempId)
+          undoStack = undoStack.filter(
+            (item) => !(item.type === 'fill' && item.fillId === pending.tempId)
+          )
+          console.warn(
+            `Canvas: Cleaned up orphaned optimistic fill ${pending.tempId} (server never confirmed)`
+          )
+        }
+
+        // Remove expired entries from pendingOptimisticFills
+        // Create a new Map excluding expired nonces to trigger reactivity
+        const newMap = new Map<string, { tempId: string; timestamp: number }>()
+        for (const [nonce, pending] of pendingOptimisticFills.entries()) {
+          if (!expiredNonces.includes(nonce)) {
+            newMap.set(nonce, pending)
+          }
+        }
+        pendingOptimisticFills = newMap
+      }
+    }, OPTIMISTIC_FILL_CLEANUP_INTERVAL_MS)
+  })
+
   onDestroy(() => {
     ws?.disconnect()
     if (correctGuessTimeoutId) {
@@ -617,47 +660,9 @@
     }
     if (optimisticFillCleanupId) {
       clearInterval(optimisticFillCleanupId)
+      optimisticFillCleanupId = null
     }
   })
-
-  // Start cleanup interval for orphaned optimistic fills
-  optimisticFillCleanupId = setInterval(() => {
-    const now = Date.now()
-    const expiredNonces: string[] = []
-    const expiredFills: { tempId: string }[] = []
-
-    // Find expired pending fills
-    for (const [nonce, pending] of pendingOptimisticFills.entries()) {
-      if (now - pending.timestamp > OPTIMISTIC_FILL_TIMEOUT_MS) {
-        expiredNonces.push(nonce)
-        expiredFills.push(pending)
-      }
-    }
-
-    // Remove expired fills and update pendingOptimisticFills reactively
-    if (expiredNonces.length > 0) {
-      // Remove the orphaned optimistic fills from fills and undoStack
-      for (const pending of expiredFills) {
-        fills = fills.filter((f) => f.id !== pending.tempId)
-        undoStack = undoStack.filter(
-          (item) => !(item.type === 'fill' && item.fillId === pending.tempId)
-        )
-        console.warn(
-          `Canvas: Cleaned up orphaned optimistic fill ${pending.tempId} (server never confirmed)`
-        )
-      }
-
-      // Remove expired entries from pendingOptimisticFills
-      // Create a new Map excluding expired nonces to trigger reactivity
-      const newMap = new Map<string, { tempId: string; timestamp: number }>()
-      for (const [nonce, pending] of pendingOptimisticFills.entries()) {
-        if (!expiredNonces.includes(nonce)) {
-          newMap.set(nonce, pending)
-        }
-      }
-      pendingOptimisticFills = newMap
-    }
-  }, OPTIMISTIC_FILL_CLEANUP_INTERVAL_MS)
 
   function handleStrokeStart(stroke: Stroke) {
     strokes = [...strokes, stroke]
@@ -709,8 +714,7 @@
     // Optimistically add fill to local state
     fills = [...fills, optimisticFill]
 
-    // Add to undo stack and clear redo stack (consistent with stroke handling)
-    redoStack = []
+    // Add to undo stack optimistically; redo clears after server confirmation
     undoStack = pushBoundedUndo(
       undoStack,
       { type: 'fill', fillId: tempId, fill: optimisticFill },
@@ -877,21 +881,10 @@
   }
 
   function handleClear() {
-    const sent = ws?.sendClear()
-    if (sent === false) {
+    const sent = ws?.sendClear() ?? false
+    if (!sent) {
       console.error('handleClear: WebSocket not open, clear was not sent to server')
-      return
     }
-    strokes = []
-    fills = []
-    undoStack = []
-    redoStack = []
-    redoInProgress = false
-    pendingRedoFills = new Map()
-    pendingRedoStrokes = new Map()
-    pendingUndoStrokes = new Map()
-    pendingUndoFills = new Map()
-    canvasComponent?.clearCanvas()
   }
 
   function handleSendMessage(content: string) {
@@ -904,19 +897,10 @@
 
   function handlePlayAgain() {
     // Inform server to reset the game - server will broadcast game-reset
-    ws?.sendResetGame()
-
-    // Clear local strokes immediately for better UX
-    strokes = []
-    fills = []
-    undoStack = []
-    redoStack = []
-    redoInProgress = false
-    pendingRedoFills = new Map()
-    pendingRedoStrokes = new Map()
-    pendingUndoStrokes = new Map()
-    pendingUndoFills = new Map()
-    canvasComponent?.clearCanvas()
+    const sent = ws?.sendResetGame() ?? false
+    if (!sent) {
+      console.error('handlePlayAgain: WebSocket not open, reset-game was not sent to server')
+    }
   }
 </script>
 
