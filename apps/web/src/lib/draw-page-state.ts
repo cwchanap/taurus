@@ -209,6 +209,18 @@ export function rollbackPendingRedoMarker(
   }
 }
 
+export function getRedoInFlightCount(
+  redoInProgress: boolean,
+  pendingRedoStrokes: Map<string, UndoItem>,
+  pendingRedoFills: Map<string, PendingRedoFillInfo>
+): number {
+  if (!redoInProgress) {
+    return 0
+  }
+
+  return pendingRedoStrokes.size + pendingRedoFills.size
+}
+
 export function discardPendingOptimisticFills(
   fills: FillOperation[],
   undoStack: UndoItem[],

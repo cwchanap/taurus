@@ -942,6 +942,10 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
 
     const msgs = getSentMessages(ws)
     expect(msgs.some((m) => m?.type === 'fill')).toBe(false)
+    const errorMsg = msgs.find((m) => m?.type === 'error')
+    expect(errorMsg).toBeDefined()
+    expect(errorMsg?.message).toBe('Fill failed: only the current drawer can fill')
+    expect((errorMsg as { action?: string }).action).toBe('fill')
   })
 
   test('handleFill: rejects fill when game is not in playing state', async () => {
@@ -973,6 +977,10 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
 
     const msgs = getSentMessages(ws)
     expect(msgs.some((m) => m?.type === 'fill')).toBe(false)
+    const errorMsg = msgs.find((m) => m?.type === 'error')
+    expect(errorMsg).toBeDefined()
+    expect(errorMsg?.message).toBe('Fill failed: game is not in progress')
+    expect((errorMsg as { action?: string }).action).toBe('fill')
   })
 
   test('handleFill: valid fill from drawer is persisted and broadcast to all players', async () => {
@@ -1269,6 +1277,106 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     )
     expect(rateLimitError).toBeDefined()
     expect((rateLimitError as { action?: string }).action).toBe('fill')
+  })
+
+  test('handleStroke: rejected drawing errors include action field', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    const nonDrawerWs = createMockWs('player-2', 'Observer')
+    mockGetWebSockets.mockReturnValue([drawerWs, nonDrawerWs])
+
+    // Not playing should send an explicit stroke rejection instead of silently dropping.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      roundEndTime: null,
+      drawerOrder: [],
+      scores: new Map(),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+    }
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({
+        type: 'stroke',
+        stroke: {
+          id: 'stroke-1',
+          playerId: 'player-1',
+          color: '#FF6B6B',
+          size: 4,
+          points: [{ x: 0, y: 0 }],
+          timestamp: Date.now(),
+        },
+      })
+    )
+    await flushPromises()
+
+    setPlayingState('player-1')
+
+    await room.webSocketMessage(
+      nonDrawerWs,
+      JSON.stringify({
+        type: 'stroke',
+        stroke: {
+          id: 'stroke-2',
+          playerId: 'player-2',
+          color: '#4ECDC4',
+          size: 4,
+          points: [{ x: 1, y: 1 }],
+          timestamp: Date.now(),
+        },
+      })
+    )
+    await flushPromises()
+
+    const notPlayingError = getSentMessages(drawerWs).find((m) => m?.type === 'error')
+    expect(notPlayingError).toBeDefined()
+    expect(notPlayingError?.message).toBe('Drawing failed: game is not in progress')
+    expect((notPlayingError as { action?: string }).action).toBe('stroke')
+
+    const nonDrawerError = getSentMessages(nonDrawerWs).find((m) => m?.type === 'error')
+    expect(nonDrawerError).toBeDefined()
+    expect(nonDrawerError?.message).toBe('Drawing failed: only the current drawer can draw')
+    expect((nonDrawerError as { action?: string }).action).toBe('stroke')
+  })
+
+  test('handleStroke: rate limit error includes action field', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    for (let i = 0; i < 150; i++) {
+      await room.webSocketMessage(
+        drawerWs,
+        JSON.stringify({
+          type: 'stroke',
+          stroke: {
+            id: `stroke-${i}`,
+            playerId: 'player-1',
+            color: '#FF6B6B',
+            size: 4,
+            points: [{ x: i, y: i }],
+            timestamp: Date.now(),
+          },
+        })
+      )
+    }
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    const rateLimitError = msgs.find(
+      (m) => m?.type === 'error' && m?.message === 'Rate limit exceeded'
+    )
+    expect(rateLimitError).toBeDefined()
+    expect((rateLimitError as { action?: string }).action).toBe('stroke')
   })
 
   test('handleUndoStroke: enforces LIFO semantics - rejects non-most-recent stroke', async () => {

@@ -20,6 +20,7 @@
     createCorrectGuessNotification,
     discardPendingOptimisticFills,
     deriveWinnersIfGameOver,
+    getRedoInFlightCount,
     getDrawerDisplayName,
     getTimeRemainingSeconds,
     isEditableKeyboardTarget,
@@ -151,7 +152,9 @@
   const canDraw = $derived(gameStatus === 'playing' && isCurrentDrawer)
   const canStartGame = $derived(isHost && gameStatus === 'lobby' && players.length >= 2)
   const undoInFlightCount = $derived(pendingUndoStrokes.size + pendingUndoFills.size)
-  const redoInFlightCount = $derived(pendingRedoStrokes.size + pendingRedoFills.size)
+  const redoInFlightCount = $derived(
+    getRedoInFlightCount(redoInProgress, pendingRedoStrokes, pendingRedoFills)
+  )
   const topUndoItemHasTempId = $derived(() => {
     const top = undoStack[undoStack.length - 1]
     return top?.type === 'fill' && top.fillId.startsWith('temp-fill-')
@@ -209,13 +212,13 @@
         isConnected = connected
         // Clear redo lock on connection changes to allow retry after reconnection
         if (!connected) {
-          redoInProgress = false
+          clearRedoLock()
         }
       },
       onConnectionFailed: (reason) => {
         errorMessage = reason
         // Clear redo lock on permanent connection failure to allow user action
-        redoInProgress = false
+        clearRedoLock()
       },
       onServerError: (message, action) => {
         errorMessage = message
@@ -847,10 +850,8 @@
       console.warn('handleRedo: No acknowledgment received from server, clearing redo lock')
       redoInProgress = false
       redoTimeoutId = null
-      // Keep pending redo maps to handle delayed server echoes
-      // When the delayed echo arrives, it will match the pending entry and be handled
-      // correctly as a redo confirmation instead of being treated as a new stroke/fill
-      // Stale entries will be replaced when a new redo is initiated
+      // Keep pending redo markers so delayed server echoes can still reconcile to the
+      // original redo item, but stop counting them against canRedo once the lock clears.
     }, REDO_ACK_TIMEOUT_MS)
 
     // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server

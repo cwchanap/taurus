@@ -12,6 +12,7 @@ import {
   createCorrectGuessNotification,
   discardPendingOptimisticFills,
   deriveWinnersIfGameOver,
+  getRedoInFlightCount,
   getDrawerDisplayName,
   getTimeRemainingSeconds,
   isEditableKeyboardTarget,
@@ -355,6 +356,34 @@ describe('draw-page-state helpers', () => {
     )
     expect(fillRollback.pendingRedoStrokes.size).toBe(1)
     expect(fillRollback.pendingRedoFills.size).toBe(0)
+  })
+
+  it('getRedoInFlightCount ignores stale redo markers after the lock is released', () => {
+    const stroke: Stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: 1000,
+    }
+    const fill: FillOperation = {
+      id: 'f1',
+      playerId: 'p1',
+      x: 10,
+      y: 10,
+      color: '#FFFFFF',
+      timestamp: 1500,
+    }
+    const pendingRedoStrokes = new Map<string, UndoItem>([
+      ['s1', { type: 'stroke', strokeId: 's1', stroke }],
+    ])
+    const pendingRedoFills = new Map<string, PendingRedoFillInfo>([
+      ['nonce-1', { item: { type: 'fill' as const, fillId: 'f1', fill }, timestamp: 1500 }],
+    ])
+
+    expect(getRedoInFlightCount(false, pendingRedoStrokes, pendingRedoFills)).toBe(0)
+    expect(getRedoInFlightCount(true, pendingRedoStrokes, pendingRedoFills)).toBe(2)
   })
 
   it('discardPendingOptimisticFills removes temp fills from fills and undo stack immediately', () => {

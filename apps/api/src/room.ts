@@ -777,10 +777,32 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Only allow drawing during active 'playing' state
     if (this.gameState.status !== 'playing') {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            action: 'stroke',
+            message: 'Drawing failed: game is not in progress',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
       return
     }
     // Only the current drawer can draw
     if (playerId !== this.gameState.currentDrawerId) {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            action: 'stroke',
+            message: 'Drawing failed: only the current drawer can draw',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
       return
     }
 
@@ -788,7 +810,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     if (!this.checkRateLimit(playerId, true)) {
       console.warn(`Rate limit exceeded for player ${playerId}`)
       try {
-        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
+        ws.send(JSON.stringify({ type: 'error', action: 'stroke', message: 'Rate limit exceeded' }))
       } catch {
         // Connection may be closed
       }
@@ -1132,8 +1154,34 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    if (this.gameState.status !== 'playing') return
-    if (playerId !== this.gameState.currentDrawerId) return
+    if (this.gameState.status !== 'playing') {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            action: 'fill',
+            message: 'Fill failed: game is not in progress',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
+    if (playerId !== this.gameState.currentDrawerId) {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            action: 'fill',
+            message: 'Fill failed: only the current drawer can fill',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
 
     // Reuse the stroke rate limit bucket for fill operations
     if (!this.checkRateLimit(playerId, true)) {
