@@ -19,6 +19,7 @@
     clearCorrectGuessNotification,
     createCorrectGuessNotification,
     discardPendingOptimisticFills,
+    discardPendingOptimisticStrokes,
     deriveWinnersIfGameOver,
     getRedoInFlightCount,
     getDrawerDisplayName,
@@ -95,6 +96,8 @@
   let pendingRedoStrokes = $state<Map<string, UndoItem>>(new Map())
   let pendingUndoStrokes = $state<Map<string, UndoItem>>(new Map())
   let pendingUndoFills = $state<Map<string, UndoItem>>(new Map())
+  // Track optimistic strokes pending server confirmation (strokeId -> stroke)
+  let pendingOptimisticStrokes = $state<Map<string, Stroke>>(new Map())
   // Track optimistic fills pending server confirmation (nonce -> { tempId, timestamp })
   let pendingOptimisticFills = $state<Map<string, { tempId: string; timestamp: number }>>(new Map())
 
@@ -234,6 +237,14 @@
           pendingRedoFills = new Map()
           pendingUndoStrokes = new Map()
           pendingUndoFills = new Map()
+          const nextStrokes = discardPendingOptimisticStrokes(
+            strokes,
+            undoStack,
+            pendingOptimisticStrokes
+          )
+          strokes = nextStrokes.strokes
+          undoStack = nextStrokes.undoStack
+          pendingOptimisticStrokes = nextStrokes.pendingOptimisticStrokes
           const next = discardPendingOptimisticFills(fills, undoStack, pendingOptimisticFills)
           fills = next.fills
           undoStack = next.undoStack
@@ -273,6 +284,7 @@
         pendingRedoStrokes = new Map()
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
+        pendingOptimisticStrokes = new Map()
         chatMessages = chatHistory
         // Initialize game state from server
         gameStatus = initialGameState.status
@@ -313,6 +325,8 @@
           strokes[existingIndex] = { ...strokes[existingIndex], timestamp: stroke.timestamp }
           strokes = [...strokes]
           undoStack = syncUndoStrokeTimestamp(undoStack, stroke.id, stroke.timestamp)
+          // Server confirmed this optimistic stroke
+          pendingOptimisticStrokes = mapDelete(pendingOptimisticStrokes, stroke.id)
         } else {
           strokes = [...strokes, stroke]
           canvasComponent?.addRemoteStroke(stroke)
@@ -490,6 +504,7 @@
         pendingRedoStrokes = new Map()
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
+        pendingOptimisticStrokes = new Map()
         canvasComponent?.clearCanvas()
       },
       onChat: (message) => {
@@ -538,6 +553,7 @@
         pendingRedoFills = new Map()
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
+        pendingOptimisticStrokes = new Map()
         pendingOptimisticFills = new Map()
         // Clear any pending correct-guess timeout before resetting notification
         if (correctGuessTimeoutId) {
@@ -610,6 +626,7 @@
         pendingRedoFills = new Map()
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
+        pendingOptimisticStrokes = new Map()
         pendingOptimisticFills = new Map()
         canvasComponent?.clearCanvas()
       },
@@ -678,6 +695,7 @@
 
   function handleStrokeStart(stroke: Stroke) {
     strokes = [...strokes, stroke]
+    pendingOptimisticStrokes = mapSet(pendingOptimisticStrokes, stroke.id, stroke)
     ws?.sendStroke(stroke)
     // New stroke clears redo stack and pushes to undo
     redoStack = []

@@ -18,6 +18,30 @@ export type PendingRedoFillInfo = { item: UndoItem; timestamp: number }
 
 export type PendingOptimisticFillInfo = { tempId: string; timestamp: number }
 
+export function discardPendingOptimisticStrokes(
+  strokes: Stroke[],
+  undoStack: UndoItem[],
+  pendingOptimisticStrokes: Map<string, Stroke>
+): {
+  strokes: Stroke[]
+  undoStack: UndoItem[]
+  pendingOptimisticStrokes: Map<string, Stroke>
+} {
+  if (pendingOptimisticStrokes.size === 0) {
+    return { strokes, undoStack, pendingOptimisticStrokes }
+  }
+
+  const pendingIds = new Set(pendingOptimisticStrokes.keys())
+
+  return {
+    strokes: strokes.filter((stroke) => !pendingIds.has(stroke.id)),
+    undoStack: undoStack.filter(
+      (item) => !(item.type === 'stroke' && pendingIds.has(item.strokeId))
+    ),
+    pendingOptimisticStrokes: new Map(),
+  }
+}
+
 export function pushBoundedUndo(
   undoStack: UndoItem[],
   item: UndoItem,
