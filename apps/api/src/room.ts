@@ -1030,11 +1030,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       return
     }
 
-    // Enforce LIFO semantics: only the most recent stroke can be undone
+    // Enforce LIFO semantics across strokes AND fills: only the most recent drawing operation can be undone
     const mostRecentStrokeIdx = this.strokes.findLastIndex((s) => s.playerId === playerId)
-    if (idx !== mostRecentStrokeIdx) {
+    const strokeToUndo = this.strokes[idx]
+    const mostRecentFill = this.fills.findLast((f) => f.playerId === playerId)
+    const hasNewerFill =
+      mostRecentFill !== undefined && mostRecentFill.timestamp > strokeToUndo.timestamp
+    if (idx !== mostRecentStrokeIdx || hasNewerFill) {
       console.warn(
-        `Attempted to undo non-most-recent stroke ${trimmedId} by player ${playerId} (most recent index: ${mostRecentStrokeIdx}, requested index: ${idx})`
+        `Attempted to undo non-most-recent stroke ${trimmedId} by player ${playerId} (most recent stroke index: ${mostRecentStrokeIdx}, requested index: ${idx}, has newer fill: ${hasNewerFill})`
       )
       try {
         ws.send(
@@ -1124,11 +1128,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       return
     }
 
-    // Enforce LIFO semantics: only the most recent fill can be undone
+    // Enforce LIFO semantics across strokes AND fills: only the most recent drawing operation can be undone
     const mostRecentFillIdx = this.fills.findLastIndex((f) => f.playerId === playerId)
-    if (idx !== mostRecentFillIdx) {
+    const fillToUndo = this.fills[idx]
+    const mostRecentStroke = this.strokes.findLast((s) => s.playerId === playerId)
+    const hasNewerStroke =
+      mostRecentStroke !== undefined && mostRecentStroke.timestamp > fillToUndo.timestamp
+    if (idx !== mostRecentFillIdx || hasNewerStroke) {
       console.warn(
-        `Attempted to undo non-most-recent fill ${trimmedId} by player ${playerId} (most recent index: ${mostRecentFillIdx}, requested index: ${idx})`
+        `Attempted to undo non-most-recent fill ${trimmedId} by player ${playerId} (most recent fill index: ${mostRecentFillIdx}, requested index: ${idx}, has newer stroke: ${hasNewerStroke})`
       )
       try {
         ws.send(
