@@ -949,6 +949,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.send(
           JSON.stringify({
             type: 'error',
+            action: 'undo-stroke',
             message: 'Undo failed: game is not in progress',
           })
         )
@@ -963,6 +964,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.send(
           JSON.stringify({
             type: 'error',
+            action: 'undo-stroke',
             message: 'Undo failed: only the current drawer can undo',
           })
         )
@@ -978,6 +980,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.send(
           JSON.stringify({
             type: 'error',
+            action: 'undo-stroke',
             message: 'Undo failed: invalid stroke ID',
           })
         )
@@ -995,7 +998,28 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.send(
           JSON.stringify({
             type: 'error',
+            action: 'undo-stroke',
             message: 'Undo failed: stroke not found. Canvas may be out of sync.',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
+
+    // Enforce LIFO semantics: only the most recent stroke can be undone
+    const mostRecentStrokeIdx = this.strokes.findLastIndex((s) => s.playerId === playerId)
+    if (idx !== mostRecentStrokeIdx) {
+      console.warn(
+        `Attempted to undo non-most-recent stroke ${trimmedId} by player ${playerId} (most recent index: ${mostRecentStrokeIdx}, requested index: ${idx})`
+      )
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            action: 'undo-stroke',
+            message: 'Undo failed: can only undo the most recent operation',
           })
         )
       } catch {
@@ -1019,6 +1043,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.send(
           JSON.stringify({
             type: 'error',
+            action: 'undo-fill',
             message: 'Undo failed: game is not in progress',
           })
         )
@@ -1033,6 +1058,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.send(
           JSON.stringify({
             type: 'error',
+            action: 'undo-fill',
             message: 'Undo failed: only the current drawer can undo',
           })
         )
@@ -1048,6 +1074,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.send(
           JSON.stringify({
             type: 'error',
+            action: 'undo-fill',
             message: 'Undo failed: invalid fill ID',
           })
         )
@@ -1065,7 +1092,28 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.send(
           JSON.stringify({
             type: 'error',
+            action: 'undo-fill',
             message: 'Undo failed: fill not found. Canvas may be out of sync.',
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
+      return
+    }
+
+    // Enforce LIFO semantics: only the most recent fill can be undone
+    const mostRecentFillIdx = this.fills.findLastIndex((f) => f.playerId === playerId)
+    if (idx !== mostRecentFillIdx) {
+      console.warn(
+        `Attempted to undo non-most-recent fill ${trimmedId} by player ${playerId} (most recent index: ${mostRecentFillIdx}, requested index: ${idx})`
+      )
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            action: 'undo-fill',
+            message: 'Undo failed: can only undo the most recent operation',
           })
         )
       } catch {
@@ -1091,7 +1139,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     if (!this.checkRateLimit(playerId, true)) {
       console.warn(`Rate limit exceeded for fill by player ${playerId}`)
       try {
-        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
+        ws.send(JSON.stringify({ type: 'error', action: 'fill', message: 'Rate limit exceeded' }))
       } catch {
         // Connection may be closed
       }

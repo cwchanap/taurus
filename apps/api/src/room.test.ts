@@ -1180,4 +1180,177 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     const msgs = getSentMessages(ws)
     expect(msgs.some((m) => m?.type === 'clear')).toBe(false)
   })
+
+  test('handleUndoStroke: error messages include action field', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    // Test non-drawer error
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'undo-stroke', strokeId: 'stroke-1' })
+    )
+    await flushPromises()
+    setPlayingState('player-1') // Reset to playing state for next test
+
+    // Test non-existent stroke error
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'undo-stroke', strokeId: 'non-existent-stroke-id' })
+    )
+    await flushPromises()
+    setPlayingState('player-1') // Reset to playing state for next test
+
+    // Test invalid stroke ID error
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'undo-stroke', strokeId: 'invalid id' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    const errorMessages = msgs.filter((m) => m?.type === 'error')
+    // All errors should have action field set to 'undo-stroke'
+    errorMessages.forEach((msg) => {
+      if (msg && msg.type === 'error') {
+        expect((msg as { action?: string }).action).toBe('undo-stroke')
+      }
+    })
+  })
+
+  test('handleUndoFill: error messages include action field', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    // Test non-existent fill error
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'undo-fill', fillId: 'non-existent-fill-id' })
+    )
+    await flushPromises()
+    setPlayingState('player-1') // Reset to playing state for next test
+
+    // Test invalid fill ID error
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'undo-fill', fillId: 'invalid id' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    const errorMessages = msgs.filter((m) => m?.type === 'error')
+    // All errors should have action field set to 'undo-fill'
+    errorMessages.forEach((msg) => {
+      if (msg && msg.type === 'error') {
+        expect((msg as { action?: string }).action).toBe('undo-fill')
+      }
+    })
+  })
+
+  test('handleFill: rate limit error includes action field', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    // Exhaust rate limit by sending many fills
+    for (let i = 0; i < 150; i++) {
+      await room.webSocketMessage(
+        drawerWs,
+        JSON.stringify({ type: 'fill', x: 100, y: 200, color: '#FF6B6B' })
+      )
+    }
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    const rateLimitError = msgs.find(
+      (m) => m?.type === 'error' && m?.message === 'Rate limit exceeded'
+    )
+    expect(rateLimitError).toBeDefined()
+    expect((rateLimitError as { action?: string }).action).toBe('fill')
+  })
+
+  test('handleUndoStroke: enforces LIFO semantics - rejects non-most-recent stroke', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    // Set up multiple strokes for the same player
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = [
+      {
+        id: 'stroke-1',
+        playerId: 'player-1',
+        color: '#FF6B6B',
+        size: 4,
+        points: [{ x: 0, y: 0 }],
+        timestamp: 1000,
+      },
+      {
+        id: 'stroke-2',
+        playerId: 'player-1',
+        color: '#4ECDC4',
+        size: 4,
+        points: [{ x: 10, y: 10 }],
+        timestamp: 2000,
+      },
+    ]
+
+    // Attempt to undo the first (older) stroke instead of the most recent one
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'undo-stroke', strokeId: 'stroke-1' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    // Should NOT have a stroke-removed message
+    expect(msgs.some((m) => m?.type === 'stroke-removed')).toBe(false)
+    // Should have an error message about LIFO
+    const errorMsg = msgs.find((m) => m?.type === 'error')
+    expect(errorMsg).toBeDefined()
+    expect(errorMsg?.message).toContain('can only undo the most recent operation')
+    expect((errorMsg as { action?: string }).action).toBe('undo-stroke')
+  })
+
+  test('handleUndoFill: enforces LIFO semantics - rejects non-most-recent fill', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    // Set up multiple fills for the same player
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).fills = [
+      {
+        id: 'fill-1',
+        playerId: 'player-1',
+        x: 10,
+        y: 10,
+        color: '#FF6B6B',
+        timestamp: 1000,
+      },
+      {
+        id: 'fill-2',
+        playerId: 'player-1',
+        x: 20,
+        y: 20,
+        color: '#4ECDC4',
+        timestamp: 2000,
+      },
+    ]
+
+    // Attempt to undo the first (older) fill instead of the most recent one
+    await room.webSocketMessage(drawerWs, JSON.stringify({ type: 'undo-fill', fillId: 'fill-1' }))
+    await flushPromises()
+
+    const msgs = getSentMessages(drawerWs)
+    // Should NOT have a fill-removed message
+    expect(msgs.some((m) => m?.type === 'fill-removed')).toBe(false)
+    // Should have an error message about LIFO
+    const errorMsg = msgs.find((m) => m?.type === 'error')
+    expect(errorMsg).toBeDefined()
+    expect(errorMsg?.message).toContain('can only undo the most recent operation')
+    expect((errorMsg as { action?: string }).action).toBe('undo-fill')
+  })
 })
