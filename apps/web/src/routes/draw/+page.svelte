@@ -847,11 +847,10 @@
       console.warn('handleRedo: No acknowledgment received from server, clearing redo lock')
       redoInProgress = false
       redoTimeoutId = null
-      // Clear pending redo maps to prevent stale entries from blocking canRedo
-      // The redo item remains in redoStack for potential retry
-      pendingRedoStrokes = new Map()
-      pendingRedoFills = new Map()
-      // Reassignment already triggers reactivity for derived values
+      // Keep pending redo maps to handle delayed server echoes
+      // When the delayed echo arrives, it will match the pending entry and be handled
+      // correctly as a redo confirmation instead of being treated as a new stroke/fill
+      // Stale entries will be replaced when a new redo is initiated
     }, REDO_ACK_TIMEOUT_MS)
 
     // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server
@@ -885,7 +884,10 @@
       handleRedo()
     } else if (ctrlOrCmd && !event.shiftKey && key === 'z') {
       event.preventDefault()
-      handleUndo()
+      // Check canUndo to prevent duplicate undo requests while one is in flight
+      if (canUndo) {
+        handleUndo()
+      }
     }
   }
 
