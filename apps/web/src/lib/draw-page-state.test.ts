@@ -11,6 +11,7 @@ import {
   clearCorrectGuessNotification,
   createCorrectGuessNotification,
   discardPendingOptimisticFills,
+  discardPendingOptimisticStrokes,
   deriveWinnersIfGameOver,
   getRedoInFlightCount,
   getDrawerDisplayName,
@@ -419,6 +420,58 @@ describe('draw-page-state helpers', () => {
     expect(result.fills).toEqual([confirmedFill])
     expect(result.undoStack).toEqual([{ type: 'fill', fillId: 'fill-2', fill: confirmedFill }])
     expect(result.pendingOptimisticFills.size).toBe(0)
+  })
+
+  it('discardPendingOptimisticStrokes removes pending strokes from strokes and undo stack', () => {
+    const pendingStroke: Stroke = {
+      id: 'stroke-1',
+      playerId: 'p1',
+      points: [{ x: 0, y: 0 }],
+      color: '#FF6B6B',
+      width: 4,
+      timestamp: 1000,
+    }
+    const confirmedStroke: Stroke = {
+      id: 'stroke-2',
+      playerId: 'p1',
+      points: [{ x: 5, y: 5 }],
+      color: '#4ECDC4',
+      width: 4,
+      timestamp: 2000,
+    }
+    const pendingMap = new Map([['stroke-1', pendingStroke]])
+    const undoStack: UndoItem[] = [
+      { type: 'stroke', strokeId: 'stroke-1', stroke: pendingStroke },
+      { type: 'stroke', strokeId: 'stroke-2', stroke: confirmedStroke },
+    ]
+
+    const result = discardPendingOptimisticStrokes(
+      [pendingStroke, confirmedStroke],
+      undoStack,
+      pendingMap
+    )
+
+    expect(result.strokes).toEqual([confirmedStroke])
+    expect(result.undoStack).toEqual([
+      { type: 'stroke', strokeId: 'stroke-2', stroke: confirmedStroke },
+    ])
+    expect(result.pendingOptimisticStrokes.size).toBe(0)
+  })
+
+  it('discardPendingOptimisticStrokes is a no-op when map is empty', () => {
+    const stroke: Stroke = {
+      id: 'stroke-1',
+      playerId: 'p1',
+      points: [],
+      color: '#FF6B6B',
+      width: 4,
+      timestamp: 1000,
+    }
+    const undoStack: UndoItem[] = [{ type: 'stroke', strokeId: 'stroke-1', stroke }]
+    const result = discardPendingOptimisticStrokes([stroke], undoStack, new Map())
+    expect(result.strokes).toEqual([stroke])
+    expect(result.undoStack).toEqual(undoStack)
+    expect(result.pendingOptimisticStrokes.size).toBe(0)
   })
 
   it('isEditableKeyboardTarget returns false for null and true for editable elements', () => {
