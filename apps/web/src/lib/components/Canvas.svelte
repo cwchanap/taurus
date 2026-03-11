@@ -208,6 +208,13 @@
         bg.fill(CANVAS_BG)
         // Clear OOB fill cache when canvas resizes - fills that were OOB may now be valid
         oobFills.clear()
+        // Destroy existing fill graphics so they recompute at the new pixel dimensions.
+        // Without this, fills already in fillGraphics are skipped by the reconciliation
+        // effect and remain rendered at their old geometry.
+        for (const graphics of fillGraphics.values()) {
+          graphics?.destroy()
+        }
+        fillGraphics.clear()
         // Increment trigger to force fill reconciliation
         resizeTrigger++
       })
