@@ -428,7 +428,7 @@ describe('draw-page-state helpers', () => {
       playerId: 'p1',
       points: [{ x: 0, y: 0 }],
       color: '#FF6B6B',
-      width: 4,
+      size: 4,
       timestamp: 1000,
     }
     const confirmedStroke: Stroke = {
@@ -436,7 +436,7 @@ describe('draw-page-state helpers', () => {
       playerId: 'p1',
       points: [{ x: 5, y: 5 }],
       color: '#4ECDC4',
-      width: 4,
+      size: 4,
       timestamp: 2000,
     }
     const pendingMap = new Map([['stroke-1', pendingStroke]])
@@ -464,7 +464,7 @@ describe('draw-page-state helpers', () => {
       playerId: 'p1',
       points: [],
       color: '#FF6B6B',
-      width: 4,
+      size: 4,
       timestamp: 1000,
     }
     const undoStack: UndoItem[] = [{ type: 'stroke', strokeId: 'stroke-1', stroke }]
