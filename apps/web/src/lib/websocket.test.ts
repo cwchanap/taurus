@@ -357,7 +357,7 @@ describe('handleMessage dispatch', () => {
       id: 's1',
       playerId: 'p1',
       points: [],
-      color: '#000',
+      color: '#FF6B6B',
       size: 4,
       timestamp: Date.now(),
     }
@@ -386,17 +386,17 @@ describe('handleMessage dispatch', () => {
       type: 'fill',
       id: 'f1',
       playerId: 'p1',
-      x: 10,
-      y: 20,
-      color: '#FF0000',
+      x: 0.1,
+      y: 0.2,
+      color: '#FF6B6B',
       timestamp: 1234,
     })
     expect(onFill).toHaveBeenCalledWith({
       id: 'f1',
       playerId: 'p1',
-      x: 10,
-      y: 20,
-      color: '#FF0000',
+      x: 0.1,
+      y: 0.2,
+      color: '#FF6B6B',
       timestamp: 1234,
     })
   })
