@@ -1189,6 +1189,80 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     expect(msgs.some((m) => m?.type === 'clear')).toBe(false)
   })
 
+  test('handleClear: clears in-memory state immediately even when storage delete fails', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+
+    // Setup initial state with strokes and fills
+    const initialStrokes = [
+      {
+        id: 'stroke-1',
+        playerId: 'player-1',
+        color: '#FF6B6B',
+        size: 4,
+        points: [{ x: 0, y: 0 }],
+        timestamp: Date.now(),
+      },
+    ]
+    const initialFills = [
+      {
+        id: 'fill-1',
+        playerId: 'player-1',
+        x: 10,
+        y: 10,
+        color: '#4ECDC4',
+        timestamp: Date.now() + 100,
+      },
+    ]
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = initialStrokes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).fills = initialFills
+    // Set storage write delay to 0 to make async operations complete synchronously
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).storageWriteDelay = 0
+
+    // Mock queueFillDelete to fail while queueStrokeDelete succeeds
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).queueFillDelete = mock(() => Promise.reject(new Error('fill delete failed')))
+
+    const mockError = mock(() => {})
+    const originalError = console.error
+    console.error = mockError
+    try {
+      await room.webSocketMessage(drawerWs, JSON.stringify({ type: 'clear' }))
+      await flushPromises()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await flushPromises()
+    } finally {
+      console.error = originalError
+    }
+
+    // Verify in-memory state is cleared despite storage failure
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).strokes).toEqual([])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).fills).toEqual([])
+
+    // Verify error was logged (the fill delete failure)
+    expect(mockError).toHaveBeenCalled()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const errorCalls = mockError.mock.calls.filter((call: any) => {
+      return (
+        call.length > 0 &&
+        typeof call[0] === 'string' &&
+        call[0].includes('Failed to delete fills from storage')
+      )
+    })
+    expect(errorCalls.length).toBeGreaterThan(0)
+
+    // Verify clear broadcast was sent
+    const msgs = getSentMessages(drawerWs)
+    expect(msgs.some((m) => m?.type === 'clear')).toBe(true)
+  })
+
   test('handleUndoStroke: error messages include action field', async () => {
     const drawerWs = createMockWs('player-1', 'Drawer')
     mockGetWebSockets.mockReturnValue([drawerWs])

@@ -92,6 +92,9 @@
   let undoStack = $state<UndoItem[]>([])
   let redoStack = $state<UndoItem[]>([])
   let redoInProgress = $state(false)
+  // Track the specific nonce/strokeId of the in-progress redo to prevent duplicate submissions
+  let inProgressRedoNonce = $state<string | null>(null)
+  let inProgressRedoStrokeId = $state<string | null>(null)
   let pendingRedoFills = $state<Map<string, { item: UndoItem; timestamp: number }>>(new Map())
   let pendingRedoStrokes = $state<Map<string, UndoItem>>(new Map())
   let pendingUndoStrokes = $state<Map<string, UndoItem>>(new Map())
@@ -831,6 +834,7 @@
       // Track the UndoItem from redoStack so onStroke can remove it when confirmed
       pendingRedoStrokes = mapSet(pendingRedoStrokes, next.action.stroke.id, item)
       failedRedoStrokeId = next.action.stroke.id
+      inProgressRedoStrokeId = next.action.stroke.id
       sendSucceeded = ws?.sendStroke(next.action.stroke) ?? false
     } else if (item.type === 'fill' && next.action?.type === 'send-fill') {
       // Generate unique nonce for this redo fill to distinguish from other fills
@@ -839,6 +843,7 @@
       // Track the UndoItem from redoStack and timestamp for ordering
       pendingRedoFills = mapSetRedoInfo(pendingRedoFills, nonce, { item, timestamp: Date.now() })
       failedRedoFillNonce = nonce
+      inProgressRedoNonce = nonce
       sendSucceeded = ws?.sendFill(next.action.x, next.action.y, next.action.color, nonce) ?? false
     }
 
@@ -853,6 +858,8 @@
       pendingRedoFills = rollback.pendingRedoFills
       console.error('handleRedo: Failed to send redo action to server, preserving redo stack')
       redoInProgress = false
+      inProgressRedoNonce = null
+      inProgressRedoStrokeId = null
       return
     }
 
@@ -865,11 +872,24 @@
       clearTimeout(redoTimeoutId)
     }
     redoTimeoutId = setTimeout(() => {
-      console.warn('handleRedo: No acknowledgment received from server, clearing redo lock')
+      console.warn('handleRedo: No acknowledgment received from server, rolling back pending redo')
+      // Rollback the specific pending redo item instead of just unlocking
+      const rollback = rollbackPendingRedoMarker(
+        pendingRedoStrokes,
+        pendingRedoFills,
+        inProgressRedoStrokeId ?? undefined,
+        inProgressRedoNonce ?? undefined
+      )
+      pendingRedoStrokes = rollback.pendingRedoStrokes
+      pendingRedoFills = rollback.pendingRedoFills
+      // Return the item to redoStack so it can be retried
+      if (item && (inProgressRedoNonce || inProgressRedoStrokeId)) {
+        redoStack = pushBoundedUndo(redoStack, item, MAX_UNDO_DEPTH)
+      }
       redoInProgress = false
+      inProgressRedoNonce = null
+      inProgressRedoStrokeId = null
       redoTimeoutId = null
-      // Keep pending redo markers so delayed server echoes can still reconcile to the
-      // original redo item, but stop counting them against canRedo once the lock clears.
     }, REDO_ACK_TIMEOUT_MS)
 
     // NOTE: We do NOT commit redoStack/undoStack changes here. We wait for server
@@ -884,6 +904,8 @@
       redoTimeoutId = null
     }
     redoInProgress = false
+    inProgressRedoNonce = null
+    inProgressRedoStrokeId = null
   }
 
   function handleKeyDown(event: KeyboardEvent) {
