@@ -215,6 +215,9 @@
           graphics?.destroy()
         }
         fillGraphics.clear()
+        // Reset ordering cache so the reconciliation effect is forced to reorder
+        // recreated fill graphics against existing stroke graphics
+        lastOperationsSig = ''
         // Increment trigger to force fill reconciliation
         resizeTrigger++
       })
