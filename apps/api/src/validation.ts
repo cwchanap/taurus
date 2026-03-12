@@ -105,9 +105,9 @@ export function isValidStrokeId(strokeId: unknown): strokeId is string {
 
 /**
  * Validates a fill operation's normalized coordinates and color.
- * Coordinates x and y must be in the range [0, 1), representing the
- * position relative to canvas dimensions. The value 1.0 is excluded
- * to ensure the fill always targets a valid pixel within the canvas.
+ * Coordinates x and y must be in the range [0, 1], representing the
+ * position relative to canvas dimensions. Exactly 1.0 is accepted and
+ * clamped to just below 1.0 so downstream pixel math stays in bounds.
  */
 export function validateFill(data: unknown): { x: number; y: number; color: PaletteColor } | null {
   if (!data || typeof data !== 'object') {

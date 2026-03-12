@@ -341,6 +341,7 @@
       console.warn(
         `Canvas: Fill ${fill.id} skipped — canvas too large (${screenWidth * screenHeight} pixels > ${MAX_FILL_PIXELS} limit). Retrying on next reconciliation.`
       )
+      oobFills.add(fill.id)
       return
     }
 

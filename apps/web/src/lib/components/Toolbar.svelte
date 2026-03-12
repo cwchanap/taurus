@@ -139,8 +139,8 @@
         class="action-btn"
         onclick={onUndo}
         disabled={!canUndo || disabled}
-        aria-label="Undo (Ctrl+Z)"
-        title="Undo (Ctrl+Z)"
+        aria-label="Undo (Ctrl/Cmd+Z)"
+        title="Undo (Ctrl/Cmd+Z)"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="9 14 4 9 9 4" />
@@ -152,8 +152,8 @@
         class="action-btn"
         onclick={onRedo}
         disabled={!canRedo || disabled}
-        aria-label="Redo (Ctrl+Shift+Z)"
-        title="Redo (Ctrl+Shift+Z)"
+        aria-label="Redo (Ctrl/Cmd+Shift+Z)"
+        title="Redo (Ctrl/Cmd+Shift+Z)"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="15 14 20 9 15 4" />
