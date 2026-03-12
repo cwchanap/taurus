@@ -168,6 +168,7 @@ export class GameWebSocket {
           color: data.color,
           timestamp: data.timestamp,
           nonce: data.nonce,
+          seq: data.seq,
         })
         break
       case 'fill-removed':
