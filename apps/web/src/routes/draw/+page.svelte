@@ -699,7 +699,13 @@
   function handleStrokeStart(stroke: Stroke) {
     strokes = [...strokes, stroke]
     pendingOptimisticStrokes = mapSet(pendingOptimisticStrokes, stroke.id, stroke)
-    ws?.sendStroke(stroke)
+    const sent = ws?.sendStroke(stroke)
+    if (sent === false) {
+      console.error('Canvas: Failed to send stroke — WebSocket not open')
+      strokes = strokes.filter((s) => s.id !== stroke.id)
+      pendingOptimisticStrokes = mapDelete(pendingOptimisticStrokes, stroke.id)
+      return
+    }
     // New stroke clears redo stack and pushes to undo
     redoStack = []
     undoStack = pushBoundedUndo(
@@ -711,7 +717,16 @@
 
   function handleStrokeUpdate(strokeId: string, point: Point) {
     strokes = updateStrokePoint(strokes, strokeId, point)
-    ws?.sendStrokeUpdate(strokeId, point)
+    const sent = ws?.sendStrokeUpdate(strokeId, point)
+    if (sent === false) {
+      console.error('Canvas: Failed to send stroke update — WebSocket not open')
+      strokes = strokes.filter((s) => s.id !== strokeId)
+      undoStack = undoStack.filter(
+        (item) => !(item.type === 'stroke' && item.strokeId === strokeId)
+      )
+      pendingOptimisticStrokes = mapDelete(pendingOptimisticStrokes, strokeId)
+      return
+    }
     // Update the undo stack entry with the full stroke to ensure redo restores complete stroke
     const undoIndex = undoStack.findIndex(
       (item) => item.type === 'stroke' && item.strokeId === strokeId
@@ -1071,7 +1086,7 @@
           onRedo={handleRedo}
           onClear={handleClear}
           disabled={!canDraw}
-          clearDisabled={!(isHost || (gameStatus === 'playing' && isCurrentDrawer))}
+          clearDisabled={gameStatus === 'playing' ? !isCurrentDrawer : !isHost}
         />
 
         <!-- Start Game button for host -->

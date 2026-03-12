@@ -128,12 +128,16 @@
 
       prevOperationTimestamps = new Map(currentTimestamps)
 
-      // Build a combined list of operations sorted by timestamp
-      // This ensures fills and strokes are rendered in the correct order
+      // Build a combined list of operations sorted by timestamp, using seq as a tiebreaker
+      // when both operations have a server-assigned seq to avoid same-millisecond reordering
       const operations = [
         ...strokes.map((s) => ({ type: 'stroke' as const, data: s, timestamp: s.timestamp })),
         ...fills.map((f) => ({ type: 'fill' as const, data: f, timestamp: f.timestamp })),
-      ].sort((a, b) => a.timestamp - b.timestamp)
+      ].sort((a, b) => {
+        if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp
+        if (a.data.seq !== undefined && b.data.seq !== undefined) return a.data.seq - b.data.seq
+        return 0
+      })
 
       // Process operations in order, adding new ones at the correct position
       for (const op of operations) {
