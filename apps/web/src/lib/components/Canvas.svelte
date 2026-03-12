@@ -72,12 +72,19 @@
       for (const s of strokes) currentTimestamps.set(s.id, s.timestamp)
       for (const f of fills) currentTimestamps.set(f.id, f.timestamp)
 
-      // Find minimum timestamp of any removed operation
-      let minRemovedTimestamp = Infinity
+      // Find minimum timestamp of any removed operation or newly inserted operation.
+      // Both cases require fills at/after that timestamp to be recomputed, because flood-fill
+      // results depend on the raster state at the time they run — not just z-order.
+      let minInvalidationTimestamp = Infinity
       if (prevOperationTimestamps) {
         for (const [id, ts] of prevOperationTimestamps.entries()) {
           if (!currentTimestamps.has(id)) {
-            minRemovedTimestamp = Math.min(minRemovedTimestamp, ts)
+            minInvalidationTimestamp = Math.min(minInvalidationTimestamp, ts)
+          }
+        }
+        for (const [id, ts] of currentTimestamps.entries()) {
+          if (!prevOperationTimestamps.has(id)) {
+            minInvalidationTimestamp = Math.min(minInvalidationTimestamp, ts)
           }
         }
       }
@@ -99,11 +106,11 @@
         }
       }
 
-      // Clear operations that need recomputation (came at/after a removed operation)
-      if (minRemovedTimestamp < Infinity) {
+      // Clear operations that need recomputation (came at/after a removed or newly inserted operation)
+      if (minInvalidationTimestamp < Infinity) {
         for (const [id, graphics] of strokeGraphics.entries()) {
           const strokeTs = currentTimestamps.get(id)
-          if (strokeTs !== undefined && strokeTs >= minRemovedTimestamp) {
+          if (strokeTs !== undefined && strokeTs >= minInvalidationTimestamp) {
             graphics.destroy()
             strokeGraphics.delete(id)
           }
@@ -111,7 +118,7 @@
 
         for (const [id, graphics] of fillGraphics.entries()) {
           const fillTs = currentTimestamps.get(id)
-          if (fillTs !== undefined && fillTs >= minRemovedTimestamp) {
+          if (fillTs !== undefined && fillTs >= minInvalidationTimestamp) {
             graphics?.destroy()
             fillGraphics.delete(id)
             oobFills.delete(id)

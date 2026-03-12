@@ -457,7 +457,7 @@
                 }
                 return item
               })
-              // Clear redo stack only after server confirms the optimistic fill
+              // redoStack already cleared in handleFill(); this is a no-op but kept for safety
               redoStack = []
               // Clean up from pending optimistic fills map
               if (fill.nonce) {
@@ -747,7 +747,10 @@
     // Optimistically add fill to local state
     fills = [...fills, optimisticFill]
 
-    // Add to undo stack optimistically; redo clears after server confirmation
+    // Clear redo stack immediately, same as handleStroke
+    redoStack = []
+
+    // Add to undo stack optimistically
     undoStack = pushBoundedUndo(
       undoStack,
       { type: 'fill', fillId: tempId, fill: optimisticFill },
