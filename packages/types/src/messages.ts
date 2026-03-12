@@ -19,6 +19,8 @@ export interface Stroke {
   points: Point[]
   eraser?: boolean
   timestamp: number
+  /** Server-assigned monotonic sequence number for stable cross-operation ordering */
+  seq?: number
 }
 
 /**
@@ -42,6 +44,8 @@ export interface FillOperation {
   y: number
   color: PaletteColor
   timestamp: number
+  /** Server-assigned monotonic sequence number for stable cross-operation ordering */
+  seq?: number
   /**
    * Client-generated correlation token for optimistic undo/redo tracking.
    * Never persisted on the server. Echoed back verbatim to the originating client only.

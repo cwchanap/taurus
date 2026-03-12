@@ -64,11 +64,13 @@ export function rebuildUndoStack(
     .filter((f) => f.playerId === currentDrawerId)
     .map((f) => ({ type: 'fill' as const, fillId: f.id, fill: f }))
 
-  // Combine and sort by timestamp to maintain chronological order
+  // Combine and sort by seq (monotonic counter) then timestamp for stable cross-operation ordering
   const allOperations = [...drawerStrokes, ...drawerFills].sort((a, b) => {
-    const aTimestamp = a.type === 'stroke' ? a.stroke.timestamp : a.fill.timestamp
-    const bTimestamp = b.type === 'stroke' ? b.stroke.timestamp : b.fill.timestamp
-    return aTimestamp - bTimestamp
+    const aSeq =
+      a.type === 'stroke' ? (a.stroke.seq ?? a.stroke.timestamp) : (a.fill.seq ?? a.fill.timestamp)
+    const bSeq =
+      b.type === 'stroke' ? (b.stroke.seq ?? b.stroke.timestamp) : (b.fill.seq ?? b.fill.timestamp)
+    return aSeq - bSeq
   })
 
   return allOperations

@@ -502,7 +502,7 @@
         fills = []
         undoStack = []
         redoStack = []
-        redoInProgress = false
+        clearRedoLock()
         pendingRedoFills = new Map()
         pendingRedoStrokes = new Map()
         pendingUndoStrokes = new Map()
@@ -551,7 +551,7 @@
         lastRoundResult = next.lastRoundResult
         undoStack = next.undoStack
         redoStack = next.redoStack
-        redoInProgress = false
+        clearRedoLock()
         pendingRedoStrokes = new Map()
         pendingRedoFills = new Map()
         pendingUndoStrokes = new Map()
@@ -622,7 +622,7 @@
         fills = next.fills
         undoStack = next.undoStack
         redoStack = next.redoStack
-        redoInProgress = false
+        clearRedoLock()
         correctGuessNotification = next.correctGuessNotification
         systemNotification = next.systemNotification
         pendingRedoStrokes = new Map()

@@ -103,6 +103,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   // Chat history manager
   private chatHistory = new ChatHistory()
 
+  // Monotonic counter for stable cross-operation ordering (strokes vs fills)
+  private operationSeq = 0
+
   // Game state
   private gameState: GameState = createInitialGameState()
   roundTimer: ReturnType<typeof setTimeout> | null = null
@@ -129,6 +132,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         return { ...withTimestamp, color }
       })
       this.fills = (await this.ctx.storage.get<FillOperation[]>('fills')) || []
+
+      // Initialize seq counter above the max of any stored seq values so new operations
+      // always sort after restored ones, even across Durable Object restarts.
+      const maxStrokeSeq = Math.max(0, ...this.strokes.map((s) => s.seq ?? 0))
+      const maxFillSeq = Math.max(0, ...this.fills.map((f) => f.seq ?? 0))
+      this.operationSeq = Math.max(maxStrokeSeq, maxFillSeq)
+
       this.created = (await this.ctx.storage.get<boolean>('created')) || false
       const storedChatHistory = (await this.ctx.storage.get<ChatMessage[]>('chatHistory')) || []
       this.chatHistory.setMessages(storedChatHistory)
@@ -828,11 +838,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Validate and create stroke
     const existingStrokeIds = new Set(this.strokes.map((s) => s.id))
-    const stroke = validateStroke(data.stroke, playerId, existingStrokeIds)
-    if (!stroke) {
+    const rawStroke = validateStroke(data.stroke, playerId, existingStrokeIds)
+    if (!rawStroke) {
       console.warn(`Invalid stroke data received from player ${playerId}`)
       return
     }
+    const stroke: Stroke = { ...rawStroke, seq: ++this.operationSeq }
 
     this.strokes.push(stroke)
     // Schedule debounced storage write
@@ -1052,7 +1063,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const strokeToUndo = this.strokes[idx]
     const mostRecentFill = this.fills.findLast((f) => f.playerId === playerId)
     const hasNewerFill =
-      mostRecentFill !== undefined && mostRecentFill.timestamp > strokeToUndo.timestamp
+      mostRecentFill !== undefined &&
+      (mostRecentFill.seq ?? mostRecentFill.timestamp) >=
+        (strokeToUndo.seq ?? strokeToUndo.timestamp)
     if (idx !== mostRecentStrokeIdx || hasNewerFill) {
       console.warn(
         `Attempted to undo non-most-recent stroke ${trimmedId} by player ${playerId} (most recent stroke index: ${mostRecentStrokeIdx}, requested index: ${idx}, has newer fill: ${hasNewerFill})`
@@ -1150,7 +1163,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const fillToUndo = this.fills[idx]
     const mostRecentStroke = this.strokes.findLast((s) => s.playerId === playerId)
     const hasNewerStroke =
-      mostRecentStroke !== undefined && mostRecentStroke.timestamp > fillToUndo.timestamp
+      mostRecentStroke !== undefined &&
+      (mostRecentStroke.seq ?? mostRecentStroke.timestamp) >=
+        (fillToUndo.seq ?? fillToUndo.timestamp)
     if (idx !== mostRecentFillIdx || hasNewerStroke) {
       console.warn(
         `Attempted to undo non-most-recent fill ${trimmedId} by player ${playerId} (most recent fill index: ${mostRecentFillIdx}, requested index: ${idx}, has newer stroke: ${hasNewerStroke})`
@@ -1232,6 +1247,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       y: validated.y,
       color: validated.color,
       timestamp: Date.now(),
+      seq: ++this.operationSeq,
     }
 
     this.fills.push(fill)
