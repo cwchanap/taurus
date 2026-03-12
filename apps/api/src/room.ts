@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import type { Player, Stroke, FillOperation, ChatMessage } from '@repo/types'
+import { PALETTE_COLORS } from '@repo/types'
 import { ChatHistory } from './chat-history'
 import { gameStateToWire } from './game-types'
 
@@ -113,14 +114,19 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     if (!this.initialized) {
       const storedStrokes = (await this.ctx.storage.get<Stroke[]>('strokes')) || []
       this.strokes = storedStrokes.map((stroke, index) => {
-        if (typeof stroke.timestamp === 'number' && Number.isFinite(stroke.timestamp)) {
-          return stroke
-        }
+        const withTimestamp =
+          typeof stroke.timestamp === 'number' && Number.isFinite(stroke.timestamp)
+            ? stroke
+            : { ...stroke, timestamp: index }
 
-        return {
-          ...stroke,
-          timestamp: index,
-        }
+        // Normalize legacy colors that predate PALETTE_COLORS enforcement so that
+        // undo/redo remains functional: redo re-sends the stored stroke color through
+        // validateStroke(), which now rejects non-palette values.
+        const color = (PALETTE_COLORS as readonly string[]).includes(withTimestamp.color as string)
+          ? withTimestamp.color
+          : ('#1a1a2e' as const) // fall back to darkest palette color
+
+        return { ...withTimestamp, color }
       })
       this.fills = (await this.ctx.storage.get<FillOperation[]>('fills')) || []
       this.created = (await this.ctx.storage.get<boolean>('created')) || false
@@ -633,6 +639,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     } catch (e) {
       if (e instanceof DOMException && e.name === 'InvalidStateError') {
         console.warn(`Failed to send init to player ${playerId}: socket already closed`)
+        this.handleLeave(ws)
         return
       }
       console.error('Unexpected error sending init message:', e)
