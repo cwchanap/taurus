@@ -950,23 +950,33 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.strokeStorageDirty = false
     this.fillStorageDirty = false
 
-    try {
-      await this.queueStrokeDelete()
-      await this.queueFillDelete()
-      this.strokes = []
-      this.fills = []
+    // Clear in-memory arrays immediately - broadcast happens after async storage ops
+    // so we must clear before any player can see the cleared canvas
+    this.strokes = []
+    this.fills = []
 
-      this.broadcast({
-        type: 'clear',
-      })
-    } catch (e) {
-      console.error(`Player ${playerId} failed to clear canvas:`, e)
-      try {
-        ws.send(JSON.stringify({ type: 'error', message: 'Failed to clear canvas' }))
-      } catch {
-        // Connection may be closed
-      }
-    }
+    // Async storage deletion - errors will mark storage as dirty for retry
+    const strokeDeletePromise = this.queueStrokeDelete().catch((e) => {
+      console.error('Failed to delete strokes from storage:', e)
+      // Re-mark as dirty so the next storage write will retry
+      this.strokeStorageDirty = true
+      this.scheduleStorageWrite('strokes')
+    })
+
+    const fillDeletePromise = this.queueFillDelete().catch((e) => {
+      console.error('Failed to delete fills from storage:', e)
+      // Re-mark as dirty so the next storage write will retry
+      this.fillStorageDirty = true
+      this.scheduleStorageWrite('fills')
+    })
+
+    this.ctx.waitUntil(strokeDeletePromise)
+    this.ctx.waitUntil(fillDeletePromise)
+
+    // Broadcast clear to all players after in-memory state is cleared
+    this.broadcast({
+      type: 'clear',
+    })
   }
 
   private async handleUndoStroke(ws: WebSocket, data: Message & { strokeId: string }) {
