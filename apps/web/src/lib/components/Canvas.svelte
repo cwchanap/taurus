@@ -117,6 +117,10 @@
         for (const [id, graphics] of strokeGraphics.entries()) {
           const strokeTs = currentTimestamps.get(id)
           if (strokeTs !== undefined && strokeTs >= minInvalidationTimestamp) {
+            // Preserve the active stroke: onPointerDown already stored it in strokeGraphics
+            // and currentGraphics holds the live reference. Destroying it here would leave
+            // currentGraphics pointing at a dead Pixi object, breaking live drawing.
+            if (id === currentStrokeId) continue
             graphics.destroy()
             strokeGraphics.delete(id)
           }
@@ -164,7 +168,9 @@
 
       // Reorder graphics only when operations are added/removed or timestamps change (signature changes)
       // Avoids O(n) reordering on every stroke point update which causes frame drops
-      const operationsSig = operations.map((op) => `${op.data.id}:${op.timestamp}`).join(',')
+      const operationsSig = operations
+        .map((op) => `${op.data.id}:${op.timestamp}:${op.data.seq ?? ''}`)
+        .join(',')
       if (operationsSig !== lastOperationsSig) {
         lastOperationsSig = operationsSig
         reorderGraphicsByTimestamp(operations)
