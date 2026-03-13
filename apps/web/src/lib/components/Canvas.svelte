@@ -125,7 +125,11 @@
         for (const [id, graphics] of fillGraphics.entries()) {
           const fillTs = currentTimestamps.get(id)
           if (fillTs !== undefined && fillTs >= minInvalidationTimestamp) {
-            graphics?.destroy()
+            // Preserve null sentinels (no-op fills: same color, invalid coords, invalid color).
+            // They must never be re-evaluated against a different raster, as doing so could
+            // paint pixels that were never part of the original history.
+            if (graphics === null) continue
+            graphics.destroy()
             fillGraphics.delete(id)
             oobFills.delete(id)
           }

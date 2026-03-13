@@ -904,7 +904,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     if (!strokeUpdateResult.allowed) {
       console.warn(`Stroke update rate limit exceeded for player ${playerId}`)
       try {
-        ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
+        ws.send(
+          JSON.stringify({ type: 'error', action: 'stroke-update', message: 'Rate limit exceeded' })
+        )
       } catch {
         // Connection may be closed
       }
