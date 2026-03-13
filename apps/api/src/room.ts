@@ -59,11 +59,10 @@ import {
   isValidPlayerName,
   isValidPoint,
   isValidStrokeId,
-  isValidDrawingId,
   validateStroke,
-  validateFill,
 } from './validation'
 import {
+  applyFill,
   calculateCorrectGuessScore,
   handlePlayerLeaveInActiveGame,
   findNextDrawer,
@@ -75,6 +74,9 @@ import {
   checkStrokeRateLimit,
   checkStrokeUpdateRateLimit,
   type RateLimitState,
+  undoFill,
+  undoStroke,
+  validateFillRequest,
 } from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> implements TimerContainer {
@@ -341,7 +343,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           this.pendingStrokeWrite = this.queueStrokeWrite()
             .catch((e) => {
               console.error('Background stroke storage save failed:', e)
-              throw e
+              this.strokeStorageDirty = true
+              this.scheduleStorageWrite('strokes')
             })
             .finally(() => {
               this.pendingStrokeWrite = null
@@ -354,7 +357,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           this.pendingFillWrite = this.queueFillWrite()
             .catch((e) => {
               console.error('Background fill storage save failed:', e)
-              throw e
+              this.fillStorageDirty = true
+              this.scheduleStorageWrite('fills')
             })
             .finally(() => {
               this.pendingFillWrite = null
@@ -363,13 +367,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         }
 
         if (pendingWrites.length > 0) {
-          this.ctx.waitUntil(
-            Promise.all(pendingWrites)
-              .then(() => undefined)
-              .catch((e) => {
-                console.error('Deferred canvas storage write failed permanently:', e)
-              })
-          )
+          this.ctx.waitUntil(Promise.all(pendingWrites).then(() => undefined))
         }
       } catch (e) {
         console.error('scheduleStorageWrite: Unexpected synchronous error in deferred write:', e)
@@ -788,6 +786,27 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     return true
   }
 
+  private sendSocketError(ws: WebSocket, action: string, message: string) {
+    try {
+      ws.send(JSON.stringify({ type: 'error', action, message }))
+    } catch {
+      // Connection may be closed
+    }
+  }
+
+  private handleDrawingLogicFailure(
+    ws: WebSocket,
+    result: { warning?: string; clientError?: { action: string; message: string } }
+  ) {
+    if (result.warning) {
+      console.warn(result.warning)
+    }
+
+    if (result.clientError) {
+      this.sendSocketError(ws, result.clientError.action, result.clientError.message)
+    }
+  }
+
   private async handleStroke(ws: WebSocket, data: Message & { stroke: Stroke }) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
@@ -994,232 +1013,51 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    if (this.gameState.status !== 'playing') {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-stroke',
-            message: 'Undo failed: game is not in progress',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
+    const result = undoStroke(this.gameState, this.strokes, this.fills, playerId, data.strokeId)
+    if (!result.ok) {
+      this.handleDrawingLogicFailure(ws, result)
       return
     }
 
-    if (playerId !== this.gameState.currentDrawerId) {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-stroke',
-            message: 'Undo failed: only the current drawer can undo',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
-      return
+    this.strokes = result.strokes
+    for (const kind of result.storageWrites) {
+      this.scheduleStorageWrite(kind)
     }
-
-    if (!isValidDrawingId(data.strokeId)) {
-      console.warn(`Invalid strokeId in undo-stroke from player ${playerId}`)
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-stroke',
-            message: 'Undo failed: invalid stroke ID',
-          })
-        )
-      } catch {
-        // Connection may be closed
+    for (const event of result.events) {
+      if (event.type === 'stroke-removed') {
+        this.broadcast(event)
       }
-      return
     }
-
-    const trimmedId = data.strokeId.trim()
-    const idx = this.strokes.findLastIndex((s) => s.id === trimmedId && s.playerId === playerId)
-    if (idx === -1) {
-      console.warn(`Stroke ${trimmedId} not found for undo by player ${playerId}`)
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-stroke',
-            message: 'Undo failed: stroke not found. Canvas may be out of sync.',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
-      return
-    }
-
-    // Enforce LIFO semantics across strokes AND fills: only the most recent drawing operation can be undone
-    const mostRecentStrokeIdx = this.strokes.findLastIndex((s) => s.playerId === playerId)
-    const strokeToUndo = this.strokes[idx]
-    const mostRecentFill = this.fills.findLast((f) => f.playerId === playerId)
-    const hasNewerFill =
-      mostRecentFill !== undefined &&
-      (mostRecentFill.seq ?? mostRecentFill.timestamp) >=
-        (strokeToUndo.seq ?? strokeToUndo.timestamp)
-    if (idx !== mostRecentStrokeIdx || hasNewerFill) {
-      console.warn(
-        `Attempted to undo non-most-recent stroke ${trimmedId} by player ${playerId} (most recent stroke index: ${mostRecentStrokeIdx}, requested index: ${idx}, has newer fill: ${hasNewerFill})`
-      )
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-stroke',
-            message: 'Undo failed: can only undo the most recent operation',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
-      return
-    }
-
-    this.strokes.splice(idx, 1)
-    this.scheduleStorageWrite('strokes')
-
-    this.broadcast({ type: 'stroke-removed', strokeId: trimmedId })
   }
 
   private async handleUndoFill(ws: WebSocket, data: Message & { fillId: string }) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    if (this.gameState.status !== 'playing') {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-fill',
-            message: 'Undo failed: game is not in progress',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
+    const result = undoFill(this.gameState, this.strokes, this.fills, playerId, data.fillId)
+    if (!result.ok) {
+      this.handleDrawingLogicFailure(ws, result)
       return
     }
 
-    if (playerId !== this.gameState.currentDrawerId) {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-fill',
-            message: 'Undo failed: only the current drawer can undo',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
-      return
+    this.fills = result.fills
+    for (const kind of result.storageWrites) {
+      this.scheduleStorageWrite(kind)
     }
-
-    if (!isValidDrawingId(data.fillId)) {
-      console.warn(`Invalid fillId in undo-fill from player ${playerId}`)
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-fill',
-            message: 'Undo failed: invalid fill ID',
-          })
-        )
-      } catch {
-        // Connection may be closed
+    for (const event of result.events) {
+      if (event.type === 'fill-removed') {
+        this.broadcast(event)
       }
-      return
     }
-
-    const trimmedId = data.fillId.trim()
-    const idx = this.fills.findLastIndex((f) => f.id === trimmedId && f.playerId === playerId)
-    if (idx === -1) {
-      console.warn(`Fill ${trimmedId} not found for undo by player ${playerId}`)
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-fill',
-            message: 'Undo failed: fill not found. Canvas may be out of sync.',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
-      return
-    }
-
-    // Enforce LIFO semantics across strokes AND fills: only the most recent drawing operation can be undone
-    const mostRecentFillIdx = this.fills.findLastIndex((f) => f.playerId === playerId)
-    const fillToUndo = this.fills[idx]
-    const mostRecentStroke = this.strokes.findLast((s) => s.playerId === playerId)
-    const hasNewerStroke =
-      mostRecentStroke !== undefined &&
-      (mostRecentStroke.seq ?? mostRecentStroke.timestamp) >=
-        (fillToUndo.seq ?? fillToUndo.timestamp)
-    if (idx !== mostRecentFillIdx || hasNewerStroke) {
-      console.warn(
-        `Attempted to undo non-most-recent fill ${trimmedId} by player ${playerId} (most recent fill index: ${mostRecentFillIdx}, requested index: ${idx}, has newer stroke: ${hasNewerStroke})`
-      )
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'undo-fill',
-            message: 'Undo failed: can only undo the most recent operation',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
-      return
-    }
-
-    this.fills.splice(idx, 1)
-    this.scheduleStorageWrite('fills')
-
-    this.broadcast({ type: 'fill-removed', fillId: trimmedId })
   }
 
   private async handleFill(ws: WebSocket, data: Message & { x: number; y: number; color: string }) {
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
-    if (this.gameState.status !== 'playing') {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'fill',
-            message: 'Fill failed: game is not in progress',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
-      return
-    }
-    if (playerId !== this.gameState.currentDrawerId) {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            action: 'fill',
-            message: 'Fill failed: only the current drawer can fill',
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
+    const permission = validateFillRequest(this.gameState, playerId)
+    if (!permission.ok) {
+      this.handleDrawingLogicFailure(ws, permission)
       return
     }
 
@@ -1234,47 +1072,49 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       return
     }
 
-    const validated = validateFill(data)
-    if (!validated) {
-      console.warn(`Invalid fill data from player ${playerId}`)
-      return
-    }
-
-    const fill: FillOperation = {
+    const result = applyFill(this.gameState, this.strokes, this.fills, playerId, data, {
       id: crypto.randomUUID(),
-      playerId,
-      x: validated.x,
-      y: validated.y,
-      color: validated.color,
       timestamp: Date.now(),
-      seq: ++this.operationSeq,
-    }
-
-    this.fills.push(fill)
-    this.scheduleStorageWrite('fills')
-
-    const fillMessage = {
-      type: 'fill',
-      id: fill.id,
-      playerId: fill.playerId,
-      x: fill.x,
-      y: fill.y,
-      color: fill.color,
-      timestamp: fill.timestamp,
-    }
-    const nonce = typeof data.nonce === 'string' && data.nonce.length <= 36 ? data.nonce : undefined
-
-    if (nonce) {
-      this.broadcast(fillMessage, ws)
-      try {
-        ws.send(JSON.stringify({ ...fillMessage, nonce }))
-      } catch {
-        // Connection may be closed
-      }
+      seq: this.operationSeq + 1,
+    })
+    if (!result.ok) {
+      this.handleDrawingLogicFailure(ws, result)
       return
     }
 
-    this.broadcast(fillMessage)
+    this.fills = result.fills
+    this.operationSeq = result.nextOperationSeq
+    for (const kind of result.storageWrites) {
+      this.scheduleStorageWrite(kind)
+    }
+    for (const event of result.events) {
+      if (event.type !== 'fill') {
+        continue
+      }
+
+      const fillMessage = {
+        type: 'fill' as const,
+        id: event.fill.id,
+        playerId: event.fill.playerId,
+        x: event.fill.x,
+        y: event.fill.y,
+        color: event.fill.color,
+        timestamp: event.fill.timestamp,
+        seq: event.fill.seq,
+      }
+
+      if (event.nonce) {
+        this.broadcast(fillMessage, ws)
+        try {
+          ws.send(JSON.stringify({ ...fillMessage, nonce: event.nonce }))
+        } catch {
+          // Connection may be closed
+        }
+        continue
+      }
+
+      this.broadcast(fillMessage)
+    }
   }
 
   private async handleChat(ws: WebSocket, data: Message & { content: string }) {

@@ -8,7 +8,7 @@ import type {
   ScoreEntry,
   Stroke,
   Winner,
-} from './types'
+} from '@repo/types'
 
 export type UndoItem =
   | { type: 'stroke'; strokeId: string; stroke: Stroke }
@@ -17,6 +17,20 @@ export type UndoItem =
 export type PendingRedoFillInfo = { item: UndoItem; timestamp: number }
 
 export type PendingOptimisticFillInfo = { tempId: string; timestamp: number }
+
+export type StrokeServerMetadata = Pick<Stroke, 'timestamp'> & Partial<Pick<Stroke, 'seq'>>
+
+export function isSameUndoItem(left: UndoItem, right: UndoItem): boolean {
+  if (left.type !== right.type) {
+    return false
+  }
+
+  if (left.type === 'stroke') {
+    return right.type === 'stroke' && left.strokeId === right.strokeId
+  }
+
+  return right.type === 'fill' && left.fillId === right.fillId
+}
 
 export function discardPendingOptimisticStrokes(
   strokes: Stroke[],
@@ -183,14 +197,14 @@ export function applyRedoState(
 export function syncUndoStrokeTimestamp(
   undoStack: UndoItem[],
   strokeId: string,
-  timestamp: number
+  serverMetadata: StrokeServerMetadata
 ): UndoItem[] {
   let changed = false
   const nextUndo = undoStack.map((item) => {
     if (
       item.type !== 'stroke' ||
       item.strokeId !== strokeId ||
-      item.stroke.timestamp === timestamp
+      (item.stroke.timestamp === serverMetadata.timestamp && item.stroke.seq === serverMetadata.seq)
     ) {
       return item
     }
@@ -201,7 +215,7 @@ export function syncUndoStrokeTimestamp(
       strokeId: item.strokeId,
       stroke: {
         ...item.stroke,
-        timestamp,
+        ...serverMetadata,
       },
     }
   })

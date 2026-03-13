@@ -282,7 +282,7 @@ describe('draw-page-state helpers', () => {
     expect(result.strokes).toEqual([])
   })
 
-  it('syncUndoStrokeTimestamp updates the matching undo stroke timestamp only', () => {
+  it('syncUndoStrokeTimestamp merges server ordering metadata into the matching undo stroke', () => {
     const stroke: Stroke = {
       id: 's1',
       playerId: 'p1',
@@ -304,15 +304,17 @@ describe('draw-page-state helpers', () => {
       { type: 'stroke', strokeId: 's2', stroke: otherStroke },
     ]
 
-    const result = syncUndoStrokeTimestamp(undoStack, 's1', 3000)
+    const result = syncUndoStrokeTimestamp(undoStack, 's1', { timestamp: 3000, seq: 7 })
 
     expect(result[0]).toMatchObject({ type: 'stroke', strokeId: 's1' })
     if (result[0].type === 'stroke') {
       expect(result[0].stroke.timestamp).toBe(3000)
+      expect(result[0].stroke.seq).toBe(7)
       expect(result[0].stroke.points).toEqual([{ x: 1, y: 1 }])
     }
     if (result[1].type === 'stroke') {
       expect(result[1].stroke.timestamp).toBe(2000)
+      expect(result[1].stroke.seq).toBeUndefined()
     }
   })
 
