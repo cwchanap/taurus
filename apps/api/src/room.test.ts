@@ -355,6 +355,56 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect(fillPutCalls[0]?.[1]).toHaveLength(2)
   })
 
+  test('retries deferred fill writes after a background failure', async () => {
+    // Speed up debounced scheduler for test
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).storageWriteDelay = 0
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).fills = [
+      {
+        id: 'fill-1',
+        playerId: 'p1',
+        x: 0.5,
+        y: 0.5,
+        color: '#FF6B6B',
+        timestamp: Date.now(),
+      },
+    ]
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const originalQueueFillWrite = (room as any).queueFillWrite.bind(room)
+    let attempts = 0
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).queueFillWrite = mock(() => {
+      attempts += 1
+      if (attempts === 1) {
+        return Promise.reject(new Error('fill write failed'))
+      }
+      return originalQueueFillWrite()
+    })
+
+    const originalError = console.error
+    console.error = mock(() => {})
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).scheduleStorageWrite('fills')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await flushPromises()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await flushPromises()
+    } finally {
+      console.error = originalError
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).queueFillWrite).toHaveBeenCalledTimes(2)
+    const fillPutCalls = mockStoragePut.mock.calls.filter((call) => call[0] === 'fills')
+    expect(fillPutCalls).toHaveLength(1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).fillStorageDirty).toBe(false)
+  })
+
   test('re-schedules storage writes when canvas delete fails during endGame', async () => {
     // Speed up debounced scheduler for test
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1002,26 +1052,24 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     // Both sockets should have received the fill broadcast
     const drawerMsgs = getSentMessages(drawerWs)
     const observerMsgs = getSentMessages(observerWs)
+    const drawerFill = drawerMsgs.find((m) => m?.type === 'fill')
+    const observerFill = observerMsgs.find((m) => m?.type === 'fill')
     expect(
-      drawerMsgs.some(
-        (m) =>
-          m?.type === 'fill' &&
-          m.playerId === 'player-1' &&
-          m.x === 0.1 &&
-          m.y === 0.2 &&
-          m.color === '#FF6B6B'
-      )
+      drawerFill &&
+        drawerFill.playerId === 'player-1' &&
+        drawerFill.x === 0.1 &&
+        drawerFill.y === 0.2 &&
+        drawerFill.color === '#FF6B6B'
     ).toBe(true)
     expect(
-      observerMsgs.some(
-        (m) =>
-          m?.type === 'fill' &&
-          m.playerId === 'player-1' &&
-          m.x === 0.1 &&
-          m.y === 0.2 &&
-          m.color === '#FF6B6B'
-      )
+      observerFill &&
+        observerFill.playerId === 'player-1' &&
+        observerFill.x === 0.1 &&
+        observerFill.y === 0.2 &&
+        observerFill.color === '#FF6B6B'
     ).toBe(true)
+    expect(drawerFill?.seq).toBe(1)
+    expect(observerFill?.seq).toBe(1)
 
     // Storage put should have been called for fills
     const fillPutCalls = mockStoragePut.mock.calls.filter((call) => call[0] === 'fills')
@@ -1051,6 +1099,8 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
 
     expect(drawerFill?.nonce).toBe('nonce-123')
     expect(observerFill?.nonce).toBeUndefined()
+    expect(drawerFill?.seq).toBe(1)
+    expect(observerFill?.seq).toBe(1)
   })
 
   test('handleFill: fill with out-of-bounds x coordinate is rejected and nothing broadcast', async () => {
@@ -1340,7 +1390,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     for (let i = 0; i < 150; i++) {
       await room.webSocketMessage(
         drawerWs,
-        JSON.stringify({ type: 'fill', x: 100, y: 200, color: '#FF6B6B' })
+        JSON.stringify({ type: 'fill', x: 0.5, y: 0.5, color: '#FF6B6B' })
       )
     }
     await flushPromises()

@@ -15,8 +15,10 @@ import {
   MAX_STROKE_UPDATES_PER_WINDOW,
   RATE_LIMIT_WINDOW,
 } from './constants'
-import type { PlayingState, RoundEndState } from './game-types'
+import type { FillOperation, Stroke } from '@repo/types'
+import type { GameState, PlayingState, RoundEndState } from './game-types'
 import { isPlayingState } from './game-types'
+import { isValidDrawingId, validateFill } from './validation'
 
 /**
  * Interface for object containing game timers
@@ -197,6 +199,266 @@ export function checkStrokeUpdateRateLimit(
   currentTime?: number
 ): ReturnType<typeof checkRateLimit> {
   return checkRateLimit(state, MAX_STROKE_UPDATES_PER_WINDOW, RATE_LIMIT_WINDOW, currentTime)
+}
+
+type DrawingAction = 'fill' | 'undo-stroke' | 'undo-fill'
+
+type DrawingClientError<Action extends DrawingAction> = {
+  action: Action
+  message: string
+}
+
+type DrawingLogicFailure<Action extends DrawingAction> = {
+  ok: false
+  warning?: string
+  clientError?: DrawingClientError<Action>
+}
+
+type DrawingLogicEvent =
+  | { type: 'stroke-removed'; strokeId: string }
+  | { type: 'fill-removed'; fillId: string }
+  | { type: 'fill'; fill: FillOperation; nonce?: string }
+
+type DrawingStorageWriteKind = 'strokes' | 'fills'
+
+type DrawingLogicSuccess = {
+  ok: true
+  strokes: Stroke[]
+  fills: FillOperation[]
+  storageWrites: DrawingStorageWriteKind[]
+  events: DrawingLogicEvent[]
+}
+
+export type UndoStrokeResult = DrawingLogicSuccess | DrawingLogicFailure<'undo-stroke'>
+export type UndoFillResult = DrawingLogicSuccess | DrawingLogicFailure<'undo-fill'>
+export type ValidateFillRequestResult = { ok: true } | DrawingLogicFailure<'fill'>
+export type ApplyFillResult =
+  | (DrawingLogicSuccess & { nextOperationSeq: number })
+  | DrawingLogicFailure<'fill'>
+
+type GeneratedFillMetadata = {
+  id: string
+  timestamp: number
+  seq: number
+}
+
+function getOperationOrder(operation: Pick<Stroke | FillOperation, 'timestamp' | 'seq'>): number {
+  return operation.seq ?? operation.timestamp
+}
+
+function buildClientError<Action extends DrawingAction>(
+  action: Action,
+  message: string
+): DrawingClientError<Action> {
+  return { action, message }
+}
+
+export function undoStroke(
+  gameState: GameState,
+  strokes: Stroke[],
+  fills: FillOperation[],
+  playerId: string,
+  strokeId: unknown
+): UndoStrokeResult {
+  if (!isPlayingState(gameState)) {
+    return {
+      ok: false,
+      clientError: buildClientError('undo-stroke', 'Undo failed: game is not in progress'),
+    }
+  }
+
+  if (playerId !== gameState.currentDrawerId) {
+    return {
+      ok: false,
+      clientError: buildClientError('undo-stroke', 'Undo failed: only the current drawer can undo'),
+    }
+  }
+
+  if (!isValidDrawingId(strokeId)) {
+    return {
+      ok: false,
+      warning: `Invalid strokeId in undo-stroke from player ${playerId}`,
+      clientError: buildClientError('undo-stroke', 'Undo failed: invalid stroke ID'),
+    }
+  }
+
+  const trimmedId = strokeId.trim()
+  const idx = strokes.findLastIndex(
+    (stroke) => stroke.id === trimmedId && stroke.playerId === playerId
+  )
+  if (idx === -1) {
+    return {
+      ok: false,
+      warning: `Stroke ${trimmedId} not found for undo by player ${playerId}`,
+      clientError: buildClientError(
+        'undo-stroke',
+        'Undo failed: stroke not found. Canvas may be out of sync.'
+      ),
+    }
+  }
+
+  const mostRecentStrokeIdx = strokes.findLastIndex((stroke) => stroke.playerId === playerId)
+  const strokeToUndo = strokes[idx]
+  const mostRecentFill = fills.findLast((fill) => fill.playerId === playerId)
+  const hasNewerFill =
+    mostRecentFill !== undefined &&
+    getOperationOrder(mostRecentFill) >= getOperationOrder(strokeToUndo)
+
+  if (idx !== mostRecentStrokeIdx || hasNewerFill) {
+    return {
+      ok: false,
+      warning: `Attempted to undo non-most-recent stroke ${trimmedId} by player ${playerId} (most recent stroke index: ${mostRecentStrokeIdx}, requested index: ${idx}, has newer fill: ${hasNewerFill})`,
+      clientError: buildClientError(
+        'undo-stroke',
+        'Undo failed: can only undo the most recent operation'
+      ),
+    }
+  }
+
+  return {
+    ok: true,
+    strokes: [...strokes.slice(0, idx), ...strokes.slice(idx + 1)],
+    fills,
+    storageWrites: ['strokes'],
+    events: [{ type: 'stroke-removed', strokeId: trimmedId }],
+  }
+}
+
+export function undoFill(
+  gameState: GameState,
+  strokes: Stroke[],
+  fills: FillOperation[],
+  playerId: string,
+  fillId: unknown
+): UndoFillResult {
+  if (!isPlayingState(gameState)) {
+    return {
+      ok: false,
+      clientError: buildClientError('undo-fill', 'Undo failed: game is not in progress'),
+    }
+  }
+
+  if (playerId !== gameState.currentDrawerId) {
+    return {
+      ok: false,
+      clientError: buildClientError('undo-fill', 'Undo failed: only the current drawer can undo'),
+    }
+  }
+
+  if (!isValidDrawingId(fillId)) {
+    return {
+      ok: false,
+      warning: `Invalid fillId in undo-fill from player ${playerId}`,
+      clientError: buildClientError('undo-fill', 'Undo failed: invalid fill ID'),
+    }
+  }
+
+  const trimmedId = fillId.trim()
+  const idx = fills.findLastIndex((fill) => fill.id === trimmedId && fill.playerId === playerId)
+  if (idx === -1) {
+    return {
+      ok: false,
+      warning: `Fill ${trimmedId} not found for undo by player ${playerId}`,
+      clientError: buildClientError(
+        'undo-fill',
+        'Undo failed: fill not found. Canvas may be out of sync.'
+      ),
+    }
+  }
+
+  const mostRecentFillIdx = fills.findLastIndex((fill) => fill.playerId === playerId)
+  const fillToUndo = fills[idx]
+  const mostRecentStroke = strokes.findLast((stroke) => stroke.playerId === playerId)
+  const hasNewerStroke =
+    mostRecentStroke !== undefined &&
+    getOperationOrder(mostRecentStroke) >= getOperationOrder(fillToUndo)
+
+  if (idx !== mostRecentFillIdx || hasNewerStroke) {
+    return {
+      ok: false,
+      warning: `Attempted to undo non-most-recent fill ${trimmedId} by player ${playerId} (most recent fill index: ${mostRecentFillIdx}, requested index: ${idx}, has newer stroke: ${hasNewerStroke})`,
+      clientError: buildClientError(
+        'undo-fill',
+        'Undo failed: can only undo the most recent operation'
+      ),
+    }
+  }
+
+  return {
+    ok: true,
+    strokes,
+    fills: [...fills.slice(0, idx), ...fills.slice(idx + 1)],
+    storageWrites: ['fills'],
+    events: [{ type: 'fill-removed', fillId: trimmedId }],
+  }
+}
+
+export function validateFillRequest(
+  gameState: GameState,
+  playerId: string
+): ValidateFillRequestResult {
+  if (!isPlayingState(gameState)) {
+    return {
+      ok: false,
+      clientError: buildClientError('fill', 'Fill failed: game is not in progress'),
+    }
+  }
+
+  if (playerId !== gameState.currentDrawerId) {
+    return {
+      ok: false,
+      clientError: buildClientError('fill', 'Fill failed: only the current drawer can fill'),
+    }
+  }
+
+  return { ok: true }
+}
+
+export function applyFill(
+  gameState: GameState,
+  strokes: Stroke[],
+  fills: FillOperation[],
+  playerId: string,
+  fillData: unknown,
+  generatedFill: GeneratedFillMetadata
+): ApplyFillResult {
+  void gameState
+  void strokes
+
+  const validated = validateFill(fillData)
+  if (!validated) {
+    return {
+      ok: false,
+      warning: `Invalid fill data from player ${playerId}`,
+    }
+  }
+
+  const nonce =
+    typeof fillData === 'object' &&
+    fillData !== null &&
+    typeof (fillData as { nonce?: unknown }).nonce === 'string' &&
+    (fillData as { nonce: string }).nonce.length <= 36
+      ? (fillData as { nonce: string }).nonce
+      : undefined
+
+  const fill: FillOperation = {
+    id: generatedFill.id,
+    playerId,
+    x: validated.x,
+    y: validated.y,
+    color: validated.color,
+    timestamp: generatedFill.timestamp,
+    seq: generatedFill.seq,
+  }
+
+  return {
+    ok: true,
+    strokes,
+    fills: [...fills, fill],
+    storageWrites: ['fills'],
+    events: [{ type: 'fill', fill, ...(nonce ? { nonce } : {}) }],
+    nextOperationSeq: generatedFill.seq,
+  }
 }
 
 /**

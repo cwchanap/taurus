@@ -591,14 +591,17 @@ describe('WebSocket reconnection', () => {
   let originalSetTimeout: typeof globalThis.setTimeout
   let originalClearTimeout: typeof globalThis.clearTimeout
   let mockWebSocketInstances: MockWebSocket[]
-  let scheduledTimeoutCallbacks: Array<() => void>
+  let scheduledTimeoutCallbacks: Map<number, () => void>
   let scheduledTimeoutDelays: number[]
+  let nextScheduledTimeoutId: number
 
   const runNextScheduledTimeout = () => {
-    const next = scheduledTimeoutCallbacks.shift()
-    if (!next) {
+    const nextEntry = scheduledTimeoutCallbacks.entries().next().value
+    if (!nextEntry) {
       throw new Error('Expected a scheduled timeout callback, but none was found')
     }
+    const [nextId, next] = nextEntry
+    scheduledTimeoutCallbacks.delete(nextId)
     next()
   }
 
@@ -607,22 +610,24 @@ describe('WebSocket reconnection', () => {
     originalSetTimeout = globalThis.setTimeout
     originalClearTimeout = globalThis.clearTimeout
     mockWebSocketInstances = []
-    scheduledTimeoutCallbacks = []
+    scheduledTimeoutCallbacks = new Map()
     scheduledTimeoutDelays = []
+    nextScheduledTimeoutId = 1
 
     globalThis.setTimeout = ((callback: TimerHandler, delay?: number) => {
       if (typeof callback !== 'function') {
         throw new Error('Expected function callback in test timeout shim')
       }
-      scheduledTimeoutCallbacks.push(callback as () => void)
+      const timeoutId = nextScheduledTimeoutId++
+      scheduledTimeoutCallbacks.set(timeoutId, callback as () => void)
       scheduledTimeoutDelays.push(Number(delay ?? 0))
-      return scheduledTimeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>
+      return timeoutId as unknown as ReturnType<typeof setTimeout>
     }) as unknown as typeof setTimeout
 
     globalThis.clearTimeout = ((id?: ReturnType<typeof setTimeout>) => {
-      const index = Number(id) - 1
-      if (index >= 0 && index < scheduledTimeoutCallbacks.length) {
-        scheduledTimeoutCallbacks.splice(index, 1)
+      const timeoutId = Number(id)
+      if (Number.isFinite(timeoutId)) {
+        scheduledTimeoutCallbacks.delete(timeoutId)
       }
     }) as unknown as typeof clearTimeout
 
@@ -737,7 +742,7 @@ describe('WebSocket reconnection', () => {
       )
 
       // No more reconnection attempts should be made
-      expect(scheduledTimeoutCallbacks).toHaveLength(0)
+      expect(scheduledTimeoutCallbacks.size).toBe(0)
       expect(mockWebSocketInstances).toHaveLength(6)
     })
 
@@ -778,7 +783,7 @@ describe('WebSocket reconnection', () => {
       gameWs.disconnect()
 
       // Wait for any potential reconnection attempts
-      expect(scheduledTimeoutCallbacks).toHaveLength(0)
+      expect(scheduledTimeoutCallbacks.size).toBe(0)
 
       // Should only have the original connection, no reconnection attempts
       expect(mockWebSocketInstances).toHaveLength(1)
@@ -797,7 +802,7 @@ describe('WebSocket reconnection', () => {
       // Must call simulateClose() to trigger the onclose handler since disconnect() only closes from client side
       mockWebSocketInstances[0].simulateClose()
 
-      expect(scheduledTimeoutCallbacks).toHaveLength(0)
+      expect(scheduledTimeoutCallbacks.size).toBe(0)
       expect(mockWebSocketInstances).toHaveLength(1)
     })
   })
@@ -1017,11 +1022,11 @@ describe('WebSocket reconnection', () => {
       mockWebSocketInstances[0].simulateOpen()
       mockWebSocketInstances[0].simulateClose()
 
-      expect(scheduledTimeoutCallbacks.length).toBeGreaterThan(0)
+      expect(scheduledTimeoutCallbacks.size).toBeGreaterThan(0)
 
       gameWs.disconnect()
 
-      expect(scheduledTimeoutCallbacks.length).toBe(0)
+      expect(scheduledTimeoutCallbacks.size).toBe(0)
     })
   })
 })

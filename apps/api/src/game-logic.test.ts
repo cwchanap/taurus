@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import type { FillOperation, Stroke } from '@repo/types'
 import {
+  applyFill,
   handlePlayerLeaveInActiveGame,
   calculateCorrectGuessScore,
   checkRateLimit,
@@ -9,6 +11,8 @@ import {
   type RateLimitState,
   findNextDrawer,
   containsCurrentWord,
+  undoFill,
+  undoStroke,
 } from './game-logic'
 import { type PlayingState, type RoundEndState } from './game-types'
 import {
@@ -401,6 +405,132 @@ describe('Rate Limiting', () => {
       )
       expect(additionalResult.allowed).toBe(true)
     })
+  })
+})
+
+describe('drawing operation helpers', () => {
+  const createPlayingState = (drawerId = 'drawer-1'): PlayingState => ({
+    status: 'playing',
+    currentRound: 1,
+    totalRounds: 2,
+    currentDrawerId: drawerId,
+    currentWord: 'cat',
+    wordLength: 3,
+    roundStartTime: 100,
+    roundEndTime: 60_100,
+    drawerOrder: [drawerId, 'guesser-1'],
+    scores: new Map([
+      [drawerId, { score: 0, name: 'Drawer' }],
+      ['guesser-1', { score: 0, name: 'Guesser' }],
+    ]),
+    correctGuessers: new Set(),
+    roundGuessers: new Set(['guesser-1']),
+    roundGuesserScores: new Map(),
+    usedWords: new Set(),
+    endGameAfterCurrentRound: false,
+  })
+
+  test('applyFill returns generated fill metadata and nonce echo event', () => {
+    const result = applyFill(
+      createPlayingState(),
+      [],
+      [],
+      'drawer-1',
+      { type: 'fill', x: 0.5, y: 0.5, color: '#FF6B6B', nonce: 'nonce-1' },
+      { id: 'fill-1', timestamp: 1234, seq: 7 }
+    )
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.fills).toEqual([
+        {
+          id: 'fill-1',
+          playerId: 'drawer-1',
+          x: 0.5,
+          y: 0.5,
+          color: '#FF6B6B',
+          timestamp: 1234,
+          seq: 7,
+        },
+      ])
+      expect(result.events).toEqual([
+        {
+          type: 'fill',
+          fill: result.fills[0],
+          nonce: 'nonce-1',
+        },
+      ])
+      expect(result.nextOperationSeq).toBe(7)
+    }
+  })
+
+  test('applyFill keeps invalid fill validation side-effect free', () => {
+    const result = applyFill(
+      createPlayingState(),
+      [],
+      [],
+      'drawer-1',
+      { type: 'fill', x: 100, y: 200, color: '#FF6B6B' },
+      { id: 'fill-1', timestamp: 1234, seq: 7 }
+    )
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.warning).toBe('Invalid fill data from player drawer-1')
+      expect(result.clientError).toBeUndefined()
+    }
+  })
+
+  test('undoStroke rejects when a newer fill exists for the same player', () => {
+    const stroke: Stroke = {
+      id: 'stroke-1',
+      playerId: 'drawer-1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: 1000,
+      seq: 1,
+    }
+    const fill: FillOperation = {
+      id: 'fill-1',
+      playerId: 'drawer-1',
+      x: 0.5,
+      y: 0.5,
+      color: '#FF6B6B',
+      timestamp: 1001,
+      seq: 2,
+    }
+
+    const result = undoStroke(createPlayingState(), [stroke], [fill], 'drawer-1', 'stroke-1')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.clientError).toEqual({
+        action: 'undo-stroke',
+        message: 'Undo failed: can only undo the most recent operation',
+      })
+    }
+  })
+
+  test('undoFill removes the most recent fill and emits a fill-removed event', () => {
+    const fill: FillOperation = {
+      id: 'fill-1',
+      playerId: 'drawer-1',
+      x: 0.5,
+      y: 0.5,
+      color: '#FF6B6B',
+      timestamp: 1000,
+      seq: 1,
+    }
+
+    const result = undoFill(createPlayingState(), [], [fill], 'drawer-1', 'fill-1')
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.fills).toEqual([])
+      expect(result.storageWrites).toEqual(['fills'])
+      expect(result.events).toEqual([{ type: 'fill-removed', fillId: 'fill-1' }])
+    }
   })
 })
 

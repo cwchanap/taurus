@@ -72,9 +72,9 @@
       for (const s of strokes) currentTimestamps.set(s.id, s.timestamp)
       for (const f of fills) currentTimestamps.set(f.id, f.timestamp)
 
-      // Find minimum timestamp of any removed operation or newly inserted operation.
-      // Both cases require fills at/after that timestamp to be recomputed, because flood-fill
-      // results depend on the raster state at the time they run — not just z-order.
+      // Find the earliest timestamp affected by removed, inserted, or re-timestamped operations.
+      // Any of those changes require fills at/after that point to be recomputed, because
+      // flood-fill results depend on the raster state at the time they run — not just z-order.
       let minInvalidationTimestamp = Infinity
       if (prevOperationTimestamps) {
         for (const [id, ts] of prevOperationTimestamps.entries()) {
@@ -84,6 +84,12 @@
         }
         for (const [id, ts] of currentTimestamps.entries()) {
           if (!prevOperationTimestamps.has(id)) {
+            minInvalidationTimestamp = Math.min(minInvalidationTimestamp, ts)
+          }
+        }
+        for (const [id, ts] of currentTimestamps.entries()) {
+          const prevTs = prevOperationTimestamps.get(id)
+          if (prevTs !== undefined && prevTs !== ts) {
             minInvalidationTimestamp = Math.min(minInvalidationTimestamp, ts)
           }
         }
@@ -558,7 +564,7 @@
   {#if !app}
     <div class="loading-overlay">
       {#if initError}
-        <span class="error-text">{initError}</span>
+        <span class="px-4 text-center text-sm text-[#ff6b6b]">{initError}</span>
       {:else}
         <div class="spinner"></div>
         <span>Initializing Canvas...</span>
@@ -605,12 +611,5 @@
     to {
       transform: rotate(360deg);
     }
-  }
-
-  .error-text {
-    color: #ff6b6b;
-    font-size: 14px;
-    text-align: center;
-    padding: 0 16px;
   }
 </style>

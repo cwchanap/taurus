@@ -23,6 +23,7 @@
     deriveWinnersIfGameOver,
     getRedoInFlightCount,
     getDrawerDisplayName,
+    isSameUndoItem,
     getTimeRemainingSeconds,
     isEditableKeyboardTarget,
     pushBoundedUndo,
@@ -32,18 +33,8 @@
     updateStrokePoint,
   } from '$lib/draw-page-state'
   import { onMount, onDestroy } from 'svelte'
-  import type {
-    Player,
-    Stroke,
-    Point,
-    FillOperation,
-    ChatMessage,
-    GameStatus,
-    RoundResult,
-    Winner,
-    ScoreEntry,
-    PaletteColor,
-  } from '$lib/types'
+  import type { Player, ChatMessage, GameStatus, RoundResult, Winner, ScoreEntry } from '$lib/types'
+  import type { Stroke, Point, FillOperation, PaletteColor } from '@repo/types'
 
   type Tool = 'pencil' | 'eraser' | 'fill'
 
@@ -288,6 +279,7 @@
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
         pendingOptimisticStrokes = new Map()
+        pendingOptimisticFills = new Map()
         chatMessages = chatHistory
         // Initialize game state from server
         gameStatus = initialGameState.status
@@ -324,10 +316,14 @@
         // via handleStrokeStart, but redo strokes need to be added here
         const existingIndex = strokes.findIndex((s) => s.id === stroke.id)
         if (existingIndex !== -1) {
-          // Update with server timestamp to ensure correct z-ordering
-          strokes[existingIndex] = { ...strokes[existingIndex], timestamp: stroke.timestamp }
+          const serverStrokeMetadata = {
+            timestamp: stroke.timestamp,
+            ...(stroke.seq !== undefined ? { seq: stroke.seq } : {}),
+          }
+          // Update with server ordering metadata to ensure correct z-ordering
+          strokes[existingIndex] = { ...strokes[existingIndex], ...serverStrokeMetadata }
           strokes = [...strokes]
-          undoStack = syncUndoStrokeTimestamp(undoStack, stroke.id, stroke.timestamp)
+          undoStack = syncUndoStrokeTimestamp(undoStack, stroke.id, serverStrokeMetadata)
           // Server confirmed this optimistic stroke
           pendingOptimisticStrokes = mapDelete(pendingOptimisticStrokes, stroke.id)
         } else {
@@ -340,7 +336,7 @@
             // Clear the in-progress flag as we've received server confirmation
             clearRedoLock()
             // Remove the confirmed redo entry from redoStack to prevent repeated redos
-            redoStack = redoStack.filter((item) => item !== redoItem)
+            redoStack = redoStack.filter((item) => !isSameUndoItem(item, redoItem))
             // Insert redo stroke at correct position based on timestamp to maintain order
             // Use server-confirmed stroke.timestamp instead of redoItem.stroke.timestamp
             const newItem: UndoItem = { type: 'stroke', strokeId: stroke.id, stroke }
@@ -395,7 +391,7 @@
             // Clear the in-progress flag as we've received server confirmation
             clearRedoLock()
             // Remove the confirmed redo entry from redoStack to prevent repeated redos
-            redoStack = redoStack.filter((item) => item !== redoFillInfo.item)
+            redoStack = redoStack.filter((item) => !isSameUndoItem(item, redoFillInfo.item))
 
             // Check if this fill was already applied optimistically (has nonce)
             const existingOptimisticFill = fill.nonce
@@ -457,7 +453,7 @@
                 }
                 return item
               })
-              // redoStack already cleared in handleFill(); this is a no-op but kept for safety
+              // Clear redo history only after the fill has been confirmed by the server
               redoStack = []
               // Clean up from pending optimistic fills map
               if (fill.nonce) {
@@ -508,6 +504,7 @@
         pendingUndoStrokes = new Map()
         pendingUndoFills = new Map()
         pendingOptimisticStrokes = new Map()
+        pendingOptimisticFills = new Map()
         canvasComponent?.clearCanvas()
       },
       onChat: (message) => {
@@ -762,9 +759,6 @@
     // Optimistically add fill to local state
     fills = [...fills, optimisticFill]
 
-    // Clear redo stack immediately, same as handleStroke
-    redoStack = []
-
     // Add to undo stack optimistically
     undoStack = pushBoundedUndo(
       undoStack,
@@ -786,6 +780,7 @@
       fills = fills.filter((f) => f.id !== tempId)
       undoStack = undoStack.filter((item) => !(item.type === 'fill' && item.fillId === tempId))
       pendingOptimisticFills = mapDelete(pendingOptimisticFills, nonce)
+      return
     }
   }
 
@@ -901,7 +896,11 @@
       pendingRedoStrokes = rollback.pendingRedoStrokes
       pendingRedoFills = rollback.pendingRedoFills
       // Return the item to redoStack so it can be retried
-      if (item && (inProgressRedoNonce || inProgressRedoStrokeId)) {
+      if (
+        item &&
+        (inProgressRedoNonce || inProgressRedoStrokeId) &&
+        !redoStack.some((redoItem) => isSameUndoItem(redoItem, item))
+      ) {
         redoStack = pushBoundedUndo(redoStack, item, MAX_UNDO_DEPTH)
       }
       redoInProgress = false
