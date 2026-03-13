@@ -135,11 +135,25 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       })
       this.fills = (await this.ctx.storage.get<FillOperation[]>('fills')) || []
 
-      // Initialize seq counter above the max of any stored seq values so new operations
-      // always sort after restored ones, even across Durable Object restarts.
-      const maxStrokeSeq = Math.max(0, ...this.strokes.map((s) => s.seq ?? 0))
-      const maxFillSeq = Math.max(0, ...this.fills.map((f) => f.seq ?? 0))
-      this.operationSeq = Math.max(maxStrokeSeq, maxFillSeq)
+      // Migrate all restored operations onto a single seq scale so that
+      // getOperationOrder() comparisons are consistent after DO restarts.
+      // Legacy ops (seq undefined, e.g. persisted before seq was introduced) sort by
+      // timestamp and are placed before ops that already carry an explicit seq value.
+      // Re-assigning seq 1..n to all ops is idempotent for rooms that already have
+      // consistent seq values and fixes ordering for rooms that do not.
+      const legacy = [
+        ...this.strokes.filter((s) => s.seq === undefined),
+        ...this.fills.filter((f) => f.seq === undefined),
+      ].sort((a, b) => a.timestamp - b.timestamp)
+      const withSeq = [
+        ...this.strokes.filter((s) => s.seq !== undefined),
+        ...this.fills.filter((f) => f.seq !== undefined),
+      ].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+      const allOps = [...legacy, ...withSeq]
+      allOps.forEach((op, i) => {
+        op.seq = i + 1
+      })
+      this.operationSeq = allOps.length
 
       this.created = (await this.ctx.storage.get<boolean>('created')) || false
       const storedChatHistory = (await this.ctx.storage.get<ChatMessage[]>('chatHistory')) || []

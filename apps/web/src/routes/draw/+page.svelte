@@ -337,13 +337,17 @@
             clearRedoLock()
             // Remove the confirmed redo entry from redoStack to prevent repeated redos
             redoStack = redoStack.filter((item) => !isSameUndoItem(item, redoItem))
-            // Insert redo stroke at correct position based on timestamp to maintain order
-            // Use server-confirmed stroke.timestamp instead of redoItem.stroke.timestamp
+            // Insert redo stroke at correct position using seq ?? timestamp to match
+            // the server's getOperationOrder() comparator, so same-millisecond ops
+            // are disambiguated correctly.
             const newItem: UndoItem = { type: 'stroke', strokeId: stroke.id, stroke }
+            const incomingOrder = stroke.seq ?? stroke.timestamp
             const insertIndex = undoStack.findIndex((item) => {
-              const itemTimestamp =
-                item.type === 'stroke' ? item.stroke.timestamp : item.fill.timestamp
-              return itemTimestamp > stroke.timestamp
+              const itemOrder =
+                item.type === 'stroke'
+                  ? (item.stroke.seq ?? item.stroke.timestamp)
+                  : (item.fill.seq ?? item.fill.timestamp)
+              return itemOrder > incomingOrder
             })
             if (insertIndex === -1) {
               undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)
@@ -416,11 +420,14 @@
               // New fill from redo that wasn't optimistically added
               fills = [...fills, fill]
               const newItem: UndoItem = { type: 'fill', fillId: fill.id, fill }
-              // Use server-confirmed fill.timestamp instead of redoFillInfo.timestamp
+              // Use seq ?? timestamp to match server's getOperationOrder() comparator.
+              const incomingOrder = fill.seq ?? fill.timestamp
               const insertIndex = undoStack.findIndex((item) => {
-                const itemTimestamp =
-                  item.type === 'stroke' ? item.stroke.timestamp : item.fill.timestamp
-                return itemTimestamp > fill.timestamp
+                const itemOrder =
+                  item.type === 'stroke'
+                    ? (item.stroke.seq ?? item.stroke.timestamp)
+                    : (item.fill.seq ?? item.fill.timestamp)
+                return itemOrder > incomingOrder
               })
               if (insertIndex === -1) {
                 undoStack = pushBoundedUndo(undoStack, newItem, MAX_UNDO_DEPTH)
