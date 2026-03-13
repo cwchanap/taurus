@@ -759,6 +759,10 @@
     // Optimistically add fill to local state
     fills = [...fills, optimisticFill]
 
+    // New user action — discard the abandoned redo branch immediately,
+    // matching the behaviour of handleStrokeStart.
+    redoStack = []
+
     // Add to undo stack optimistically
     undoStack = pushBoundedUndo(
       undoStack,
