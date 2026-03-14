@@ -385,7 +385,7 @@ export function buildRoundEndState(
   currentWord: undefined
   currentDrawerId: null
   currentDrawerName: ''
-  wordLength: 0
+  wordLength: undefined
 } {
   return {
     lastRevealedWord: word,
@@ -395,7 +395,7 @@ export function buildRoundEndState(
     currentWord: undefined,
     currentDrawerId: null,
     currentDrawerName: '',
-    wordLength: 0,
+    wordLength: undefined,
   }
 }
 

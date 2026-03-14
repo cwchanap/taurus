@@ -578,7 +578,7 @@
         currentWord = next.currentWord
         currentDrawerId = next.currentDrawerId
         currentDrawerName = next.currentDrawerName
-        wordLength = next.wordLength
+        wordLength = next.wordLength ?? 0
       },
       onGameOver: (finalScores, winners) => {
         const next = buildGameOverState(finalScores, winners)

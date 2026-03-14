@@ -112,7 +112,7 @@ export type ServerMessage =
   | { type: 'stroke'; stroke: Stroke }
   | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'stroke-removed'; strokeId: string }
-  | ({ type: 'fill' } & FillOperation)
+  | ({ type: 'fill' } & Omit<FillOperation, 'nonce'>)
   | { type: 'fill-removed'; fillId: string }
   | { type: 'clear' }
   | { type: 'chat'; message: ChatMessage }
@@ -153,7 +153,7 @@ export type ServerMessage =
   | { type: 'tick'; timeRemaining: number }
   | { type: 'game-reset' }
   | { type: 'system-message'; content: string }
-  | { type: 'error'; message: string; action?: string }
+  | { type: 'error'; message: string; action?: ClientMessage['type'] }
 
 /** @deprecated Use `ClientMessage` or `ServerMessage` directly for type safety */
 export type MessageType = ClientMessage | ServerMessage

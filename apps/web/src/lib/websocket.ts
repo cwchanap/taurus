@@ -3,7 +3,7 @@ import type {
   Stroke,
   FillOperation,
   ChatMessage,
-  GameState,
+  GameStateWire,
   RoundResult,
   Winner,
   ScoreEntry,
@@ -19,7 +19,7 @@ export type GameEventHandler = {
     fills: FillOperation[],
     chatHistory: ChatMessage[],
     isHost: boolean,
-    gameState: GameState
+    gameState: GameStateWire
   ) => void
   onHostChange?: (newHostId: string) => void
   onPlayerJoined?: (player: Player) => void
@@ -160,16 +160,21 @@ export class GameWebSocket {
         this.handlers.onStrokeRemoved?.(data.strokeId)
         break
       case 'fill':
-        this.handlers.onFill?.({
-          id: data.id,
-          playerId: data.playerId,
-          x: data.x,
-          y: data.y,
-          color: data.color,
-          timestamp: data.timestamp,
-          nonce: data.nonce,
-          seq: data.seq,
-        })
+        {
+          // The server sends nonce only in directed echoes to the originating client,
+          // not in broadcasts. Access it from the raw parsed object.
+          const rawNonce = (data as typeof data & { nonce?: string }).nonce
+          this.handlers.onFill?.({
+            id: data.id,
+            playerId: data.playerId,
+            x: data.x,
+            y: data.y,
+            color: data.color,
+            timestamp: data.timestamp,
+            nonce: rawNonce,
+            seq: data.seq,
+          })
+        }
         break
       case 'fill-removed':
         this.handlers.onFillRemoved?.(data.fillId)
