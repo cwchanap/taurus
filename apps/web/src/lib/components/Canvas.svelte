@@ -282,10 +282,18 @@
     const point = { x: event.global.x, y: event.global.y }
 
     if (tool === 'fill') {
+      const screenWidth = app.screen.width
+      const screenHeight = app.screen.height
+      if (screenWidth * screenHeight > MAX_FILL_PIXELS) {
+        console.warn(
+          `Canvas: Fill rejected — canvas too large (${screenWidth * screenHeight} pixels > ${MAX_FILL_PIXELS} limit). Resize the window to use the fill tool.`
+        )
+        return
+      }
       // Normalize coordinates to 0-1 range before sending over the wire
       // This ensures fills work correctly across different canvas sizes
-      const normX = point.x / app.screen.width
-      const normY = point.y / app.screen.height
+      const normX = point.x / screenWidth
+      const normY = point.y / screenHeight
       onFill(normX, normY, color)
       return
     }
@@ -370,7 +378,7 @@
 
     if (screenWidth > 0 && screenHeight > 0 && screenWidth * screenHeight > MAX_FILL_PIXELS) {
       console.warn(
-        `Canvas: Fill ${fill.id} skipped — canvas too large (${screenWidth * screenHeight} pixels > ${MAX_FILL_PIXELS} limit). Retrying on next reconciliation.`
+        `Canvas: Fill ${fill.id} skipped — canvas too large (${screenWidth * screenHeight} pixels > ${MAX_FILL_PIXELS} limit). Fill will not be applied until the canvas is resized or the operation is removed.`
       )
       oobFills.add(fill.id)
       return

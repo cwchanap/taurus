@@ -34,9 +34,7 @@
   } from '$lib/draw-page-state'
   import { onMount, onDestroy } from 'svelte'
   import type { Player, ChatMessage, GameStatus, RoundResult, Winner, ScoreEntry } from '$lib/types'
-  import type { Stroke, Point, FillOperation, PaletteColor } from '@repo/types'
-
-  type Tool = 'pencil' | 'eraser' | 'fill'
+  import type { Stroke, Point, FillOperation, PaletteColor, Tool } from '@repo/types'
 
   type UndoItem = import('$lib/draw-page-state').UndoItem
 
@@ -379,7 +377,7 @@
         const pendingItem = pendingUndoStrokes.get(strokeId)
         if (pendingItem) {
           // Server confirmed the undo - commit the state changes
-          undoStack = undoStack.filter((item) => item !== pendingItem)
+          undoStack = undoStack.filter((item) => !isSameUndoItem(item, pendingItem))
           redoStack = pushBoundedUndo(redoStack, pendingItem, MAX_UNDO_DEPTH)
           pendingUndoStrokes = mapDelete(pendingUndoStrokes, strokeId)
         }
@@ -495,7 +493,7 @@
         const pendingItem = pendingUndoFills.get(fillId)
         if (pendingItem) {
           // Server confirmed the undo - commit the state changes
-          undoStack = undoStack.filter((item) => item !== pendingItem)
+          undoStack = undoStack.filter((item) => !isSameUndoItem(item, pendingItem))
           redoStack = pushBoundedUndo(redoStack, pendingItem, MAX_UNDO_DEPTH)
           pendingUndoFills = mapDelete(pendingUndoFills, fillId)
         }
@@ -766,17 +764,6 @@
     // Optimistically add fill to local state
     fills = [...fills, optimisticFill]
 
-    // New user action — discard the abandoned redo branch immediately,
-    // matching the behaviour of handleStrokeStart.
-    redoStack = []
-
-    // Add to undo stack optimistically
-    undoStack = pushBoundedUndo(
-      undoStack,
-      { type: 'fill', fillId: tempId, fill: optimisticFill },
-      MAX_UNDO_DEPTH
-    )
-
     // Track this optimistic fill for cleanup if server never confirms
     pendingOptimisticFills = mapSetOptimisticInfo(pendingOptimisticFills, nonce, {
       tempId,
@@ -789,10 +776,19 @@
       console.error('Canvas: Failed to send fill — WebSocket not open')
       // Remove optimistic fill on failure to prevent desync
       fills = fills.filter((f) => f.id !== tempId)
-      undoStack = undoStack.filter((item) => !(item.type === 'fill' && item.fillId === tempId))
       pendingOptimisticFills = mapDelete(pendingOptimisticFills, nonce)
       return
     }
+
+    // New user action — discard the abandoned redo branch and push to undo.
+    // Done after successful send, matching the behaviour of handleStrokeStart,
+    // so a failed send does not silently wipe the redo history.
+    redoStack = []
+    undoStack = pushBoundedUndo(
+      undoStack,
+      { type: 'fill', fillId: tempId, fill: optimisticFill },
+      MAX_UNDO_DEPTH
+    )
   }
 
   function handleUndo() {
