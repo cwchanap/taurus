@@ -47,5 +47,10 @@ export const PALETTE_COLORS = [
 /** A color that is guaranteed to be one of the valid drawing palette colors */
 export type PaletteColor = (typeof PALETTE_COLORS)[number]
 
+/** Type guard for PaletteColor — use instead of inlining PALETTE_COLORS.includes() */
+export function isPaletteColor(value: unknown): value is PaletteColor {
+  return typeof value === 'string' && (PALETTE_COLORS as readonly string[]).includes(value)
+}
+
 /** Drawing tool types */
 export type Tool = 'pencil' | 'eraser' | 'fill'

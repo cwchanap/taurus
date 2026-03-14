@@ -1,5 +1,5 @@
 import type { Stroke, PaletteColor } from '@repo/types'
-import { PALETTE_COLORS } from '@repo/types'
+import { isPaletteColor } from '@repo/types'
 
 import {
   MAX_CHAT_MESSAGE_LENGTH,
@@ -125,7 +125,7 @@ export function validateFill(data: unknown): { x: number; y: number; color: Pale
     return null
   }
 
-  if (typeof d.color !== 'string' || !(PALETTE_COLORS as readonly string[]).includes(d.color)) {
+  if (!isPaletteColor(d.color)) {
     return null
   }
 
@@ -180,10 +180,7 @@ export function validateStroke(
   }
 
   // Validate color — must be one of the allowed palette colors
-  if (
-    typeof data.color !== 'string' ||
-    !(PALETTE_COLORS as readonly string[]).includes(data.color)
-  ) {
+  if (!isPaletteColor(data.color)) {
     console.warn('Invalid stroke data: color is not a palette color')
     return null
   }

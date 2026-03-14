@@ -225,7 +225,7 @@ describe('draw-page-state helpers', () => {
     expect(state.currentDrawerId).toBeNull()
     expect(state.currentDrawerName).toBe('')
     expect(state.currentWord).toBeUndefined()
-    expect(state.wordLength).toBe(0)
+    expect(state.wordLength).toBeUndefined()
   })
 
   it('buildGameOverState and buildGameResetState produce expected resets', () => {
