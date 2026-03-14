@@ -51,7 +51,7 @@
   let initError = $state<string | null>(null)
   let lastOperationsSig = ''
   let resizeTrigger = $state(0) // Increment to trigger fill reconciliation after resize
-  let prevOperationTimestamps: Map<string, number> | null = null
+  let prevOperationSignatures: Map<string, string> | null = null
 
   // Combined reconciliation of strokes and fills in timestamp order
   // This ensures correct z-ordering regardless of operation type
@@ -67,30 +67,41 @@
         console.error('Canvas: Duplicate stroke IDs detected!')
       }
 
-      // Build current operation timestamps map
+      // Build current operation signatures map (timestamp + seq) for invalidation detection.
+      // Including seq ensures that same-millisecond operations whose server-assigned order
+      // changes also trigger fill recomputation, not just a z-order swap.
+      const currentSignatures = new Map<string, string>()
+      for (const s of strokes) currentSignatures.set(s.id, `${s.timestamp}:${s.seq ?? ''}`)
+      for (const f of fills) currentSignatures.set(f.id, `${f.timestamp}:${f.seq ?? ''}`)
+      // Keep a parallel timestamp-only map used to find the earliest affected timestamp below.
       const currentTimestamps = new Map<string, number>()
       for (const s of strokes) currentTimestamps.set(s.id, s.timestamp)
       for (const f of fills) currentTimestamps.set(f.id, f.timestamp)
 
-      // Find the earliest timestamp affected by removed, inserted, or re-timestamped operations.
+      // Find the earliest timestamp affected by removed, inserted, or reordered operations.
       // Any of those changes require fills at/after that point to be recomputed, because
       // flood-fill results depend on the raster state at the time they run — not just z-order.
       let minInvalidationTimestamp = Infinity
-      if (prevOperationTimestamps) {
-        for (const [id, ts] of prevOperationTimestamps.entries()) {
-          if (!currentTimestamps.has(id)) {
-            minInvalidationTimestamp = Math.min(minInvalidationTimestamp, ts)
+      if (prevOperationSignatures) {
+        for (const [id, sig] of prevOperationSignatures.entries()) {
+          if (!currentSignatures.has(id)) {
+            // Operation removed — use its old timestamp for invalidation
+            const oldTs = Number(sig.split(':')[0])
+            minInvalidationTimestamp = Math.min(minInvalidationTimestamp, oldTs)
           }
         }
         for (const [id, ts] of currentTimestamps.entries()) {
-          if (!prevOperationTimestamps.has(id)) {
+          if (!prevOperationSignatures.has(id)) {
             minInvalidationTimestamp = Math.min(minInvalidationTimestamp, ts)
           }
         }
-        for (const [id, ts] of currentTimestamps.entries()) {
-          const prevTs = prevOperationTimestamps.get(id)
-          if (prevTs !== undefined && prevTs !== ts) {
-            minInvalidationTimestamp = Math.min(minInvalidationTimestamp, ts)
+        for (const [id, sig] of currentSignatures.entries()) {
+          const prevSig = prevOperationSignatures.get(id)
+          if (prevSig !== undefined && prevSig !== sig) {
+            minInvalidationTimestamp = Math.min(
+              minInvalidationTimestamp,
+              currentTimestamps.get(id)!
+            )
           }
         }
       }
@@ -140,7 +151,7 @@
         }
       }
 
-      prevOperationTimestamps = new Map(currentTimestamps)
+      prevOperationSignatures = new Map(currentSignatures)
 
       // Build a combined list of operations sorted by timestamp, using seq as a tiebreaker
       // when both operations have a server-assigned seq to avoid same-millisecond reordering
@@ -561,7 +572,7 @@
       graphics?.destroy()
     }
     fillGraphics.clear()
-    prevOperationTimestamps = null
+    prevOperationSignatures = null
   }
 </script>
 
