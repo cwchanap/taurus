@@ -150,7 +150,7 @@
   const redoInFlightCount = $derived(
     getRedoInFlightCount(redoInProgress, pendingRedoStrokes, pendingRedoFills)
   )
-  const topUndoItemHasTempId = $derived(() => {
+  const topUndoItemHasTempId = $derived.by(() => {
     const top = undoStack[undoStack.length - 1]
     return top?.type === 'fill' && top.fillId.startsWith('temp-fill-')
   })
@@ -215,7 +215,7 @@
         // Clear redo lock on permanent connection failure to allow user action
         clearRedoLock()
       },
-      onServerError: (message, action) => {
+      onServerError: (message, action, nonce) => {
         errorMessage = message
         const isDrawingAction =
           action === 'undo-stroke' ||
@@ -237,10 +237,21 @@
           strokes = nextStrokes.strokes
           undoStack = nextStrokes.undoStack
           pendingOptimisticStrokes = nextStrokes.pendingOptimisticStrokes
-          const next = discardPendingOptimisticFills(fills, undoStack, pendingOptimisticFills)
-          fills = next.fills
-          undoStack = next.undoStack
-          pendingOptimisticFills = next.pendingOptimisticFills
+          if (action === 'fill' && nonce) {
+            const pending = pendingOptimisticFills.get(nonce)
+            if (pending) {
+              fills = fills.filter((f) => f.id !== pending.tempId)
+              undoStack = undoStack.filter(
+                (item) => !(item.type === 'fill' && item.fillId === pending.tempId)
+              )
+              pendingOptimisticFills = mapDelete(pendingOptimisticFills, nonce)
+            }
+          } else {
+            const next = discardPendingOptimisticFills(fills, undoStack, pendingOptimisticFills)
+            fills = next.fills
+            undoStack = next.undoStack
+            pendingOptimisticFills = next.pendingOptimisticFills
+          }
         } else {
           // Non-drawing errors (chat rate limit, clear, etc.) — only release the redo lock
           // to avoid getting stuck, but don't discard in-flight drawing state

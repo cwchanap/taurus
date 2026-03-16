@@ -59,7 +59,7 @@ export type GameEventHandler = {
   ) => void
   onTick?: (timeRemaining: number) => void
   onGameReset?: () => void
-  onServerError?: (message: string, action?: string) => void
+  onServerError?: (message: string, action?: string, nonce?: string) => void
 }
 
 export class GameWebSocket {
@@ -224,7 +224,7 @@ export class GameWebSocket {
         break
       case 'error':
         console.error('Server error:', data.message)
-        this.handlers.onServerError?.(data.message, data.action)
+        this.handlers.onServerError?.(data.message, data.action, data.nonce)
         break
       default:
         console.warn(`GameWebSocket: Unhandled message type "${(data as { type: string }).type}"`)
