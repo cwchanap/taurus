@@ -698,7 +698,7 @@
     }
   })
 
-  function handleStrokeStart(stroke: Stroke) {
+  function handleStrokeStart(stroke: Stroke): boolean {
     strokes = [...strokes, stroke]
     pendingOptimisticStrokes = mapSet(pendingOptimisticStrokes, stroke.id, stroke)
     const sent = ws?.sendStroke(stroke)
@@ -706,7 +706,7 @@
       console.error('Canvas: Failed to send stroke — WebSocket not open')
       strokes = strokes.filter((s) => s.id !== stroke.id)
       pendingOptimisticStrokes = mapDelete(pendingOptimisticStrokes, stroke.id)
-      return
+      return false
     }
     // New stroke clears redo stack and pushes to undo
     redoStack = []
@@ -715,6 +715,7 @@
       { type: 'stroke', strokeId: stroke.id, stroke },
       MAX_UNDO_DEPTH
     )
+    return true
   }
 
   function handleStrokeUpdate(strokeId: string, point: Point) {
@@ -780,10 +781,8 @@
       return
     }
 
-    // New user action — discard the abandoned redo branch and push to undo.
-    // Done after successful send, matching the behaviour of handleStrokeStart,
-    // so a failed send does not silently wipe the redo history.
-    redoStack = []
+    // Push optimistic undo entry. Redo stack is cleared only on server confirmation
+    // (in onFill) to preserve redo history if the server later rejects this fill.
     undoStack = pushBoundedUndo(
       undoStack,
       { type: 'fill', fillId: tempId, fill: optimisticFill },

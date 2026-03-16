@@ -12,7 +12,7 @@
     fills: FillOperation[]
     playerId: string
     disabled?: boolean
-    onStrokeStart: (stroke: Stroke) => void
+    onStrokeStart: (stroke: Stroke) => boolean
     onStrokeUpdate: (strokeId: string, point: Point) => void
     onFill: (x: number, y: number, color: PaletteColor) => void
   }
@@ -52,6 +52,7 @@
   let lastOperationsSig = ''
   let resizeTrigger = $state(0) // Increment to trigger fill reconciliation after resize
   let prevOperationSignatures: Map<string, string> | null = null
+  let prevOperationTimestamps: Map<string, number> | null = null
 
   // Combined reconciliation of strokes and fills in timestamp order
   // This ensures correct z-ordering regardless of operation type
@@ -98,9 +99,12 @@
         for (const [id, sig] of currentSignatures.entries()) {
           const prevSig = prevOperationSignatures.get(id)
           if (prevSig !== undefined && prevSig !== sig) {
+            const prevTs = prevOperationTimestamps?.get(id)
+            const currentTs = currentTimestamps.get(id)!
             minInvalidationTimestamp = Math.min(
               minInvalidationTimestamp,
-              currentTimestamps.get(id)!
+              prevTs ?? currentTs,
+              currentTs
             )
           }
         }
@@ -152,6 +156,7 @@
       }
 
       prevOperationSignatures = new Map(currentSignatures)
+      prevOperationTimestamps = new Map(currentTimestamps)
 
       // Build a combined list of operations sorted by timestamp, using seq as a tiebreaker
       // when both operations have a server-assigned seq to avoid same-millisecond reordering
@@ -321,7 +326,16 @@
       timestamp: Date.now(),
     }
 
-    onStrokeStart(stroke)
+    const accepted = onStrokeStart(stroke)
+    if (!accepted) {
+      drawingContainer.removeChild(currentGraphics)
+      strokeGraphics.delete(currentStrokeId)
+      isDrawing = false
+      currentStrokeId = null
+      lastPoint = null
+      currentGraphics = null
+      currentIsEraser = false
+    }
   }
 
   function onPointerMove(event: { global: { x: number; y: number } }) {
@@ -581,6 +595,7 @@
     }
     fillGraphics.clear()
     prevOperationSignatures = null
+    prevOperationTimestamps = null
   }
 </script>
 

@@ -1013,6 +1013,7 @@ describe('WebSocket reconnection', () => {
       expect(errorSpy).toHaveBeenCalledWith('Failed to parse message:', expect.any(SyntaxError))
       expect(onConnectionChange).toHaveBeenCalledWith(true)
       expect(onConnectionChange).not.toHaveBeenCalledWith(false)
+      errorSpy.mockRestore()
     })
 
     it('clears pending reconnect timer on disconnect()', () => {

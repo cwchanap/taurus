@@ -112,7 +112,7 @@ export type ServerMessage =
   | { type: 'stroke'; stroke: Stroke }
   | { type: 'stroke-update'; strokeId: string; point: Point }
   | { type: 'stroke-removed'; strokeId: string }
-  | ({ type: 'fill' } & Omit<FillOperation, 'nonce'>)
+  | ({ type: 'fill' } & FillOperation)
   | { type: 'fill-removed'; fillId: string }
   | { type: 'clear' }
   | { type: 'chat'; message: ChatMessage }

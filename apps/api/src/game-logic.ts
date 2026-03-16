@@ -430,6 +430,7 @@ export function applyFill(
     return {
       ok: false,
       warning: `Invalid fill data from player ${playerId}`,
+      clientError: buildClientError('fill', 'Fill failed: invalid fill data'),
     }
   }
 
