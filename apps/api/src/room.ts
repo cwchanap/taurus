@@ -129,7 +129,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         // validateStroke(), which now rejects non-palette values.
         const color = (PALETTE_COLORS as readonly string[]).includes(withTimestamp.color as string)
           ? withTimestamp.color
-          : ('#1a1a2e' as const) // fall back to darkest palette color
+          : PALETTE_COLORS[PALETTE_COLORS.length - 1] // fall back to last palette color
 
         return { ...withTimestamp, color }
       })
@@ -800,9 +800,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     return true
   }
 
-  private sendSocketError(ws: WebSocket, action: string, message: string) {
+  private sendSocketError(ws: WebSocket, action: string, message: string, nonce?: string) {
     try {
-      ws.send(JSON.stringify({ type: 'error', action, message }))
+      ws.send(JSON.stringify({ type: 'error', action, message, ...(nonce ? { nonce } : {}) }))
     } catch {
       // Connection may be closed
     }
@@ -810,14 +810,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
   private handleDrawingLogicFailure(
     ws: WebSocket,
-    result: { warning?: string; clientError?: { action: string; message: string } }
+    result: { warning?: string; clientError?: { action: string; message: string } },
+    nonce?: string
   ) {
     if (result.warning) {
       console.warn(result.warning)
     }
 
     if (result.clientError) {
-      this.sendSocketError(ws, result.clientError.action, result.clientError.message)
+      this.sendSocketError(ws, result.clientError.action, result.clientError.message, nonce)
     }
   }
 
@@ -1071,20 +1072,21 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const playerId = this.getPlayerIdForSocket(ws)
     if (!playerId) return
 
+    // Extract nonce from request data for error correlation
+    const rawNonce = (data as unknown as { nonce?: unknown }).nonce
+    const requestNonce =
+      typeof rawNonce === 'string' && rawNonce.length <= 36 ? rawNonce : undefined
+
     const permission = validateFillRequest(this.gameState, playerId)
     if (!permission.ok) {
-      this.handleDrawingLogicFailure(ws, permission)
+      this.handleDrawingLogicFailure(ws, permission, requestNonce)
       return
     }
 
     // Reuse the stroke rate limit bucket for fill operations
     if (!this.checkRateLimit(playerId, true)) {
       console.warn(`Rate limit exceeded for fill by player ${playerId}`)
-      try {
-        ws.send(JSON.stringify({ type: 'error', action: 'fill', message: 'Rate limit exceeded' }))
-      } catch {
-        // Connection may be closed
-      }
+      this.sendSocketError(ws, 'fill', 'Rate limit exceeded', requestNonce)
       return
     }
 
@@ -1094,7 +1096,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       seq: this.operationSeq + 1,
     })
     if (!result.ok) {
-      this.handleDrawingLogicFailure(ws, result)
+      this.handleDrawingLogicFailure(ws, result, requestNonce)
       return
     }
 

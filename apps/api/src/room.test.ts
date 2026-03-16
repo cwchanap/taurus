@@ -1125,7 +1125,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
 
     await room.webSocketMessage(
       drawerWs,
-      JSON.stringify({ type: 'fill', x: 100, y: 200, color: 'red' })
+      JSON.stringify({ type: 'fill', x: 0.1, y: 0.2, color: 'red' })
     )
     await flushPromises()
 

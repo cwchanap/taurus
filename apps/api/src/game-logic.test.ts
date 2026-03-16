@@ -477,7 +477,10 @@ describe('drawing operation helpers', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.warning).toBe('Invalid fill data from player drawer-1')
-      expect(result.clientError).toBeUndefined()
+      expect(result.clientError).toEqual({
+        action: 'fill',
+        message: 'Fill failed: invalid fill data',
+      })
     }
   })
 
