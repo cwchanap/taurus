@@ -44,6 +44,11 @@ vi.mock('pixi.js', () => {
       this.children.push(child)
       return child
     }
+    removeChild(child: unknown) {
+      const idx = this.children.indexOf(child)
+      if (idx !== -1) this.children.splice(idx, 1)
+      return child
+    }
   }
 
   class MockStage extends MockContainer {
@@ -104,7 +109,7 @@ describe('Canvas', () => {
   })
 
   it('starts and updates a stroke when drawing with pencil', async () => {
-    const onStrokeStart = vi.fn()
+    const onStrokeStart = vi.fn().mockReturnValue(true)
     const onStrokeUpdate = vi.fn()
 
     render(Canvas, {
@@ -245,7 +250,7 @@ describe('Canvas', () => {
   })
 
   it('sets eraser blend mode when drawing with eraser tool', async () => {
-    const onStrokeStart = vi.fn()
+    const onStrokeStart = vi.fn().mockReturnValue(true)
 
     render(Canvas, {
       color: '#4ECDC4',
