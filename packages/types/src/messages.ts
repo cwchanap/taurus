@@ -153,7 +153,7 @@ export type ServerMessage =
   | { type: 'tick'; timeRemaining: number }
   | { type: 'game-reset' }
   | { type: 'system-message'; content: string }
-  | { type: 'error'; message: string; action?: ClientMessage['type'] }
+  | { type: 'error'; message: string; action?: ClientMessage['type']; nonce?: string }
 
 /** @deprecated Use `ClientMessage` or `ServerMessage` directly for type safety */
 export type MessageType = ClientMessage | ServerMessage
