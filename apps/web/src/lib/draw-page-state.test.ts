@@ -17,6 +17,7 @@ import {
   getDrawerDisplayName,
   getTimeRemainingSeconds,
   isEditableKeyboardTarget,
+  isSameUndoItem,
   pushBoundedUndo,
   rebuildUndoStack,
   rollbackPendingRedoMarker,
@@ -424,6 +425,25 @@ describe('draw-page-state helpers', () => {
     expect(result.pendingOptimisticFills.size).toBe(0)
   })
 
+  it('discardPendingOptimisticFills is a no-op when there are no pending fill markers', () => {
+    const fill: FillOperation = {
+      id: 'fill-1',
+      playerId: 'p1',
+      x: 10,
+      y: 10,
+      color: '#FF6B6B',
+      timestamp: 1000,
+    }
+    const undoStack: UndoItem[] = [{ type: 'fill', fillId: 'fill-1', fill }]
+    const pendingMap = new Map()
+
+    const result = discardPendingOptimisticFills([fill], undoStack, pendingMap)
+
+    expect(result.fills).toEqual([fill])
+    expect(result.undoStack).toEqual(undoStack)
+    expect(result.pendingOptimisticFills).toBe(pendingMap)
+  })
+
   it('discardPendingOptimisticStrokes removes pending strokes from strokes and undo stack', () => {
     const pendingStroke: Stroke = {
       id: 'stroke-1',
@@ -485,6 +505,50 @@ describe('draw-page-state helpers', () => {
     const roleTextbox = document.createElement('span')
     roleTextbox.setAttribute('role', 'textbox')
     expect(isEditableKeyboardTarget(roleTextbox)).toBe(true)
+  })
+
+  it('isSameUndoItem compares items by type and identifier', () => {
+    const stroke: Stroke = {
+      id: 'stroke-1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: 1000,
+    }
+    const fill: FillOperation = {
+      id: 'fill-1',
+      playerId: 'p1',
+      x: 10,
+      y: 10,
+      color: '#FF6B6B',
+      timestamp: 1500,
+    }
+
+    expect(
+      isSameUndoItem(
+        { type: 'stroke', strokeId: 'stroke-1', stroke },
+        { type: 'stroke', strokeId: 'stroke-1', stroke }
+      )
+    ).toBe(true)
+    expect(
+      isSameUndoItem(
+        { type: 'stroke', strokeId: 'stroke-1', stroke },
+        { type: 'stroke', strokeId: 'stroke-2', stroke }
+      )
+    ).toBe(false)
+    expect(
+      isSameUndoItem(
+        { type: 'stroke', strokeId: 'stroke-1', stroke },
+        { type: 'fill', fillId: 'fill-1', fill }
+      )
+    ).toBe(false)
+    expect(
+      isSameUndoItem(
+        { type: 'fill', fillId: 'fill-1', fill },
+        { type: 'fill', fillId: 'fill-1', fill }
+      )
+    ).toBe(true)
   })
 
   it('getDrawerDisplayName returns empty string when drawerId is null', () => {

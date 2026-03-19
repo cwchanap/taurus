@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
-import { MAX_MESSAGES_PER_WINDOW, MAX_STROKES_PER_WINDOW } from './constants'
+import { MAX_MESSAGES_PER_WINDOW, MAX_STROKE_POINTS, MAX_STROKES_PER_WINDOW } from './constants'
 
 // Helper to flush all pending promises reliably
 function flushPromises(): Promise<void> {
@@ -1501,6 +1501,147 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
     )
     expect(rateLimitError).toBeDefined()
     expect((rateLimitError as { action?: string }).action).toBe('stroke')
+  })
+
+  test('handleStrokeUpdate: ignores updates when the game is not playing or the player is not the drawer', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    const nonDrawerWs = createMockWs('player-2', 'Observer')
+    mockGetWebSockets.mockReturnValue([drawerWs, nonDrawerWs])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      roundEndTime: null,
+      drawerOrder: [],
+      scores: new Map(),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+    }
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'stroke-update', strokeId: 'stroke-1', point: { x: 1, y: 1 } })
+    )
+    await flushPromises()
+
+    setPlayingState('player-1')
+
+    await room.webSocketMessage(
+      nonDrawerWs,
+      JSON.stringify({ type: 'stroke-update', strokeId: 'stroke-1', point: { x: 2, y: 2 } })
+    )
+    await flushPromises()
+
+    expect(getSentMessages(drawerWs)).toHaveLength(0)
+    expect(getSentMessages(nonDrawerWs)).toHaveLength(0)
+  })
+
+  test('handleStrokeUpdate: validates identifiers and points before mutating state', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = [
+      {
+        id: 'stroke-1',
+        playerId: 'player-1',
+        color: '#FF6B6B',
+        size: 4,
+        points: [{ x: 0, y: 0 }],
+        timestamp: 1000,
+      },
+    ]
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'stroke-update', strokeId: 'invalid id', point: { x: 1, y: 1 } })
+    )
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'stroke-update', strokeId: 'stroke-1', point: { x: 'bad', y: 1 } })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).strokes[0].points).toEqual([{ x: 0, y: 0 }])
+    expect(getSentMessages(drawerWs).some((message) => message?.type === 'stroke-update')).toBe(
+      false
+    )
+  })
+
+  test('handleStrokeUpdate: rejects updates once a stroke reaches the maximum point count', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+    setPlayingState('player-1')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = [
+      {
+        id: 'stroke-1',
+        playerId: 'player-1',
+        color: '#FF6B6B',
+        size: 4,
+        points: Array.from({ length: MAX_STROKE_POINTS }, (_, index) => ({ x: index, y: index })),
+        timestamp: 1000,
+      },
+    ]
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'stroke-update', strokeId: 'stroke-1', point: { x: 999, y: 999 } })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).strokes[0].points).toHaveLength(MAX_STROKE_POINTS)
+    expect(getSentMessages(drawerWs).some((message) => message?.type === 'stroke-update')).toBe(
+      false
+    )
+  })
+
+  test('handleStrokeUpdate: appends points and broadcasts valid updates to other players', async () => {
+    const drawerWs = createMockWs('player-1', 'Drawer')
+    const observerWs = createMockWs('player-2', 'Observer')
+    mockGetWebSockets.mockReturnValue([drawerWs, observerWs])
+    setPlayingState('player-1')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = [
+      {
+        id: 'stroke-1',
+        playerId: 'player-1',
+        color: '#FF6B6B',
+        size: 4,
+        points: [{ x: 0, y: 0 }],
+        timestamp: 1000,
+      },
+    ]
+
+    await room.webSocketMessage(
+      drawerWs,
+      JSON.stringify({ type: 'stroke-update', strokeId: 'stroke-1', point: { x: 2, y: 3 } })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).strokes[0].points).toEqual([
+      { x: 0, y: 0 },
+      { x: 2, y: 3 },
+    ])
+    expect(getSentMessages(drawerWs).some((message) => message?.type === 'stroke-update')).toBe(
+      false
+    )
+    expect(getSentMessages(observerWs)).toContainEqual({
+      type: 'stroke-update',
+      strokeId: 'stroke-1',
+      point: { x: 2, y: 3 },
+    })
   })
 
   test('handleUndoStroke: enforces LIFO semantics - rejects non-most-recent stroke', async () => {
