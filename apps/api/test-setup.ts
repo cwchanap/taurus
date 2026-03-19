@@ -6,6 +6,9 @@ mock.module('cloudflare:workers', () => ({
     constructor(state: unknown, env: unknown) {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore - Mocking DurableObject for tests
+      this.ctx = state
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore - Mocking DurableObject for tests
       this.state = state
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore - Mocking DurableObject for tests

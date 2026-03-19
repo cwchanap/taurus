@@ -401,6 +401,33 @@ describe('handleMessage dispatch', () => {
     })
   })
 
+  it('dispatches fill with seq and nonce metadata to onFill', () => {
+    const onFill = vi.fn()
+    createConnectedWs({ onFill })
+    receive({
+      type: 'fill',
+      id: 'f2',
+      playerId: 'p1',
+      x: 0.3,
+      y: 0.4,
+      color: '#4ECDC4',
+      timestamp: 5678,
+      seq: 12,
+      nonce: 'nonce-1',
+    })
+
+    expect(onFill).toHaveBeenCalledWith({
+      id: 'f2',
+      playerId: 'p1',
+      x: 0.3,
+      y: 0.4,
+      color: '#4ECDC4',
+      timestamp: 5678,
+      nonce: 'nonce-1',
+      seq: 12,
+    })
+  })
+
   it('dispatches fill-removed to onFillRemoved', () => {
     const onFillRemoved = vi.fn()
     createConnectedWs({ onFillRemoved })
@@ -460,6 +487,22 @@ describe('handleMessage dispatch', () => {
     expect(onRoundStart).toHaveBeenCalledWith(1, 3, 'p1', 'A', 'cat', 3, 9999)
   })
 
+  it('dispatches round-start with a default wordLength of 0 when omitted', () => {
+    const onRoundStart = vi.fn()
+    createConnectedWs({ onRoundStart })
+    receive({
+      type: 'round-start',
+      roundNumber: 2,
+      totalRounds: 3,
+      drawerId: 'p2',
+      drawerName: 'B',
+      word: 'dog',
+      endTime: 4321,
+    })
+
+    expect(onRoundStart).toHaveBeenCalledWith(2, 3, 'p2', 'B', 'dog', 0, 4321)
+  })
+
   it('dispatches round-end to onRoundEnd', () => {
     const onRoundEnd = vi.fn()
     createConnectedWs({ onRoundEnd })
@@ -513,6 +556,44 @@ describe('handleMessage dispatch', () => {
     createConnectedWs({})
     receive({ type: 'error', message: 'Something went wrong' })
     expect(errorSpy).toHaveBeenCalledWith('Server error:', 'Something went wrong')
+    errorSpy.mockRestore()
+  })
+
+  it('passes server error action and nonce to the handler', () => {
+    const onServerError = vi.fn()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    createConnectedWs({ onServerError })
+    receive({
+      type: 'error',
+      message: 'Fill failed',
+      action: 'fill',
+      nonce: 'nonce-123',
+    })
+
+    expect(onServerError).toHaveBeenCalledWith('Fill failed', 'fill', 'nonce-123')
+    errorSpy.mockRestore()
+  })
+
+  it('warns on unknown message types', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    createConnectedWs({})
+    receive({ type: 'mystery-message' })
+
+    expect(warnSpy).toHaveBeenCalledWith('GameWebSocket: Unhandled message type "mystery-message"')
+    warnSpy.mockRestore()
+  })
+
+  it('logs parse failures without dispatching handlers', () => {
+    const onChat = vi.fn()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    createConnectedWs({ onChat })
+    mockSocket.onmessage?.({ data: '{not-valid-json' })
+
+    expect(onChat).not.toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledWith('Failed to parse message:', expect.any(SyntaxError))
     errorSpy.mockRestore()
   })
 
@@ -583,6 +664,22 @@ describe('handleMessage dispatch', () => {
     gameWs.sendClear()
     expect(warnSpy).toHaveBeenCalledWith('Cannot send message: WebSocket is not open')
     warnSpy.mockRestore()
+  })
+
+  it('returns false when send throws while connected', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+
+    gameWs.connect()
+    mockSocket.send = vi.fn(() => {
+      throw new Error('network failure')
+    })
+    mockSocket.simulateOpen()
+
+    expect(gameWs.sendClear()).toBe(false)
+    expect(errorSpy).toHaveBeenCalledWith('Failed to send message:', expect.any(Error))
+
+    errorSpy.mockRestore()
   })
 })
 
@@ -842,6 +939,38 @@ describe('WebSocket reconnection', () => {
 
       // And we should be able to fail 5 more times before onConnectionFailed
       expect(onConnectionFailed).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('pending reconnect timer cleanup', () => {
+    it('clears a pending reconnect timer when a manual reconnect succeeds', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+
+      gameWs.connect()
+      mockWebSocketInstances[0].simulateOpen()
+      mockWebSocketInstances[0].simulateClose()
+
+      expect(scheduledTimeoutCallbacks.size).toBe(1)
+
+      gameWs.connect()
+      expect(mockWebSocketInstances).toHaveLength(2)
+      mockWebSocketInstances[1].simulateOpen()
+
+      expect(scheduledTimeoutCallbacks.size).toBe(0)
+    })
+
+    it('replaces an existing reconnect timer when close fires again before reconnecting', () => {
+      const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
+
+      gameWs.connect()
+      mockWebSocketInstances[0].simulateOpen()
+      mockWebSocketInstances[0].simulateClose()
+      expect(scheduledTimeoutCallbacks.size).toBe(1)
+
+      mockWebSocketInstances[0].simulateClose()
+
+      expect(scheduledTimeoutCallbacks.size).toBe(1)
+      expect(scheduledTimeoutDelays).toEqual([1000, 2000])
     })
   })
 

@@ -13,8 +13,9 @@ import {
   containsCurrentWord,
   undoFill,
   undoStroke,
+  validateFillRequest,
 } from './game-logic'
-import { type PlayingState, type RoundEndState } from './game-types'
+import { createInitialGameState, type PlayingState, type RoundEndState } from './game-types'
 import {
   ROUND_DURATION_MS,
   CORRECT_GUESS_BASE_SCORE,
@@ -535,9 +536,132 @@ describe('drawing operation helpers', () => {
       expect(result.events).toEqual([{ type: 'fill-removed', fillId: 'fill-1' }])
     }
   })
+
+  test('undoStroke returns an error when the game is not playing', () => {
+    const result = undoStroke(createInitialGameState(), [], [], 'drawer-1', 'stroke-1')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.clientError).toEqual({
+        action: 'undo-stroke',
+        message: 'Undo failed: game is not in progress',
+      })
+    }
+  })
+
+  test('undoStroke rejects invalid stroke ids', () => {
+    const stroke: Stroke = {
+      id: 'stroke-1',
+      playerId: 'drawer-1',
+      points: [{ x: 1, y: 1 }],
+      color: '#FF6B6B',
+      size: 4,
+      timestamp: 1000,
+      seq: 1,
+    }
+
+    const result = undoStroke(createPlayingState(), [stroke], [], 'drawer-1', null)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.warning).toBe('Invalid strokeId in undo-stroke from player drawer-1')
+      expect(result.clientError).toEqual({
+        action: 'undo-stroke',
+        message: 'Undo failed: invalid stroke ID',
+      })
+    }
+  })
+
+  test('undoStroke removes the most recent stroke and emits a stroke-removed event', () => {
+    const stroke: Stroke = {
+      id: 'stroke-1',
+      playerId: 'drawer-1',
+      points: [{ x: 1, y: 1 }],
+      color: '#FF6B6B',
+      size: 4,
+      timestamp: 1000,
+      seq: 1,
+    }
+
+    const result = undoStroke(createPlayingState(), [stroke], [], 'drawer-1', 'stroke-1')
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.strokes).toEqual([])
+      expect(result.fills).toEqual([])
+      expect(result.storageWrites).toEqual(['strokes'])
+      expect(result.events).toEqual([{ type: 'stroke-removed', strokeId: 'stroke-1' }])
+    }
+  })
+
+  test('undoFill rejects when the game is not playing, the player is not the drawer, or the id is invalid', () => {
+    const fill: FillOperation = {
+      id: 'fill-1',
+      playerId: 'drawer-1',
+      x: 0.5,
+      y: 0.5,
+      color: '#FF6B6B',
+      timestamp: 1000,
+      seq: 1,
+    }
+
+    const notPlaying = undoFill(createInitialGameState(), [], [fill], 'drawer-1', 'fill-1')
+    expect(notPlaying.ok).toBe(false)
+    if (!notPlaying.ok) {
+      expect(notPlaying.clientError).toEqual({
+        action: 'undo-fill',
+        message: 'Undo failed: game is not in progress',
+      })
+    }
+
+    const wrongPlayer = undoFill(createPlayingState(), [], [fill], 'guesser-1', 'fill-1')
+    expect(wrongPlayer.ok).toBe(false)
+    if (!wrongPlayer.ok) {
+      expect(wrongPlayer.clientError).toEqual({
+        action: 'undo-fill',
+        message: 'Undo failed: only the current drawer can undo',
+      })
+    }
+
+    const invalidId = undoFill(createPlayingState(), [], [fill], 'drawer-1', null)
+    expect(invalidId.ok).toBe(false)
+    if (!invalidId.ok) {
+      expect(invalidId.warning).toBe('Invalid fillId in undo-fill from player drawer-1')
+      expect(invalidId.clientError).toEqual({
+        action: 'undo-fill',
+        message: 'Undo failed: invalid fill ID',
+      })
+    }
+  })
+
+  test('validateFillRequest enforces playing-state drawer permissions', () => {
+    expect(validateFillRequest(createInitialGameState(), 'drawer-1')).toEqual({
+      ok: false,
+      clientError: {
+        action: 'fill',
+        message: 'Fill failed: game is not in progress',
+      },
+    })
+
+    expect(validateFillRequest(createPlayingState(), 'guesser-1')).toEqual({
+      ok: false,
+      clientError: {
+        action: 'fill',
+        message: 'Fill failed: only the current drawer can fill',
+      },
+    })
+
+    expect(validateFillRequest(createPlayingState(), 'drawer-1')).toEqual({ ok: true })
+  })
 })
 
 describe('findNextDrawer', () => {
+  test('should recover from a negative current round index safely', () => {
+    const result = findNextDrawer(-1, ['p1', 'p2'], new Set(['p1', 'p2']))
+
+    expect(result).toEqual({ drawerId: 'p1', roundNumber: 1 })
+  })
+
   test('should advance to next round and drawer', () => {
     const currentRound = 0
     const drawerOrder = ['p1', 'p2', 'p3']
