@@ -228,7 +228,9 @@ describe('api entrypoint', () => {
           connection: 'Upgrade',
           host: 'example.com',
           origin: 'https://app.example',
+          'sec-websocket-extensions': 'permessage-deflate',
           'sec-websocket-key': 'key-123',
+          'sec-websocket-protocol': 'taurus-v1',
           'sec-websocket-version': '13',
           upgrade: 'websocket',
           'x-secret-header': 'should-not-forward',
@@ -242,7 +244,12 @@ describe('api entrypoint', () => {
     const wsRequest = roomFetch.mock.calls[0]?.[0] as Request
     expect(wsRequest.url).toBe('http://internal/ws')
     expect(wsRequest.headers.get('origin')).toBe('https://app.example')
+    expect(wsRequest.headers.get('sec-websocket-extensions')).toBe('permessage-deflate')
     expect(wsRequest.headers.get('sec-websocket-key')).toBe('key-123')
+    expect(wsRequest.headers.get('sec-websocket-protocol')).toBe('taurus-v1')
+    expect(wsRequest.headers.get('sec-websocket-version')).toBe('13')
+    expect(wsRequest.headers.get('connection')).toBe('Upgrade')
+    expect(wsRequest.headers.get('upgrade')).toBe('websocket')
     expect(wsRequest.headers.get('host')).toBe('example.com')
     expect(wsRequest.headers.get('x-secret-header')).toBeNull()
   })

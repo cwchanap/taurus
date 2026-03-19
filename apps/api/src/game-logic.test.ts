@@ -560,15 +560,17 @@ describe('drawing operation helpers', () => {
       seq: 1,
     }
 
-    const result = undoStroke(createPlayingState(), [stroke], [], 'drawer-1', null)
+    for (const invalidStrokeId of [null, '', '  ']) {
+      const result = undoStroke(createPlayingState(), [stroke], [], 'drawer-1', invalidStrokeId)
 
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.warning).toBe('Invalid strokeId in undo-stroke from player drawer-1')
-      expect(result.clientError).toEqual({
-        action: 'undo-stroke',
-        message: 'Undo failed: invalid stroke ID',
-      })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.warning).toBe('Invalid strokeId in undo-stroke from player drawer-1')
+        expect(result.clientError).toEqual({
+          action: 'undo-stroke',
+          message: 'Undo failed: invalid stroke ID',
+        })
+      }
     }
   })
 

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
+import type { ChatMessage } from '@repo/types'
 import ChatBox from './ChatBox.svelte'
-import type { ChatMessage } from '$lib/types'
 
 afterEach(() => {
   cleanup()
