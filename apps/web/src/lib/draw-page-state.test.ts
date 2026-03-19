@@ -434,13 +434,14 @@ describe('draw-page-state helpers', () => {
       color: '#FF6B6B',
       timestamp: 1000,
     }
+    const fills = [fill]
     const undoStack: UndoItem[] = [{ type: 'fill', fillId: 'fill-1', fill }]
     const pendingMap = new Map()
 
-    const result = discardPendingOptimisticFills([fill], undoStack, pendingMap)
+    const result = discardPendingOptimisticFills(fills, undoStack, pendingMap)
 
-    expect(result.fills).toEqual([fill])
-    expect(result.undoStack).toEqual(undoStack)
+    expect(result.fills).toBe(fills)
+    expect(result.undoStack).toBe(undoStack)
     expect(result.pendingOptimisticFills).toBe(pendingMap)
   })
 
@@ -516,6 +517,14 @@ describe('draw-page-state helpers', () => {
       size: 4,
       timestamp: 1000,
     }
+    const otherStroke: Stroke = {
+      id: 'stroke-2',
+      playerId: 'p1',
+      points: [{ x: 2, y: 2 }],
+      color: '#4ECDC4',
+      size: 4,
+      timestamp: 1100,
+    }
     const fill: FillOperation = {
       id: 'fill-1',
       playerId: 'p1',
@@ -523,6 +532,14 @@ describe('draw-page-state helpers', () => {
       y: 10,
       color: '#FF6B6B',
       timestamp: 1500,
+    }
+    const otherFill: FillOperation = {
+      id: 'fill-2',
+      playerId: 'p1',
+      x: 11,
+      y: 11,
+      color: '#4ECDC4',
+      timestamp: 1600,
     }
 
     expect(
@@ -534,7 +551,7 @@ describe('draw-page-state helpers', () => {
     expect(
       isSameUndoItem(
         { type: 'stroke', strokeId: 'stroke-1', stroke },
-        { type: 'stroke', strokeId: 'stroke-2', stroke }
+        { type: 'stroke', strokeId: 'stroke-2', stroke: otherStroke }
       )
     ).toBe(false)
     expect(
@@ -549,6 +566,12 @@ describe('draw-page-state helpers', () => {
         { type: 'fill', fillId: 'fill-1', fill }
       )
     ).toBe(true)
+    expect(
+      isSameUndoItem(
+        { type: 'fill', fillId: 'fill-1', fill },
+        { type: 'fill', fillId: 'fill-2', fill: otherFill }
+      )
+    ).toBe(false)
   })
 
   it('getDrawerDisplayName returns empty string when drawerId is null', () => {
