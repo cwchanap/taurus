@@ -62,4 +62,79 @@ describe('GameHeader', () => {
     expect(screen.getByText('🎨 Someone is drawing')).toBeTruthy()
     expect(container.querySelector('.timer-display')?.classList.contains('round-over')).toBe(true)
   })
+
+  it('renders nothing when status is lobby', () => {
+    const { container } = render(GameHeader, {
+      status: 'lobby',
+      currentWord: undefined,
+      wordLength: 0,
+      timeRemaining: 60,
+      currentDrawerName: 'Alice',
+      isCurrentDrawer: false,
+      roundNumber: 0,
+      totalRounds: 3,
+    })
+
+    expect(container.querySelector('.game-header')).toBeNull()
+  })
+
+  it('renders nothing when status is starting', () => {
+    const { container } = render(GameHeader, {
+      status: 'starting',
+      currentWord: undefined,
+      wordLength: 0,
+      timeRemaining: 0,
+      currentDrawerName: '',
+      isCurrentDrawer: false,
+      roundNumber: 0,
+      totalRounds: 3,
+    })
+
+    expect(container.querySelector('.game-header')).toBeNull()
+  })
+
+  it('shows masked word placeholder for guesser when word length is positive', () => {
+    render(GameHeader, {
+      status: 'playing',
+      currentWord: undefined,
+      wordLength: 3,
+      timeRemaining: 45,
+      currentDrawerName: 'Carol',
+      isCurrentDrawer: false,
+      roundNumber: 1,
+      totalRounds: 2,
+    })
+
+    expect(screen.getByText('_ _ _')).toBeTruthy()
+  })
+
+  it('shows no masked word when word length is zero for guesser', () => {
+    const { container } = render(GameHeader, {
+      status: 'playing',
+      currentWord: undefined,
+      wordLength: 0,
+      timeRemaining: 30,
+      currentDrawerName: 'Dave',
+      isCurrentDrawer: false,
+      roundNumber: 1,
+      totalRounds: 2,
+    })
+
+    expect(container.querySelector('.word.masked')).toBeNull()
+  })
+
+  it('applies warning timer class when time is between 11 and 30 seconds', () => {
+    const { container } = render(GameHeader, {
+      status: 'playing',
+      currentWord: 'apple',
+      wordLength: 5,
+      timeRemaining: 20,
+      currentDrawerName: 'Eve',
+      isCurrentDrawer: true,
+      roundNumber: 2,
+      totalRounds: 3,
+    })
+
+    expect(container.querySelector('.timer-display')?.classList.contains('warning')).toBe(true)
+  })
 })

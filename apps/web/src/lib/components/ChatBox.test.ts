@@ -101,4 +101,36 @@ describe('ChatBox', () => {
     expect(screen.getByText('Hello there')).toBeTruthy()
     expect(screen.getByText('Hi back!')).toBeTruthy()
   })
+
+  it('does not call onSendMessage when submitting empty or whitespace-only input', async () => {
+    const onSendMessage = vi.fn()
+    const { container } = render(ChatBox, {
+      messages: [],
+      currentPlayerId: 'player-1',
+      onSendMessage,
+    })
+
+    const input = screen.getByLabelText('Chat message') as HTMLInputElement
+    const form = container.querySelector('form')!
+
+    // Input is empty - submit should be no-op
+    await fireEvent.submit(form)
+    expect(onSendMessage).not.toHaveBeenCalled()
+
+    // Input is whitespace only - submit should be no-op
+    await fireEvent.input(input, { target: { value: '   ' } })
+    await fireEvent.submit(form)
+    expect(onSendMessage).not.toHaveBeenCalled()
+  })
+
+  it('uses valid hex color for player indicator when color is a valid hex string', async () => {
+    const { container } = render(ChatBox, {
+      messages: [createMessage({ playerColor: '#FF6B6B' })],
+      currentPlayerId: 'player-2',
+      onSendMessage: vi.fn(),
+    })
+
+    const indicator = container.querySelector('.player-indicator') as HTMLElement | null
+    expect(indicator?.style.backgroundColor).toBe('rgb(255, 107, 107)')
+  })
 })

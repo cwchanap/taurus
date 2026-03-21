@@ -724,5 +724,85 @@ describe('draw-page-state helpers', () => {
       expect(result.some((item) => item.type === 'stroke')).toBe(true)
       expect(result.some((item) => item.type === 'fill')).toBe(true)
     })
+
+    it('sorts by seq field when fill has seq defined', () => {
+      const stroke: Stroke = {
+        id: 's1',
+        playerId: 'drawer-1',
+        points: [{ x: 1, y: 1 }],
+        color: '#FF6B6B',
+        size: 4,
+        timestamp: 1000,
+        seq: 2,
+      }
+      const fill: FillOperation = {
+        id: 'f1',
+        playerId: 'drawer-1',
+        x: 10,
+        y: 10,
+        color: '#FFFFFF',
+        timestamp: 2000,
+        seq: 1,
+      }
+
+      const result = rebuildUndoStack([stroke], [fill], 'drawer-1')
+      expect(result).toHaveLength(2)
+      // fill has seq=1, stroke has seq=2, so fill comes first
+      expect(result[0].type).toBe('fill')
+      expect(result[1].type).toBe('stroke')
+    })
+  })
+
+  it('syncUndoStrokeTimestamp leaves fill items unchanged in undo stack', () => {
+    const stroke: Stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: 1000,
+    }
+    const fill: FillOperation = {
+      id: 'f1',
+      playerId: 'p1',
+      x: 10,
+      y: 10,
+      color: '#FFFFFF',
+      timestamp: 1500,
+    }
+    const undoStack: UndoItem[] = [
+      { type: 'fill', fillId: 'f1', fill },
+      { type: 'stroke', strokeId: 's1', stroke },
+    ]
+
+    // Updating stroke s1 - fill item should be returned unchanged
+    const result = syncUndoStrokeTimestamp(undoStack, 's1', { timestamp: 3000, seq: 7 })
+
+    // Fill item should be unchanged (same reference)
+    expect(result[0]).toBe(undoStack[0])
+    // Stroke item should be updated
+    if (result[1].type === 'stroke') {
+      expect(result[1].stroke.timestamp).toBe(3000)
+      expect(result[1].stroke.seq).toBe(7)
+    }
+  })
+
+  it('syncUndoStrokeTimestamp returns original stack when no change needed', () => {
+    const stroke: Stroke = {
+      id: 's1',
+      playerId: 'p1',
+      points: [{ x: 1, y: 1 }],
+      color: '#1a1a2e',
+      size: 4,
+      timestamp: 3000,
+      seq: 7,
+    }
+    const undoStack: UndoItem[] = [{ type: 'stroke', strokeId: 's1', stroke }]
+
+    // serverMetadata matches existing values - no change needed
+    const result = syncUndoStrokeTimestamp(undoStack, 's1', { timestamp: 3000, seq: 7 })
+
+    // Should return the exact same array reference (no change)
+    expect(result).toBe(undoStack)
   })
 })
