@@ -263,3 +263,206 @@ describe('Draw page - game state', () => {
     })
   })
 })
+
+describe('Draw page - game event handlers', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('shows round-over overlay with revealed word after onRoundEnd', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    const result = {
+      drawerId: 'player-123',
+      drawerName: 'Alice',
+      word: 'elephant',
+      correctGuessers: [],
+      drawerScore: 0,
+    }
+    handlers.onRoundEnd?.('elephant', result, { 'player-123': { name: 'Alice', score: 0 } })
+
+    await waitFor(() => {
+      expect(screen.getByText('Round Over!')).toBeTruthy()
+    })
+    expect(screen.getByText(/The word was:/)).toBeTruthy()
+  })
+
+  it('shows game-over overlay with Play Again button after onGameOver', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onGameOver?.({ 'player-123': { name: 'Alice', score: 150 } }, [
+      { playerId: 'player-123', playerName: 'Alice', score: 150 },
+    ])
+
+    await waitFor(() => {
+      expect(screen.getByText('🎉 Game Over!')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Play Again' })).toBeTruthy()
+    })
+  })
+
+  it('shows no-winner message in game-over overlay when winners is empty', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onGameOver?.({}, [])
+
+    await waitFor(() => {
+      expect(screen.getByText('🎉 Game Over!')).toBeTruthy()
+      expect(screen.getByText('No winner this time.')).toBeTruthy()
+    })
+  })
+
+  it('hides game-over overlay and resets state after onGameReset', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onGameOver?.({}, [])
+
+    await waitFor(() => {
+      expect(screen.getByText('🎉 Game Over!')).toBeTruthy()
+    })
+
+    handlers.onGameReset?.()
+
+    await waitFor(() => {
+      expect(screen.queryByText('🎉 Game Over!')).toBeNull()
+    })
+  })
+
+  it('shows correct guess notification after onCorrectGuess', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onCorrectGuess?.('p2', 'Bob', 100, 45)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Bob guessed correctly!/)).toBeTruthy()
+    })
+  })
+
+  it('shows system notification after onSystemMessage', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onSystemMessage?.('Something happened in the room')
+
+    await waitFor(() => {
+      expect(screen.getByText('Something happened in the room')).toBeTruthy()
+    })
+  })
+
+  it('shows error badge after onConnectionFailed', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onConnectionFailed?.('Failed to reconnect after 5 attempts. Please refresh.')
+
+    await waitFor(() => {
+      const errorBadge = document.querySelector('.error-badge')
+      expect(errorBadge).toBeTruthy()
+      expect(errorBadge?.textContent).toContain('Failed to reconnect')
+    })
+  })
+
+  it('changes host status and updates UI after onHostChange', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    // Trigger game over - Alice is host so "Play Again" button should be visible
+    handlers.onGameOver?.({}, [])
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play Again' })).toBeTruthy()
+    })
+
+    // Change host to another player
+    handlers.onHostChange?.('other-player')
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Play Again' })).toBeNull()
+      expect(screen.getByText('Waiting for host to start a new game...')).toBeTruthy()
+    })
+  })
+
+  it('hides start game section after onGameStarted changes status to starting', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    // In lobby state as host with 1 player, "Need at least 2 players" should be visible
+    await waitFor(() => {
+      expect(screen.getByText('Need at least 2 players to start')).toBeTruthy()
+    })
+
+    handlers.onGameStarted?.(3, ['player-123'], {})
+
+    await waitFor(() => {
+      expect(screen.queryByText('Need at least 2 players to start')).toBeNull()
+    })
+  })
+
+  it('shows round-end game header after onRoundEnd', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    // Start a round first
+    handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'cat', 3, Date.now() + 60000)
+
+    await waitFor(() => {
+      expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy()
+    })
+
+    // End the round
+    const result = {
+      drawerId: 'player-123',
+      drawerName: 'Alice',
+      word: 'cat',
+      correctGuessers: [],
+      drawerScore: 0,
+    }
+    handlers.onRoundEnd?.('cat', result, {})
+
+    await waitFor(() => {
+      expect(screen.getByText('Round Over!')).toBeTruthy()
+    })
+  })
+
+  it('handles server errors for drawing actions', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    // Trigger a server error for a stroke action
+    handlers.onServerError?.('Stroke failed: rate limit exceeded', 'stroke', undefined)
+
+    await waitFor(() => {
+      const errorBadge = document.querySelector('.error-badge')
+      expect(errorBadge).toBeTruthy()
+      expect(errorBadge?.textContent).toContain('Stroke failed')
+    })
+  })
+
+  it('handles server errors for fill actions with nonce', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onServerError?.('Fill failed: invalid data', 'fill', 'nonce-abc-123')
+
+    await waitFor(() => {
+      const errorBadge = document.querySelector('.error-badge')
+      expect(errorBadge?.textContent).toContain('Fill failed')
+    })
+  })
+
+  it('handles server errors for non-drawing actions', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onServerError?.('Chat rate limit exceeded', 'chat', undefined)
+
+    await waitFor(() => {
+      const errorBadge = document.querySelector('.error-badge')
+      expect(errorBadge?.textContent).toContain('Chat rate limit')
+    })
+  })
+})
