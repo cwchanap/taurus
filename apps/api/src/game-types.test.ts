@@ -346,6 +346,7 @@ describe('gameStateToWire', () => {
     expect(wire.currentRound).toBe(2)
     expect(wire.totalRounds).toBe(3)
     expect(wire.wordLength).toBeUndefined()
+    expect(wire.currentWord).toBeUndefined()
     expect(wire.scores).toEqual({ p1: { score: 100, name: 'Player 1' } })
   })
 })
