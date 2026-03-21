@@ -21,9 +21,10 @@ vi.mock('$lib/websocket', () => ({
   }),
 }))
 
-// Mock $app/environment
+// Mock $app/environment — set browser: true so API_URL resolves via window.location.origin
+// (mirrors real browser behavior; with browser: false, API_URL would be an empty string)
 vi.mock('$app/environment', () => ({
-  browser: false,
+  browser: true,
   dev: false,
   building: false,
   version: 'test',
@@ -40,7 +41,8 @@ afterEach(() => {
 /** Get the handlers registered by the most recently created GameWebSocket instance */
 function getWsHandlers(): Record<string, (...args: unknown[]) => void> {
   const MockWS = vi.mocked(GameWebSocket)
-  const instance = MockWS.mock.instances[0] as unknown as { on: ReturnType<typeof vi.fn> }
+  const instances = MockWS.mock.instances
+  const instance = instances[instances.length - 1] as unknown as { on: ReturnType<typeof vi.fn> }
   if (!instance?.on?.mock?.calls?.length) return {}
   return instance.on.mock.calls[0][0] as Record<string, (...args: unknown[]) => void>
 }
@@ -64,10 +66,11 @@ async function simulateJoinGame(playerName = 'Alice') {
   const createButton = screen.getByRole('button', { name: 'Create Room' })
   await fireEvent.click(createButton)
 
-  // Wait for WebSocket to be constructed
+  // Wait for WebSocket to be constructed with the correct roomId and playerName
   await waitFor(() => {
     expect(vi.mocked(GameWebSocket).mock.instances.length).toBeGreaterThan(0)
   })
+  expect(vi.mocked(GameWebSocket)).toHaveBeenCalledWith(expect.any(String), 'TEST-ROOM', playerName)
 
   const handlers = getWsHandlers()
   expect(handlers.onInit).toBeDefined()
@@ -187,10 +190,11 @@ describe('Draw page - room creation', () => {
     const joinButton = screen.getByRole('button', { name: 'Join' })
     await fireEvent.click(joinButton)
 
-    // WebSocket should be created for the join flow
+    // WebSocket should be created for the join flow with the entered room code and player name
     await waitFor(() => {
       expect(vi.mocked(GameWebSocket).mock.instances.length).toBeGreaterThan(0)
     })
+    expect(vi.mocked(GameWebSocket)).toHaveBeenCalledWith(expect.any(String), 'ABC123', 'Alice')
   })
 })
 

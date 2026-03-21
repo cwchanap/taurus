@@ -137,4 +137,36 @@ describe('GameHeader', () => {
 
     expect(container.querySelector('.timer-display')?.classList.contains('warning')).toBe(true)
   })
+
+  it('applies warning class at exactly 30 seconds (boundary)', () => {
+    const { container } = render(GameHeader, {
+      status: 'playing',
+      currentWord: 'apple',
+      wordLength: 5,
+      timeRemaining: 30,
+      currentDrawerName: 'Eve',
+      isCurrentDrawer: true,
+      roundNumber: 2,
+      totalRounds: 3,
+    })
+
+    expect(container.querySelector('.timer-display')?.classList.contains('warning')).toBe(true)
+    expect(container.querySelector('.timer-display')?.classList.contains('urgent')).toBe(false)
+  })
+
+  it('applies urgent class at exactly 10 seconds (boundary)', () => {
+    const { container } = render(GameHeader, {
+      status: 'playing',
+      currentWord: 'apple',
+      wordLength: 5,
+      timeRemaining: 10,
+      currentDrawerName: 'Eve',
+      isCurrentDrawer: true,
+      roundNumber: 2,
+      totalRounds: 3,
+    })
+
+    expect(container.querySelector('.timer-display')?.classList.contains('urgent')).toBe(true)
+    expect(container.querySelector('.timer-display')?.classList.contains('warning')).toBe(false)
+  })
 })

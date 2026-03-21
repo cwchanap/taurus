@@ -118,7 +118,7 @@ describe('Toolbar', () => {
   })
 
   it('renders with disabled state applied to all interactive buttons', () => {
-    const props = makeToolbarProps({ disabled: true })
+    const props = makeToolbarProps({ disabled: true, canUndo: true, canRedo: true })
     render(Toolbar, props)
 
     const toolButtons = screen.getAllByRole('button', { name: /tool/i })
@@ -130,5 +130,13 @@ describe('Toolbar', () => {
     colorButtons.forEach((btn) => {
       expect((btn as HTMLButtonElement).disabled).toBe(true)
     })
+
+    const brushButtons = screen.getAllByRole('button', { name: /brush size/i })
+    brushButtons.forEach((btn) => {
+      expect((btn as HTMLButtonElement).disabled).toBe(true)
+    })
+
+    expect((screen.getByRole('button', { name: /undo/i }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /redo/i }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
