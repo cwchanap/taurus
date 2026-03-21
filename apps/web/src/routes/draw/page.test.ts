@@ -21,8 +21,8 @@ vi.mock('$lib/websocket', () => ({
   }),
 }))
 
-// Mock $app/environment — set browser: true so API_URL resolves via window.location.origin
-// (mirrors real browser behavior; with browser: false, API_URL would be an empty string)
+// Mock $app/environment — set browser: true so the conditional in +page.svelte
+// evaluates the browser branch and API_URL becomes window.location.origin instead of ''
 vi.mock('$app/environment', () => ({
   browser: true,
   dev: false,
@@ -91,7 +91,6 @@ async function simulateJoinGame(playerName = 'Alice') {
       currentDrawerId: null,
       roundEndTime: null,
       scores: {},
-      wordLength: null,
       currentWord: undefined,
     }
   )
