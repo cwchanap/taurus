@@ -477,3 +477,33 @@ describe('isValidPlayerName', () => {
     expect(isValidPlayerName(name)).toBe(false)
   })
 })
+
+describe('validateStroke - missing edge cases', () => {
+  const VALID_COLOR = PALETTE_COLORS[0]
+
+  test('rejects stroke when points is not an array (object)', () => {
+    const result = validateStroke(
+      { points: { x: 1, y: 1 }, color: VALID_COLOR, size: 4 },
+      'player-1'
+    )
+    expect(result).toBeNull()
+  })
+
+  test('rejects stroke when points is not an array (string)', () => {
+    const result = validateStroke({ points: 'invalid', color: VALID_COLOR, size: 4 }, 'player-1')
+    expect(result).toBeNull()
+  })
+
+  test('rejects stroke when a point element is null', () => {
+    const result = validateStroke({ points: [null], color: VALID_COLOR, size: 4 }, 'player-1')
+    expect(result).toBeNull()
+  })
+
+  test('rejects stroke when a point has non-numeric coordinates', () => {
+    const result = validateStroke(
+      { points: [{ x: 'foo', y: 0 }], color: VALID_COLOR, size: 4 },
+      'player-1'
+    )
+    expect(result).toBeNull()
+  })
+})

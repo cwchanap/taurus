@@ -27,4 +27,27 @@ describe('PlayerList', () => {
     expect(currentRow?.textContent).toContain('Alice')
     expect(currentRow?.textContent).toContain('(you)')
   })
+
+  it('renders no players when list is empty', () => {
+    const { container } = render(PlayerList, {
+      players: [],
+      currentPlayerId: 'player-1',
+    })
+
+    const playerItems = container.querySelectorAll('.player')
+    expect(playerItems).toHaveLength(0)
+  })
+
+  it('does not show (you) tag for other players', () => {
+    const { container } = render(PlayerList, {
+      players: [
+        { id: 'player-1', name: 'Alice', color: '#FF6B6B' },
+        { id: 'player-2', name: 'Bob', color: '#4ECDC4' },
+      ],
+      currentPlayerId: 'player-3',
+    })
+
+    expect(container.querySelector('.you')).toBeNull()
+    expect(container.querySelector('.player.current')).toBeNull()
+  })
 })

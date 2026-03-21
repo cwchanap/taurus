@@ -51,4 +51,30 @@ describe('Scoreboard', () => {
     expect(rows[4]?.textContent).toContain('Newcomer')
     expect(rows[4]?.textContent).toContain('0')
   })
+
+  it('renders an empty scoreboard when no scores or players are present', () => {
+    const { container } = render(Scoreboard, {
+      scores: {},
+      players: [],
+      currentDrawerId: null,
+      currentPlayerId: 'player-1',
+    })
+
+    const rows = container.querySelectorAll('.score-row')
+    expect(rows).toHaveLength(0)
+  })
+
+  it('uses default gray color for players not in the connected players list', () => {
+    const { container } = render(Scoreboard, {
+      scores: {
+        'disconnected-1': { name: 'Ghost', score: 50 },
+      },
+      players: [],
+      currentDrawerId: null,
+      currentPlayerId: 'player-1',
+    })
+
+    const indicator = container.querySelector('.player-indicator') as HTMLElement | null
+    expect(indicator?.style.backgroundColor).toBe('rgb(136, 136, 136)')
+  })
 })

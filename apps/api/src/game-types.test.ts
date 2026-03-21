@@ -4,6 +4,10 @@ import {
   gameStateFromStorage,
   gameStateToWire,
   createInitialGameState,
+  isLobbyState,
+  isStartingState,
+  isGameOverState,
+  isActiveGameState,
   type PlayingState,
   type RoundEndState,
   type GameOverState,
@@ -314,5 +318,120 @@ describe('gameStateToWire', () => {
     expect(wire.currentDrawerId).toBeNull()
     expect(wire.wordLength).toBeUndefined()
     expect(wire.scores).toEqual({})
+  })
+
+  test('round-end state wire format omits currentWord and wordLength', () => {
+    const now = Date.now()
+    const state: RoundEndState = {
+      status: 'round-end',
+      currentRound: 2,
+      totalRounds: 3,
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: now - 60000,
+      roundEndTime: now,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([['p1', { score: 100, name: 'Player 1' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      nextTransitionAt: now + 5000,
+    }
+
+    const wire = gameStateToWire(state, false)
+    expect(wire.status).toBe('round-end')
+    expect(wire.currentRound).toBe(2)
+    expect(wire.totalRounds).toBe(3)
+    expect(wire.wordLength).toBeUndefined()
+    expect(wire.scores).toEqual({ p1: { score: 100, name: 'Player 1' } })
+  })
+})
+
+describe('type guards', () => {
+  test('isLobbyState identifies lobby state', () => {
+    const lobby = createInitialGameState()
+    expect(isLobbyState(lobby)).toBe(true)
+
+    const starting: StartingState = {
+      ...lobby,
+      status: 'starting',
+      totalRounds: 3,
+      drawerOrder: ['p1'],
+    }
+    expect(isLobbyState(starting)).toBe(false)
+  })
+
+  test('isStartingState identifies starting state', () => {
+    const lobby = createInitialGameState()
+    expect(isStartingState(lobby)).toBe(false)
+
+    const starting: StartingState = {
+      ...lobby,
+      status: 'starting',
+      totalRounds: 3,
+      drawerOrder: ['p1'],
+    }
+    expect(isStartingState(starting)).toBe(true)
+  })
+
+  test('isGameOverState identifies game-over state', () => {
+    const lobby = createInitialGameState()
+    expect(isGameOverState(lobby)).toBe(false)
+
+    const gameOver: GameOverState = {
+      ...lobby,
+      status: 'game-over',
+      currentRound: 3,
+      totalRounds: 3,
+      roundStartTime: null,
+      roundEndTime: null,
+    }
+    expect(isGameOverState(gameOver)).toBe(true)
+  })
+
+  test('isActiveGameState returns true for playing and round-end, false for others', () => {
+    const now = Date.now()
+    const lobby = createInitialGameState()
+    expect(isActiveGameState(lobby)).toBe(false)
+
+    const playing: PlayingState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: now,
+      roundEndTime: now + 60000,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([['p1', { score: 0, name: 'Player 1' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+    }
+    expect(isActiveGameState(playing)).toBe(true)
+
+    const roundEnd: RoundEndState = {
+      ...playing,
+      status: 'round-end',
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      nextTransitionAt: now + 5000,
+    }
+    expect(isActiveGameState(roundEnd)).toBe(true)
+
+    const starting: StartingState = {
+      ...lobby,
+      status: 'starting',
+      totalRounds: 3,
+      drawerOrder: ['p1'],
+    }
+    expect(isActiveGameState(starting)).toBe(false)
   })
 })

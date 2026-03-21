@@ -102,4 +102,33 @@ describe('Toolbar', () => {
     expect(props.onToolChange).toHaveBeenNthCalledWith(2, 'fill')
     expect(props.onToolChange).toHaveBeenNthCalledWith(3, 'pencil')
   })
+
+  it('does not switch tool when selecting color with fill tool active', async () => {
+    const props = makeToolbarProps({ tool: 'fill' })
+    render(Toolbar, props)
+
+    const colorButtons = screen.getAllByRole('button', { name: /select color/i })
+    const nonActiveButton =
+      colorButtons.find((btn) => !btn.classList.contains('active')) || colorButtons[0]
+    await fireEvent.click(nonActiveButton)
+
+    // fill tool should NOT trigger a tool switch (only eraser does)
+    expect(props.onToolChange).not.toHaveBeenCalled()
+    expect(props.onColorChange).toHaveBeenCalled()
+  })
+
+  it('renders with disabled state applied to all interactive buttons', () => {
+    const props = makeToolbarProps({ disabled: true })
+    render(Toolbar, props)
+
+    const toolButtons = screen.getAllByRole('button', { name: /tool/i })
+    toolButtons.forEach((btn) => {
+      expect((btn as HTMLButtonElement).disabled).toBe(true)
+    })
+
+    const colorButtons = screen.getAllByRole('button', { name: /select color/i })
+    colorButtons.forEach((btn) => {
+      expect((btn as HTMLButtonElement).disabled).toBe(true)
+    })
+  })
 })
