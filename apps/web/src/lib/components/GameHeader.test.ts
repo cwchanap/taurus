@@ -170,3 +170,51 @@ describe('GameHeader', () => {
     expect(container.querySelector('.timer-display')?.classList.contains('warning')).toBe(false)
   })
 })
+
+it('shows 0:00 timer when timeRemaining is exactly zero', () => {
+  render(GameHeader, {
+    status: 'playing',
+    currentWord: undefined,
+    wordLength: 4,
+    timeRemaining: 0,
+    currentDrawerName: 'Alice',
+    isCurrentDrawer: false,
+    roundNumber: 1,
+    totalRounds: 3,
+  })
+
+  expect(screen.getByText('0:00')).toBeTruthy()
+})
+
+it('shows no timer class when time remaining is above 30 seconds', () => {
+  const { container } = render(GameHeader, {
+    status: 'playing',
+    currentWord: 'elephant',
+    wordLength: 8,
+    timeRemaining: 55,
+    currentDrawerName: 'Alice',
+    isCurrentDrawer: true,
+    roundNumber: 1,
+    totalRounds: 2,
+  })
+
+  const timerDisplay = container.querySelector('.timer-display')
+  expect(timerDisplay?.classList.contains('warning')).toBe(false)
+  expect(timerDisplay?.classList.contains('urgent')).toBe(false)
+  expect(timerDisplay?.classList.contains('round-over')).toBe(false)
+})
+
+it('shows fallback dash when currentWord is undefined for drawer', () => {
+  render(GameHeader, {
+    status: 'playing',
+    currentWord: undefined,
+    wordLength: 5,
+    timeRemaining: 45,
+    currentDrawerName: 'Alice',
+    isCurrentDrawer: true,
+    roundNumber: 2,
+    totalRounds: 3,
+  })
+
+  expect(screen.getByText('—')).toBeTruthy()
+})

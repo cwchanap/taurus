@@ -78,3 +78,49 @@ describe('Scoreboard', () => {
     expect(indicator?.style.backgroundColor).toBe('rgb(136, 136, 136)')
   })
 })
+
+it('decorates the current player who is also drawing with both is-you and is-drawing classes', () => {
+  const { container } = render(Scoreboard, {
+    scores: {
+      'player-1': { name: 'Alice', score: 50 },
+      'player-2': { name: 'Bob', score: 10 },
+    },
+    players: [
+      { id: 'player-1', name: 'Alice', color: '#FF6B6B' },
+      { id: 'player-2', name: 'Bob', color: '#4ECDC4' },
+    ],
+    currentDrawerId: 'player-1', // Alice is both drawing and current player
+    currentPlayerId: 'player-1',
+  })
+
+  const rows = Array.from(container.querySelectorAll('.score-row')) as HTMLElement[]
+  const aliceRow = rows[0]!
+  expect(aliceRow.classList.contains('is-drawing')).toBe(true)
+  expect(aliceRow.classList.contains('is-you')).toBe(true)
+  expect(aliceRow.textContent).toContain('🎨')
+  expect(aliceRow.textContent).toContain('(you)')
+})
+
+it('shows 4th and 5th place numeric ranks when more than 3 players', () => {
+  const { container } = render(Scoreboard, {
+    scores: {
+      p1: { name: 'A', score: 100 },
+      p2: { name: 'B', score: 80 },
+      p3: { name: 'C', score: 60 },
+      p4: { name: 'D', score: 40 },
+      p5: { name: 'E', score: 20 },
+    },
+    players: [
+      { id: 'p1', name: 'A', color: '#FF6B6B' },
+      { id: 'p2', name: 'B', color: '#4ECDC4' },
+      { id: 'p3', name: 'C', color: '#45B7D1' },
+      { id: 'p4', name: 'D', color: '#96CEB4' },
+      { id: 'p5', name: 'E', color: '#FFEAA7' },
+    ],
+    currentDrawerId: null,
+    currentPlayerId: 'p5',
+  })
+
+  const ranks = Array.from(container.querySelectorAll('.rank')).map((el) => el.textContent?.trim())
+  expect(ranks).toEqual(['🥇', '🥈', '🥉', '4', '5'])
+})
