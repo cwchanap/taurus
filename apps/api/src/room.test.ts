@@ -2258,6 +2258,10 @@ describe('DrawingRoom - fetch HTTP endpoints', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).created = true
 
+    // Save original so we can restore it even if assertions fail
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const originalWebSocketPair = (globalThis as any).WebSocketPair
+
     // Mock WebSocketPair globally for this test
     const mockClientWs = { type: 'client' }
     const mockServerWs = { type: 'server' }
@@ -2266,17 +2270,24 @@ describe('DrawingRoom - fetch HTTP endpoints', () => {
       return { 0: mockClientWs, 1: mockServerWs }
     }
 
-    const request = new Request('http://localhost/ws', {
-      method: 'GET',
-      headers: { Upgrade: 'websocket' },
-    })
-    const response = await room.fetch(request)
+    try {
+      const request = new Request('http://localhost/ws', {
+        method: 'GET',
+        headers: { Upgrade: 'websocket' },
+      })
+      const response = await room.fetch(request)
 
-    expect(response.status).toBe(101)
-    expect(mockAcceptWebSocket).toHaveBeenCalledWith(mockServerWs)
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (globalThis as any).WebSocketPair
+      expect(response.status).toBe(101)
+      expect(mockAcceptWebSocket).toHaveBeenCalledWith(mockServerWs)
+    } finally {
+      if (originalWebSocketPair === undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (globalThis as any).WebSocketPair
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(globalThis as any).WebSocketPair = originalWebSocketPair
+      }
+    }
   })
 
   test('GET /info returns 404 when room has not been created', async () => {

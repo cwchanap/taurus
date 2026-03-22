@@ -47,6 +47,9 @@ function getWsHandlers(): Record<string, (...args: unknown[]) => void> {
   return instance.on.mock.calls[0][0] as Record<string, (...args: unknown[]) => void>
 }
 
+type DrawingState = { strokes: unknown[]; fills: unknown[] }
+type DrawPageComponent = { getDrawingState: () => DrawingState }
+
 /** Helper to simulate a player creating and joining a game room */
 async function simulateJoinGame(playerName = 'Alice') {
   vi.stubGlobal(
@@ -58,7 +61,7 @@ async function simulateJoinGame(playerName = 'Alice') {
     })
   )
 
-  render(DrawPage)
+  const { component } = render(DrawPage)
 
   const nameInput = screen.getByLabelText('Your Name') as HTMLInputElement
   await fireEvent.input(nameInput, { target: { value: playerName } })
@@ -98,6 +101,8 @@ async function simulateJoinGame(playerName = 'Alice') {
   await waitFor(() => {
     expect(screen.queryByRole('button', { name: 'Create Room' })).toBeNull()
   })
+
+  return { component: component as unknown as DrawPageComponent }
 }
 
 describe('Draw page - lobby state', () => {
@@ -474,6 +479,42 @@ describe('Draw page - keyboard shortcuts', () => {
     vi.clearAllMocks()
   })
 
+  // Helper: re-init as playing drawer with a stroke to populate undoStack/redoStack
+  function initAsPlayingDrawerWithStroke(
+    handlers: Record<string, (...args: unknown[]) => void>,
+    strokeId: string
+  ) {
+    const stroke = {
+      id: strokeId,
+      playerId: 'player-123',
+      color: '#FF6B6B' as const,
+      size: 4,
+      points: [{ x: 0.1, y: 0.2 }],
+      timestamp: 1000,
+      seq: 1,
+    }
+    handlers.onInit(
+      'player-123',
+      { id: 'player-123', name: 'Alice', color: '#FF6B6B' },
+      [{ id: 'player-123', name: 'Alice', color: '#FF6B6B' }],
+      [stroke],
+      [],
+      [],
+      true,
+      {
+        status: 'playing',
+        currentRound: 1,
+        totalRounds: 2,
+        currentDrawerId: 'player-123',
+        roundEndTime: Date.now() + 60000,
+        scores: { 'player-123': { name: 'Alice', score: 0 } },
+        currentWord: 'elephant',
+        wordLength: 8,
+      }
+    )
+    return stroke
+  }
+
   it('Ctrl+Z triggers undo when player is the current drawer', async () => {
     await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
@@ -482,37 +523,58 @@ describe('Draw page - keyboard shortcuts', () => {
       sendUndoStroke: ReturnType<typeof vi.fn>
     }
 
-    // Start a round where Alice is the drawer
-    handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'elephant', 8, Date.now() + 60000)
+    // Re-init with playing state + player's own stroke so undoStack is populated
+    initAsPlayingDrawerWithStroke(handlers, 'stroke-ctrl-z')
 
     await waitFor(() => {
       expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy()
     })
 
-    // Fire Ctrl+Z keyboard event on the window
+    const callsBefore = (wsInstance.sendUndoStroke as ReturnType<typeof vi.fn>).mock.calls.length
+
+    // Fire Ctrl+Z - handleUndo runs and calls sendUndoStroke since undoStack is non-empty
     await fireEvent.keyDown(window, { key: 'z', ctrlKey: true, shiftKey: false })
 
-    // sendUndoStroke may or may not be called (depends on undo stack), but no error should occur
-    // The important thing is that canDraw is true and the handler runs
-    expect(wsInstance.sendUndoStroke).toBeDefined()
+    expect(
+      (wsInstance.sendUndoStroke as ReturnType<typeof vi.fn>).mock.calls.length
+    ).toBeGreaterThan(callsBefore)
   })
 
   it('Ctrl+Shift+Z triggers redo when player is the current drawer', async () => {
     await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
+    const MockWS = vi.mocked(GameWebSocket)
+    const wsInstance = MockWS.mock.instances[MockWS.mock.instances.length - 1] as unknown as {
+      sendUndoStroke: ReturnType<typeof vi.fn>
+      sendStroke: ReturnType<typeof vi.fn>
+    }
 
-    // Start a round where Alice is the drawer
-    handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'cat', 3, Date.now() + 60000)
+    // Re-init with playing state + player's own stroke so undoStack is populated
+    initAsPlayingDrawerWithStroke(handlers, 'stroke-ctrl-shift-z')
 
     await waitFor(() => {
       expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy()
     })
 
-    // Fire Ctrl+Shift+Z keyboard event on the window - no errors expected
+    // Undo the stroke (puts it in pendingUndoStrokes)
+    await fireEvent.keyDown(window, { key: 'z', ctrlKey: true, shiftKey: false })
+
+    // Simulate server confirming the undo — this moves the item to redoStack
+    handlers.onStrokeRemoved?.('stroke-ctrl-shift-z')
+
+    await waitFor(() => {
+      // redoStack is now non-empty; the redo button reflects this if present
+      expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy()
+    })
+
+    const callsBefore = (wsInstance.sendStroke as ReturnType<typeof vi.fn>).mock.calls.length
+
+    // Fire Ctrl+Shift+Z - handleRedo runs and calls sendStroke with the redo stroke
     await fireEvent.keyDown(window, { key: 'z', ctrlKey: true, shiftKey: true })
 
-    // sendUndoFill/sendStroke may not be called with empty stacks, but handler runs without error
-    expect(true).toBe(true)
+    expect((wsInstance.sendStroke as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(
+      callsBefore
+    )
   })
 
   it('ignores keyboard shortcuts when player is not the drawer', async () => {
@@ -547,23 +609,23 @@ describe('Draw page - keyboard shortcuts', () => {
       sendUndoStroke: ReturnType<typeof vi.fn>
     }
 
-    // Start round where Alice is the drawer so canDraw is true
-    handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'elephant', 8, Date.now() + 60000)
+    // Re-init with playing state + stroke so canDraw is true and undoStack is populated
+    initAsPlayingDrawerWithStroke(handlers, 'stroke-editable-target')
 
     await waitFor(() => {
       expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy()
     })
 
-    // Find an input element (the chat input) and fire keydown from it
+    // The chat input must exist for this test to be meaningful
     const chatInput = document.querySelector('input[type="text"]') as HTMLInputElement
-    if (chatInput) {
-      const callsBefore = (wsInstance.sendUndoStroke as ReturnType<typeof vi.fn>).mock.calls.length
-      await fireEvent.keyDown(chatInput, { key: 'z', ctrlKey: true })
-      // Should not trigger undo when target is an editable element
-      expect((wsInstance.sendUndoStroke as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
-        callsBefore
-      )
-    }
+    expect(chatInput).toBeTruthy()
+
+    const callsBefore = (wsInstance.sendUndoStroke as ReturnType<typeof vi.fn>).mock.calls.length
+    await fireEvent.keyDown(chatInput, { key: 'z', ctrlKey: true })
+    // Should not trigger undo when target is an editable element
+    expect((wsInstance.sendUndoStroke as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
+      callsBefore
+    )
   })
 })
 
@@ -738,7 +800,7 @@ describe('Draw page - WebSocket drawing event handlers', () => {
   })
 
   it('onStroke adds new strokes to the canvas state', async () => {
-    await simulateJoinGame('Alice')
+    const { component } = await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
 
     // Start round where Alice is drawer
@@ -758,14 +820,17 @@ describe('Draw page - WebSocket drawing event handlers', () => {
       timestamp: Date.now(),
     }
 
-    // Call onStroke with a new stroke (not in existing strokes)
     handlers.onStroke?.(stroke)
 
-    await waitFor(() => expect(true).toBe(true)) // just allow state to settle
+    // Verify the stroke was added to canvas state
+    await waitFor(() => {
+      const state = component.getDrawingState()
+      expect(state.strokes.some((s) => (s as { id: string }).id === 'stroke-abc')).toBe(true)
+    })
   })
 
   it('onStrokeUpdate updates existing strokes', async () => {
-    await simulateJoinGame('Alice')
+    const { component } = await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
 
     handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'elephant', 8, Date.now() + 60000)
@@ -784,11 +849,20 @@ describe('Draw page - WebSocket drawing event handlers', () => {
 
     // Then update it with a new point
     handlers.onStrokeUpdate?.('stroke-xyz', { x: 0.4, y: 0.5 })
-    await waitFor(() => expect(true).toBe(true))
+
+    await waitFor(() => {
+      const state = component.getDrawingState()
+      const updated = state.strokes.find((s) => (s as { id: string }).id === 'stroke-xyz') as
+        | { points: { x: number; y: number }[] }
+        | undefined
+      expect(updated).toBeDefined()
+      expect(updated!.points).toHaveLength(2)
+      expect(updated!.points[1]).toEqual({ x: 0.4, y: 0.5 })
+    })
   })
 
   it('onStrokeRemoved removes strokes from canvas state', async () => {
-    await simulateJoinGame('Alice')
+    const { component } = await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
 
     handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'elephant', 8, Date.now() + 60000)
@@ -805,14 +879,18 @@ describe('Draw page - WebSocket drawing event handlers', () => {
     }
     handlers.onStroke?.(stroke)
     handlers.onStrokeRemoved?.('stroke-del')
-    await waitFor(() => expect(true).toBe(true))
+
+    await waitFor(() => {
+      const state = component.getDrawingState()
+      expect(state.strokes.some((s) => (s as { id: string }).id === 'stroke-del')).toBe(false)
+    })
   })
 
   it('onFill adds new fill operations', async () => {
-    await simulateJoinGame('Alice')
+    const { component } = await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
 
-    handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'elephant', 8, Date.now() + 60000)
+    handlers.onRoundStart?.(1, 2, 'player-456', 'Bob', undefined, 3, Date.now() + 60000)
     await waitFor(() => expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy())
 
     const fill = {
@@ -825,14 +903,18 @@ describe('Draw page - WebSocket drawing event handlers', () => {
     }
 
     handlers.onFill?.(fill)
-    await waitFor(() => expect(true).toBe(true))
+
+    await waitFor(() => {
+      const state = component.getDrawingState()
+      expect(state.fills.some((f) => (f as { id: string }).id === 'fill-abc')).toBe(true)
+    })
   })
 
   it('onFillRemoved removes fill operations', async () => {
-    await simulateJoinGame('Alice')
+    const { component } = await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
 
-    handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'elephant', 8, Date.now() + 60000)
+    handlers.onRoundStart?.(1, 2, 'player-456', 'Bob', undefined, 3, Date.now() + 60000)
     await waitFor(() => expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy())
 
     const fill = {
@@ -845,11 +927,15 @@ describe('Draw page - WebSocket drawing event handlers', () => {
     }
     handlers.onFill?.(fill)
     handlers.onFillRemoved?.('fill-del')
-    await waitFor(() => expect(true).toBe(true))
+
+    await waitFor(() => {
+      const state = component.getDrawingState()
+      expect(state.fills.some((f) => (f as { id: string }).id === 'fill-del')).toBe(false)
+    })
   })
 
   it('onClear removes all strokes and fills', async () => {
-    await simulateJoinGame('Alice')
+    const { component } = await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
 
     handlers.onRoundStart?.(1, 2, 'player-123', 'Alice', 'elephant', 8, Date.now() + 60000)
@@ -864,7 +950,12 @@ describe('Draw page - WebSocket drawing event handlers', () => {
       timestamp: Date.now(),
     })
     handlers.onClear?.()
-    await waitFor(() => expect(true).toBe(true))
+
+    await waitFor(() => {
+      const state = component.getDrawingState()
+      expect(state.strokes).toHaveLength(0)
+      expect(state.fills).toHaveLength(0)
+    })
   })
 
   it('onTick updates time remaining display', async () => {
@@ -875,16 +966,30 @@ describe('Draw page - WebSocket drawing event handlers', () => {
     await waitFor(() => expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy())
 
     handlers.onTick?.(45)
-    await waitFor(() => expect(true).toBe(true))
+
+    // GameHeader renders the time as M:SS in the .time span
+    await waitFor(() => {
+      expect(screen.getByText('0:45')).toBeTruthy()
+    })
   })
 
-  it('onConnectionChange false triggers clearRedoLock', async () => {
+  it('onConnectionChange updates the connection status indicator', async () => {
     await simulateJoinGame('Alice')
     const handlers = getWsHandlers()
 
-    // Simulate connection drop (triggers clearRedoLock)
+    // First connect (adds the `connected` CSS class)
+    handlers.onConnectionChange?.(true)
+    await waitFor(() => {
+      const indicator = document.querySelector('.connection-status')
+      expect(indicator?.classList.contains('connected')).toBe(true)
+    })
+
+    // Then disconnect — the `connected` class should be removed
     handlers.onConnectionChange?.(false)
-    await waitFor(() => expect(true).toBe(true))
+    await waitFor(() => {
+      const indicator = document.querySelector('.connection-status')
+      expect(indicator?.classList.contains('connected')).toBe(false)
+    })
   })
 
   it('onConnectionFailed triggers clearRedoLock and sets error', async () => {

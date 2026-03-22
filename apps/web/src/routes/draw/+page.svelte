@@ -942,6 +942,11 @@
     inProgressRedoStrokeId = null
   }
 
+  /** Exposed for testing: returns a snapshot of the current drawing state */
+  export function getDrawingState() {
+    return { strokes: [...strokes], fills: [...fills] }
+  }
+
   function handleKeyDown(event: KeyboardEvent) {
     if (!canDraw) return
 
