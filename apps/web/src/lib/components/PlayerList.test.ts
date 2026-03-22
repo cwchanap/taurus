@@ -51,3 +51,25 @@ describe('PlayerList', () => {
     expect(container.querySelector('.player.current')).toBeNull()
   })
 })
+
+it('shows (you) tag only for the current player when multiple players exist', () => {
+  const { container } = render(PlayerList, {
+    players: [
+      { id: 'player-1', name: 'Alice', color: '#FF6B6B' },
+      { id: 'player-2', name: 'Bob', color: '#4ECDC4' },
+      { id: 'player-3', name: 'Carol', color: '#45B7D1' },
+    ],
+    currentPlayerId: 'player-2',
+  })
+
+  const currentRow = container.querySelector('.player.current')
+  expect(currentRow?.textContent).toContain('Bob')
+  expect(currentRow?.textContent).toContain('(you)')
+
+  // Other rows should NOT have (you)
+  const allRows = Array.from(container.querySelectorAll('.player'))
+  const nonCurrentRows = allRows.filter((r) => !r.classList.contains('current'))
+  nonCurrentRows.forEach((row) => {
+    expect(row.textContent).not.toContain('(you)')
+  })
+})

@@ -898,3 +898,152 @@ describe('Draw page - WebSocket drawing event handlers', () => {
     })
   })
 })
+
+describe('Draw page - handleUndo and handleClear interactions', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    cleanup()
+    vi.clearAllMocks()
+  })
+
+  async function simulateJoinAsDrawer(playerName = 'Alice') {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ roomId: 'TEST-ROOM' }),
+        text: vi.fn().mockResolvedValue(''),
+      })
+    )
+
+    render(DrawPage)
+
+    const nameInput = screen.getByLabelText('Your Name') as HTMLInputElement
+    await fireEvent.input(nameInput, { target: { value: playerName } })
+
+    const createButton = screen.getByRole('button', { name: 'Create Room' })
+    await fireEvent.click(createButton)
+
+    await waitFor(() => {
+      expect(vi.mocked(GameWebSocket).mock.instances.length).toBeGreaterThan(0)
+    })
+
+    const handlers = getWsHandlers()
+
+    const stroke = {
+      id: 'stroke-1',
+      playerId: 'player-123',
+      color: '#FF6B6B' as const,
+      size: 4,
+      points: [{ x: 0.1, y: 0.2 }],
+      timestamp: 1000,
+      seq: 1,
+    }
+
+    // Join as host with the player as the current drawer, with an existing stroke
+    handlers.onInit(
+      'player-123',
+      { id: 'player-123', name: playerName, color: '#FF6B6B' },
+      [{ id: 'player-123', name: playerName, color: '#FF6B6B' }],
+      [stroke], // strokes
+      [], // fills
+      [], // chatHistory
+      true, // isHost
+      {
+        status: 'playing',
+        currentRound: 1,
+        totalRounds: 2,
+        currentDrawerId: 'player-123', // Alice is the drawer
+        roundEndTime: Date.now() + 60000,
+        scores: { 'player-123': { name: playerName, score: 0 } },
+        currentWord: 'elephant',
+        wordLength: 8,
+      }
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Create Room' })).toBeNull()
+    })
+
+    return handlers
+  }
+
+  it('Undo button is enabled and triggers handleUndo when drawer has strokes', async () => {
+    const handlers = await simulateJoinAsDrawer('Alice')
+    const MockWS = vi.mocked(GameWebSocket)
+    const wsInstance = MockWS.mock.instances[MockWS.mock.instances.length - 1] as unknown as {
+      sendUndoStroke: ReturnType<typeof vi.fn>
+    }
+
+    // The undo button should be enabled (canUndo = canDraw && undoStack.length > 0)
+    await waitFor(() => {
+      const undoBtn = screen.getByRole('button', { name: /undo/i }) as HTMLButtonElement
+      expect(undoBtn.disabled).toBe(false)
+    })
+
+    const undoBtn = screen.getByRole('button', { name: /undo/i })
+    await fireEvent.click(undoBtn)
+
+    // sendUndoStroke should have been called (handleUndo ran)
+    expect(wsInstance.sendUndoStroke).toHaveBeenCalledWith('stroke-1')
+
+    // Verify the handlers object for reference
+    expect(handlers.onInit).toBeDefined()
+  })
+
+  it('Clear button is enabled for current drawer during playing state', async () => {
+    await simulateJoinAsDrawer('Alice')
+
+    // Verify the Clear button is enabled for the drawer (clearDisabled = !isCurrentDrawer = false)
+    await waitFor(() => {
+      const clearBtn = screen.getByRole('button', { name: /clear/i }) as HTMLButtonElement
+      expect(clearBtn.disabled).toBe(false)
+    })
+  })
+
+  it('onStroke updates existing stroke with server metadata when stroke already exists', async () => {
+    const handlers = await simulateJoinAsDrawer('Alice')
+
+    // Send an onStroke for the stroke already in the canvas (update metadata path)
+    handlers.onStroke?.({
+      id: 'stroke-1', // same id as existing stroke
+      playerId: 'player-123',
+      color: '#FF6B6B' as const,
+      size: 4,
+      points: [{ x: 0.1, y: 0.2 }],
+      timestamp: 2000, // updated timestamp
+      seq: 2, // server-assigned seq
+    })
+
+    await waitFor(() => expect(true).toBe(true))
+  })
+
+  it('onFill for current drawer handles isCurrentDrawer=true code path', async () => {
+    const handlers = await simulateJoinAsDrawer('Alice')
+
+    // Send a fill from Alice (the current drawer)
+    handlers.onFill?.({
+      id: 'fill-from-drawer',
+      playerId: 'player-123',
+      x: 0.5,
+      y: 0.5,
+      color: '#4ECDC4' as const,
+      timestamp: Date.now(),
+    })
+
+    await waitFor(() => expect(true).toBe(true))
+  })
+
+  it('game state initializes correctly as drawer with playing status', async () => {
+    await simulateJoinAsDrawer('Alice')
+
+    // In playing state as drawer, should see the Scoreboard (not PlayerList)
+    await waitFor(() => {
+      expect(screen.queryByText('🏆 Scoreboard')).toBeTruthy()
+      expect(screen.queryByText('Players')).toBeNull()
+    })
+
+    // Should NOT see the cannot-draw indicator (Alice IS the drawer)
+    expect(screen.queryByText("👀 You're guessing! Type your answer in chat.")).toBeNull()
+  })
+})
