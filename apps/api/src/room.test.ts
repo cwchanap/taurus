@@ -20,6 +20,33 @@ mock.module('cloudflare:workers', () => ({
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
 
+// Shared helpers used across multiple describe blocks
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createMockWs(playerId: string, playerName = 'TestPlayer'): any {
+  return {
+    deserializeAttachment: () => ({
+      playerId,
+      player: { id: playerId, name: playerName, color: '#FF6B6B' },
+    }),
+    serializeAttachment: mock(() => {}),
+    send: mock(() => {}),
+    close: mock(() => {}),
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getSentMessages(ws: ReturnType<typeof createMockWs>): any[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (ws.send as ReturnType<typeof mock>).mock.calls.map((call: any[]) => {
+    try {
+      return JSON.parse(call[0] as string)
+    } catch {
+      return null
+    }
+  })
+}
+
 describe('DrawingRoom - Player Leave During Game', () => {
   let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
   let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
@@ -888,31 +915,6 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
   let mockWaitUntil: ReturnType<typeof mock>
   let mockEnv: unknown
 
-  // Helper: create a mock WebSocket with a fixed player ID
-  function createMockWs(playerId: string, playerName = 'TestPlayer') {
-    return {
-      deserializeAttachment: () => ({
-        playerId,
-        player: { id: playerId, name: playerName, color: '#FF6B6B' },
-      }),
-      send: mock(() => {}),
-      close: mock(() => {}),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any
-  }
-
-  // Helper: get all parsed messages sent via ws.send
-  function getSentMessages(ws: ReturnType<typeof createMockWs>) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (ws.send as ReturnType<typeof mock>).mock.calls.map((call: any[]) => {
-      try {
-        return JSON.parse(call[0] as string)
-      } catch {
-        return null
-      }
-    })
-  }
-
   // Helper: set room into playing state with a specific drawer
   function setPlayingState(drawerId: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1737,30 +1739,6 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
   let mockGetWebSockets: ReturnType<typeof mock>
   let mockWaitUntil: ReturnType<typeof mock>
   let mockEnv: unknown
-
-  function createMockWs(playerId: string, playerName = 'TestPlayer') {
-    return {
-      deserializeAttachment: () => ({
-        playerId,
-        player: { id: playerId, name: playerName, color: '#FF6B6B' },
-      }),
-      serializeAttachment: mock(() => {}),
-      send: mock(() => {}),
-      close: mock(() => {}),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any
-  }
-
-  function getSentMessages(ws: ReturnType<typeof createMockWs>) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (ws.send as ReturnType<typeof mock>).mock.calls.map((call: any[]) => {
-      try {
-        return JSON.parse(call[0] as string)
-      } catch {
-        return null
-      }
-    })
-  }
 
   function setStartingState(
     drawerOrder: string[],
