@@ -2153,3 +2153,168 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     expect(initMsg.isHost).toBe(true)
   })
 })
+
+describe('DrawingRoom - fetch HTTP endpoints', () => {
+  let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+  let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
+  let mockState: Partial<DurableObjectState>
+  let mockStoragePut: ReturnType<typeof mock>
+  let mockGetWebSockets: ReturnType<typeof mock>
+  let mockWaitUntil: ReturnType<typeof mock>
+  let mockAcceptWebSocket: ReturnType<typeof mock>
+
+  let mockEnv: unknown
+
+  beforeEach(async () => {
+    ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+    mockStoragePut = mock(() => Promise.resolve())
+    mockGetWebSockets = mock(() => [])
+    mockWaitUntil = mock(() => {})
+    mockAcceptWebSocket = mock(() => {})
+
+    mockState = {
+      storage: {
+        get: mock(() => Promise.resolve(undefined)),
+        put: mockStoragePut,
+        delete: mock(() => Promise.resolve()),
+        list: mock(() => Promise.resolve(new Map())),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      id: {
+        toString: () => 'test-room-id',
+        equals: () => false,
+        name: 'test-room',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      waitUntil: mockWaitUntil,
+      blockConcurrencyWhile: mock(async (fn) => await fn()),
+      getWebSockets: mockGetWebSockets,
+      acceptWebSocket: mockAcceptWebSocket,
+    }
+
+    mockEnv = {}
+    void mockEnv
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
+    // Skip initialization
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+  })
+
+  afterEach(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).clearTimers()
+  })
+
+  test('POST /create marks room as created and returns 200', async () => {
+    const request = new Request('http://localhost/create', { method: 'POST' })
+    const response = await room.fetch(request)
+
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('Created')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).created).toBe(true)
+    expect(mockStoragePut).toHaveBeenCalledWith('created', true)
+  })
+
+  test('GET /ws returns 404 when room has not been created', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).created = false
+    const request = new Request('http://localhost/ws', {
+      method: 'GET',
+      headers: { Upgrade: 'websocket' },
+    })
+    const response = await room.fetch(request)
+
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe('Room not found')
+  })
+
+  test('GET /ws returns 426 when missing Upgrade header', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).created = true
+    const request = new Request('http://localhost/ws', { method: 'GET' })
+    const response = await room.fetch(request)
+
+    expect(response.status).toBe(426)
+    expect(await response.text()).toBe('Expected WebSocket')
+  })
+
+  test('GET /ws returns 426 when Upgrade header is not websocket', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).created = true
+    const request = new Request('http://localhost/ws', {
+      method: 'GET',
+      headers: { Upgrade: 'http/2' },
+    })
+    const response = await room.fetch(request)
+
+    expect(response.status).toBe(426)
+  })
+
+  test('GET /ws upgrades to WebSocket when room exists and Upgrade header is correct', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).created = true
+
+    // Mock WebSocketPair globally for this test
+    const mockClientWs = { type: 'client' }
+    const mockServerWs = { type: 'server' }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(globalThis as any).WebSocketPair = function () {
+      return { 0: mockClientWs, 1: mockServerWs }
+    }
+
+    const request = new Request('http://localhost/ws', {
+      method: 'GET',
+      headers: { Upgrade: 'websocket' },
+    })
+    const response = await room.fetch(request)
+
+    expect(response.status).toBe(101)
+    expect(mockAcceptWebSocket).toHaveBeenCalledWith(mockServerWs)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (globalThis as any).WebSocketPair
+  })
+
+  test('GET /info returns 404 when room has not been created', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).created = false
+    const request = new Request('http://localhost/info', { method: 'GET' })
+    const response = await room.fetch(request)
+
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe('Not found')
+  })
+
+  test('GET /info returns player and stroke counts when room exists', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).created = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).strokes = [{ id: 'stroke-1' }, { id: 'stroke-2' }]
+
+    const ws1 = createMockWs('player-1', 'Alice')
+    const ws2 = createMockWs('player-2', 'Bob')
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    const request = new Request('http://localhost/info', { method: 'GET' })
+    const response = await room.fetch(request)
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((body as any).playerCount).toBe(2)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((body as any).strokeCount).toBe(2)
+  })
+
+  test('unknown path returns 404', async () => {
+    const request = new Request('http://localhost/unknown-path', { method: 'GET' })
+    const response = await room.fetch(request)
+
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe('Not found')
+  })
+})
