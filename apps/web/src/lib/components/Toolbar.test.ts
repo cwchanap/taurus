@@ -142,7 +142,7 @@ describe('Toolbar', () => {
 })
 
 it('clear button is disabled independently when clearDisabled is true', () => {
-  const props = makeToolbarProps({ clearDisabled: true, disabled: false })
+  const props = makeToolbarProps({ clearDisabled: true, disabled: false, canUndo: true })
   render(Toolbar, props)
 
   const clearBtn = screen.getByRole('button', { name: /clear/i }) as HTMLButtonElement
@@ -150,7 +150,7 @@ it('clear button is disabled independently when clearDisabled is true', () => {
 
   // Other buttons should still be enabled
   const undoBtn = screen.getByRole('button', { name: /undo/i }) as HTMLButtonElement
-  expect(undoBtn.disabled).toBe(true) // disabled because canUndo=false
+  expect(undoBtn.disabled).toBe(false)
 })
 
 it('renders eraser tool as active when tool is eraser', () => {
