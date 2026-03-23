@@ -139,46 +139,46 @@ describe('Toolbar', () => {
     expect((screen.getByRole('button', { name: /undo/i }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: /redo/i }) as HTMLButtonElement).disabled).toBe(true)
   })
-})
 
-it('clear button is disabled independently when clearDisabled is true', () => {
-  const props = makeToolbarProps({ clearDisabled: true, disabled: false, canUndo: true })
-  render(Toolbar, props)
+  it('clear button is disabled independently when clearDisabled is true', () => {
+    const props = makeToolbarProps({ clearDisabled: true, disabled: false, canUndo: true })
+    render(Toolbar, props)
 
-  const clearBtn = screen.getByRole('button', { name: /clear/i }) as HTMLButtonElement
-  expect(clearBtn.disabled).toBe(true)
+    const clearBtn = screen.getByRole('button', { name: /clear/i }) as HTMLButtonElement
+    expect(clearBtn.disabled).toBe(true)
 
-  // Other buttons should still be enabled
-  const undoBtn = screen.getByRole('button', { name: /undo/i }) as HTMLButtonElement
-  expect(undoBtn.disabled).toBe(false)
-})
+    // Other buttons should still be enabled
+    const undoBtn = screen.getByRole('button', { name: /undo/i }) as HTMLButtonElement
+    expect(undoBtn.disabled).toBe(false)
+  })
 
-it('renders eraser tool as active when tool is eraser', () => {
-  const props = makeToolbarProps({ tool: 'eraser' })
-  render(Toolbar, props)
+  it('renders eraser tool as active when tool is eraser', () => {
+    const props = makeToolbarProps({ tool: 'eraser' })
+    render(Toolbar, props)
 
-  const eraserBtn = screen.getByRole('button', { name: /eraser tool/i })
-  expect(eraserBtn.classList.contains('active')).toBe(true)
+    const eraserBtn = screen.getByRole('button', { name: /eraser tool/i })
+    expect(eraserBtn.classList.contains('active')).toBe(true)
 
-  const pencilBtn = screen.getByRole('button', { name: /pencil tool/i })
-  expect(pencilBtn.classList.contains('active')).toBe(false)
-})
+    const pencilBtn = screen.getByRole('button', { name: /pencil tool/i })
+    expect(pencilBtn.classList.contains('active')).toBe(false)
+  })
 
-it('renders fill tool as active when tool is fill', () => {
-  const props = makeToolbarProps({ tool: 'fill' })
-  render(Toolbar, props)
+  it('renders fill tool as active when tool is fill', () => {
+    const props = makeToolbarProps({ tool: 'fill' })
+    render(Toolbar, props)
 
-  const fillBtn = screen.getByRole('button', { name: /fill tool/i })
-  expect(fillBtn.classList.contains('active')).toBe(true)
-})
+    const fillBtn = screen.getByRole('button', { name: /fill tool/i })
+    expect(fillBtn.classList.contains('active')).toBe(true)
+  })
 
-it('renders size 4 brush as active when brushSize is 4', () => {
-  const props = makeToolbarProps({ brushSize: 4 })
-  render(Toolbar, props)
+  it('renders size 4 brush as active when brushSize is 4', () => {
+    const props = makeToolbarProps({ brushSize: 4 })
+    render(Toolbar, props)
 
-  const size4Btn = screen.getByRole('button', { name: /brush size 4px/i })
-  expect((size4Btn as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    const size4Btn = screen.getByRole('button', { name: /brush size 4px/i })
+    expect((size4Btn as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
 
-  const size8Btn = screen.getByRole('button', { name: /brush size 8px/i })
-  expect((size8Btn as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
+    const size8Btn = screen.getByRole('button', { name: /brush size 8px/i })
+    expect((size8Btn as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
+  })
 })
