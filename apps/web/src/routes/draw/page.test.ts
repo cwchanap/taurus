@@ -36,6 +36,7 @@ import { GameWebSocket } from '$lib/websocket'
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
 })
 
 /** Get the handlers registered by the most recently created GameWebSocket instance */
@@ -1021,7 +1022,7 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
       })
     )
 
-    render(DrawPage)
+    const { component } = render(DrawPage)
 
     const nameInput = screen.getByLabelText('Your Name') as HTMLInputElement
     await fireEvent.input(nameInput, { target: { value: playerName } })
@@ -1070,11 +1071,11 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
       expect(screen.queryByRole('button', { name: 'Create Room' })).toBeNull()
     })
 
-    return handlers
+    return { handlers, component: component as unknown as DrawPageComponent }
   }
 
   it('Undo button is enabled and triggers handleUndo when drawer has strokes', async () => {
-    const handlers = await simulateJoinAsDrawer('Alice')
+    const { handlers } = await simulateJoinAsDrawer('Alice')
     const MockWS = vi.mocked(GameWebSocket)
     const wsInstance = MockWS.mock.instances[MockWS.mock.instances.length - 1] as unknown as {
       sendUndoStroke: ReturnType<typeof vi.fn>
@@ -1107,7 +1108,7 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
   })
 
   it('onStroke updates existing stroke with server metadata when stroke already exists', async () => {
-    const handlers = await simulateJoinAsDrawer('Alice')
+    const { handlers, component } = await simulateJoinAsDrawer('Alice')
 
     // Send an onStroke for the stroke already in the canvas (update metadata path)
     handlers.onStroke?.({
@@ -1120,11 +1121,21 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
       seq: 2, // server-assigned seq
     })
 
-    await waitFor(() => expect(true).toBe(true))
+    await waitFor(() => {
+      const state = component.getDrawingState()
+      const updated = state.strokes.find((s: { id: string }) => s.id === 'stroke-1') as
+        | {
+            timestamp: number
+            seq: number
+          }
+        | undefined
+      expect(updated?.timestamp).toBe(2000)
+      expect(updated?.seq).toBe(2)
+    })
   })
 
   it('onFill for current drawer handles isCurrentDrawer=true code path', async () => {
-    const handlers = await simulateJoinAsDrawer('Alice')
+    const { handlers, component } = await simulateJoinAsDrawer('Alice')
 
     // Send a fill from Alice (the current drawer)
     handlers.onFill?.({
@@ -1136,7 +1147,10 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
       timestamp: Date.now(),
     })
 
-    await waitFor(() => expect(true).toBe(true))
+    await waitFor(() => {
+      const state = component.getDrawingState()
+      expect(state.fills.some((f: { id: string }) => f.id === 'fill-from-drawer')).toBe(true)
+    })
   })
 
   it('game state initializes correctly as drawer with playing status', async () => {
