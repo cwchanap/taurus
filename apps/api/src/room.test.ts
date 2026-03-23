@@ -2503,8 +2503,12 @@ describe('DrawingRoom - storage error catch blocks', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any
 
-    mockGetWebSockets.mockReturnValue([ws])
+    const ws2 = createMockWs('player-2', 'Q')
+    mockGetWebSockets.mockReturnValue([ws, ws2])
 
+    // Make player-1 the host so handleStartGame proceeds past the permission check
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'player-1'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'lobby',
@@ -2516,12 +2520,21 @@ describe('DrawingRoom - storage error catch blocks', () => {
       usedWords: new Set<string>(),
     }
 
-    // Send a start-game message without being host - this triggers sendError
-    // ws.send will throw when sendError tries to send the error response
+    // Override storagePutWithRetry to throw immediately so persistGameState throws,
+    // which causes handleStartGame to throw, triggering sendError in the outer catch
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).storagePutWithRetry = async () => {
+      throw new Error('storage failure')
+    }
+
+    // Send start-game as host: persistGameState throws → sendError is called →
+    // ws.send throws when sendError tries to send the error response → inner catch fires
     await room.webSocketMessage(ws as unknown as WebSocket, JSON.stringify({ type: 'start-game' }))
 
-    // The inner catch for ws.send throwing is covered - no exception should propagate
-    expect(true).toBe(true)
+    // sendError was triggered: ws.send was called (and threw), no exception propagated
+    expect(ws.send).toHaveBeenCalled()
+    // serializeAttachment should not have been called (error path, not a normal response)
+    expect(ws.serializeAttachment).not.toHaveBeenCalled()
   })
 
   test('resumeGameFlowFromState: sets up round and tick timers when playing round has time remaining', () => {
