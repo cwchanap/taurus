@@ -1123,12 +1123,9 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
 
     await waitFor(() => {
       const state = component.getDrawingState()
-      const updated = state.strokes.find((s: { id: string }) => s.id === 'stroke-1') as
-        | {
-            timestamp: number
-            seq: number
-          }
-        | undefined
+      const updated = (state.strokes as { id: string; timestamp: number; seq: number }[]).find(
+        (s) => s.id === 'stroke-1'
+      )
       expect(updated?.timestamp).toBe(2000)
       expect(updated?.seq).toBe(2)
     })
@@ -1149,7 +1146,7 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
 
     await waitFor(() => {
       const state = component.getDrawingState()
-      expect(state.fills.some((f: { id: string }) => f.id === 'fill-from-drawer')).toBe(true)
+      expect((state.fills as { id: string }[]).some((f) => f.id === 'fill-from-drawer')).toBe(true)
     })
   })
 
