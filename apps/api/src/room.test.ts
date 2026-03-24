@@ -3141,15 +3141,13 @@ describe('DrawingRoom - timer callback coverage', () => {
       }
 
       // startRound sets roundEndTime in the future, then tickTimer fires immediately
-      // The tick callback broadcasts 'tick' if remaining > 0
+      // remaining = roundEndTime - now = ROUND_DURATION_MS > 0, so tick is always broadcast
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(room as any).startRound()
 
-      // Check that tick was broadcast (ws1 should have received a tick message)
+      // Tick should have been broadcast since roundEndTime is 60s in the future
       const ws1Msgs = getSentMessages(ws1)
-      // The tick may not fire if roundEndTime < now during the same call
-      // but at minimum startRound should have run
-      expect(ws1Msgs.some((m) => m?.type === 'round-start')).toBe(true)
+      expect(ws1Msgs.some((m) => m?.type === 'tick')).toBe(true)
     } finally {
       globalThis.setInterval = originalSetInterval
     }
