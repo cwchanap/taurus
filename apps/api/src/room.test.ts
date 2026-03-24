@@ -1,5 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
-import { MAX_MESSAGES_PER_WINDOW, MAX_STROKE_POINTS, MAX_STROKES_PER_WINDOW } from './constants'
+import {
+  MAX_MESSAGES_PER_WINDOW,
+  MAX_STROKE_POINTS,
+  MAX_STROKES_PER_WINDOW,
+  ROUND_END_TRANSITION_DELAY,
+} from './constants'
 
 // Helper to flush all pending promises reliably
 function flushPromises(): Promise<void> {
@@ -2600,8 +2605,9 @@ describe('DrawingRoom - storage error catch blocks', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(room as any).resumeGameFlowFromState()
 
-      // Should still call setTimeout with fallback delay
-      expect(setTimeoutSpy).toHaveBeenCalled()
+      // Should call setTimeout with the ROUND_END_TRANSITION_DELAY fallback
+      // (currentRound:1 < totalRounds:3 and endGameAfterCurrentRound:false → shouldEnd=false)
+      expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), ROUND_END_TRANSITION_DELAY)
     } finally {
       globalThis.setTimeout = originalSetTimeout
     }
@@ -2889,8 +2895,9 @@ describe('DrawingRoom - timer callback coverage', () => {
 
   test('resumeGameFlowFromState: round-end timer callback calls startRound when it fires', () => {
     const originalSetTimeout = globalThis.setTimeout
+    let scheduledTimeout: (() => void) | undefined
     globalThis.setTimeout = ((fn: () => void) => {
-      fn()
+      scheduledTimeout = fn
       return 1 as unknown as ReturnType<typeof setTimeout>
     }) as unknown as typeof setTimeout
 
@@ -2916,15 +2923,21 @@ describe('DrawingRoom - timer callback coverage', () => {
         nextTransitionAt: Date.now() + 2_000,
       }
 
+      const startRoundSpy = mock(() => {})
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).startRound = startRoundSpy
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(room as any).resumeGameFlowFromState()
 
-      // The roundEndTimer callback fires immediately and calls startRound
-      // startRound transitions from round-end to playing (if valid drawers exist)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const newStatus = (room as any).gameState.status
-      // Either started playing or stayed in round-end (if startRound can't proceed)
-      expect(['playing', 'round-end', 'starting', 'game-over']).toContain(newStatus)
+      // Timer should have been scheduled but not fired yet
+      expect(scheduledTimeout).toBeDefined()
+      expect(startRoundSpy).not.toHaveBeenCalled()
+
+      // Fire the scheduled callback exactly once
+      scheduledTimeout!()
+
+      expect(startRoundSpy).toHaveBeenCalledTimes(1)
     } finally {
       globalThis.setTimeout = originalSetTimeout
     }
@@ -2932,8 +2945,9 @@ describe('DrawingRoom - timer callback coverage', () => {
 
   test('endRound(false): round-end timer callback calls startRound when it fires', () => {
     const originalSetTimeout = globalThis.setTimeout
+    let scheduledTimeout: (() => void) | undefined
     globalThis.setTimeout = ((fn: () => void) => {
-      fn()
+      scheduledTimeout = fn
       return 1 as unknown as ReturnType<typeof setTimeout>
     }) as unknown as typeof setTimeout
 
@@ -2964,13 +2978,21 @@ describe('DrawingRoom - timer callback coverage', () => {
         endGameAfterCurrentRound: false,
       }
 
+      const startRoundSpy = mock(() => {})
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).startRound = startRoundSpy
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(room as any).endRound(false) // skipToNext = false
 
-      // Timer callback fires immediately and calls startRound
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const status = (room as any).gameState.status
-      expect(['playing', 'round-end', 'starting', 'game-over']).toContain(status)
+      // Timer should have been scheduled but not fired yet
+      expect(scheduledTimeout).toBeDefined()
+      expect(startRoundSpy).not.toHaveBeenCalled()
+
+      // Fire the scheduled callback exactly once
+      scheduledTimeout!()
+
+      expect(startRoundSpy).toHaveBeenCalledTimes(1)
     } finally {
       globalThis.setTimeout = originalSetTimeout
     }
@@ -2978,8 +3000,9 @@ describe('DrawingRoom - timer callback coverage', () => {
 
   test('endRound(true): skip-to-next timer callback calls startRound when it fires', () => {
     const originalSetTimeout = globalThis.setTimeout
+    let scheduledTimeout: (() => void) | undefined
     globalThis.setTimeout = ((fn: () => void) => {
-      fn()
+      scheduledTimeout = fn
       return 1 as unknown as ReturnType<typeof setTimeout>
     }) as unknown as typeof setTimeout
 
@@ -3010,13 +3033,21 @@ describe('DrawingRoom - timer callback coverage', () => {
         endGameAfterCurrentRound: false,
       }
 
+      const startRoundSpy = mock(() => {})
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).startRound = startRoundSpy
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(room as any).endRound(true) // skipToNext = true
 
-      // Timer callback fires immediately and calls startRound
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const status = (room as any).gameState.status
-      expect(['playing', 'round-end', 'starting', 'game-over']).toContain(status)
+      // Timer should have been scheduled but not fired yet
+      expect(scheduledTimeout).toBeDefined()
+      expect(startRoundSpy).not.toHaveBeenCalled()
+
+      // Fire the scheduled callback exactly once
+      scheduledTimeout!()
+
+      expect(startRoundSpy).toHaveBeenCalledTimes(1)
     } finally {
       globalThis.setTimeout = originalSetTimeout
     }
