@@ -942,9 +942,9 @@
     inProgressRedoStrokeId = null
   }
 
-  /** Exposed for testing: returns a snapshot of the current drawing state */
+  /** Exposed for testing: returns a deep-cloned snapshot of the current drawing state */
   export function getDrawingState() {
-    return { strokes: [...strokes], fills: [...fills] }
+    return { strokes: structuredClone(strokes), fills: structuredClone(fills) }
   }
 
   function handleKeyDown(event: KeyboardEvent) {
