@@ -944,7 +944,10 @@
 
   /** Exposed for testing: returns a deep-cloned snapshot of the current drawing state */
   export function getDrawingState() {
-    return { strokes: structuredClone(strokes), fills: structuredClone(fills) }
+    return {
+      strokes: strokes.map((s) => ({ ...s, points: [...s.points] })),
+      fills: fills.map((f) => ({ ...f })),
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent) {
