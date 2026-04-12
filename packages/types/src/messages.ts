@@ -92,6 +92,7 @@ export type ClientMessage =
   | { type: 'clear' }
   | { type: 'start-game' }
   | { type: 'reset-game' }
+  | { type: 'choose-word'; word: string }
 
 // Server-to-Client Messages
 export type ServerMessage =
@@ -149,9 +150,20 @@ export type ServerMessage =
       playerName: string
       score: number
       timeRemaining: number
+      catchUpBonus?: number
     }
   | { type: 'tick'; timeRemaining: number }
   | { type: 'game-reset' }
+  | {
+      type: 'word-choice-start'
+      roundNumber: number
+      totalRounds: number
+      drawerId: string
+      drawerName: string
+      wordChoiceEndTime: number
+    }
+  | { type: 'word-options'; words: string[]; timeToChoose: number }
+  | { type: 'hint'; revealed: string }
   | { type: 'system-message'; content: string }
   | { type: 'error'; message: string; action?: ClientMessage['type']; nonce?: string }
 
