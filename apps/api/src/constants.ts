@@ -27,3 +27,15 @@ export const RATE_LIMIT_WINDOW = 10000 // 10 seconds
 export const GAME_END_TRANSITION_DELAY = 3000 // Delay before showing final results
 export const ROUND_END_TRANSITION_DELAY = 5000 // Delay between rounds
 export const SKIP_ROUND_TRANSITION_DELAY = 2000 // Delay when skipping round (drawer left)
+
+// Word choice
+export const WORD_CHOICE_DURATION_MS = 10000 // 10s for drawer to pick a word
+export const WORD_CHOICE_OPTIONS_COUNT = 3
+
+// Hints
+export const HINT_FRACTION_1 = 0.25 // 25% of letters revealed at 50% time elapsed
+export const HINT_FRACTION_2 = 0.5 // 50% of letters revealed at 75% time elapsed
+
+// Catch-up scoring
+export const CATCH_UP_BONUS_PER_ROUND = 10
+export const MAX_CATCH_UP_BONUS = 50 // cap at 5 missed rounds worth
