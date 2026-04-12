@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 import type { FillOperation, Stroke } from '@repo/types'
 import {
   applyFill,
@@ -14,6 +14,9 @@ import {
   undoFill,
   undoStroke,
   validateFillRequest,
+  editDistance,
+  buildHintString,
+  pickNextRevealPositions,
 } from './game-logic'
 import { createInitialGameState, type PlayingState, type RoundEndState } from './game-types'
 import {
@@ -740,5 +743,86 @@ describe('containsCurrentWord', () => {
   test('handles multi-word targets', () => {
     expect(containsCurrentWord('I love ice cream!', 'ice cream')).toBe(true)
     expect(containsCurrentWord('icecream', 'ice cream')).toBe(false)
+  })
+})
+
+describe('editDistance', () => {
+  it('returns 0 for identical strings', () => {
+    expect(editDistance('apple', 'apple')).toBe(0)
+  })
+  it('returns 1 for single substitution', () => {
+    expect(editDistance('cat', 'bat')).toBe(1)
+  })
+  it('returns 1 for single insertion', () => {
+    expect(editDistance('cat', 'cats')).toBe(1)
+  })
+  it('returns 1 for single deletion', () => {
+    expect(editDistance('cats', 'cat')).toBe(1)
+  })
+  it('returns correct distance for multiple edits', () => {
+    expect(editDistance('kitten', 'sitten')).toBe(1)
+    expect(editDistance('elephant', 'elfant')).toBe(3)
+  })
+  it('handles empty strings', () => {
+    expect(editDistance('', 'abc')).toBe(3)
+    expect(editDistance('abc', '')).toBe(3)
+    expect(editDistance('', '')).toBe(0)
+  })
+})
+
+describe('buildHintString', () => {
+  it('masks all letters with no revealed positions', () => {
+    expect(buildHintString('apple', [])).toBe('_ _ _ _ _')
+  })
+  it('reveals letters at specified positions', () => {
+    expect(buildHintString('apple', [1, 4])).toBe('_ p _ _ e')
+  })
+  it('always shows spaces', () => {
+    expect(buildHintString('hot dog', [])).toBe('_ _ _   _ _ _')
+  })
+  it('always shows hyphens', () => {
+    expect(buildHintString('t-rex', [])).toBe('_ - _ _ _')
+  })
+})
+
+describe('pickNextRevealPositions', () => {
+  it('returns at least 1 position', () => {
+    const result = pickNextRevealPositions('hi', [], 0.25)
+    expect(result.length).toBeGreaterThanOrEqual(1)
+  })
+  it('does not duplicate existing positions', () => {
+    const result = pickNextRevealPositions('apple', [0], 0.5)
+    const unique = new Set(result)
+    expect(unique.size).toBe(result.length)
+  })
+  it('does not reveal more than targetFraction', () => {
+    const result = pickNextRevealPositions('apple', [], 0.25)
+    expect(result.length).toBeLessThanOrEqual(2) // ceil(5 * 0.25) = 2
+  })
+  it('skips spaces when counting maskable chars', () => {
+    // "hot dog" has 6 maskable chars (spaces excluded)
+    const result = pickNextRevealPositions('hot dog', [], 0.5)
+    expect(result.length).toBe(3) // ceil(6 * 0.5) = 3
+  })
+})
+
+describe('calculateCorrectGuessScore with missedRounds', () => {
+  it('adds catch-up bonus for missed rounds', () => {
+    const roundEndTime = Date.now() + 30000
+    const baseScore = calculateCorrectGuessScore(roundEndTime, Date.now(), 0)
+    const bonusScore = calculateCorrectGuessScore(roundEndTime, Date.now(), 3)
+    expect(bonusScore - baseScore).toBe(30)
+  })
+  it('caps catch-up bonus at MAX_CATCH_UP_BONUS (50)', () => {
+    const roundEndTime = Date.now() + 30000
+    const score10 = calculateCorrectGuessScore(roundEndTime, Date.now(), 10)
+    const score5 = calculateCorrectGuessScore(roundEndTime, Date.now(), 5)
+    expect(score10).toBe(score5) // both capped at +50
+  })
+  it('returns same score as before when missedRounds is 0', () => {
+    const roundEndTime = Date.now() + 30000
+    const withZero = calculateCorrectGuessScore(roundEndTime, Date.now(), 0)
+    const withDefault = calculateCorrectGuessScore(roundEndTime, Date.now())
+    expect(withZero).toBe(withDefault)
   })
 })
