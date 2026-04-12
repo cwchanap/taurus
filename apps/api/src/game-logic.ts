@@ -14,6 +14,8 @@ import {
   MAX_STROKES_PER_WINDOW,
   MAX_STROKE_UPDATES_PER_WINDOW,
   RATE_LIMIT_WINDOW,
+  CATCH_UP_BONUS_PER_ROUND,
+  MAX_CATCH_UP_BONUS,
 } from './constants'
 import type { FillOperation, Stroke } from '@repo/types'
 import type { GameState, PlayingState, RoundEndState } from './game-types'
@@ -104,15 +106,19 @@ export function containsCurrentWord(message: string, word: string): boolean {
  *
  * @param roundEndTime - The timestamp when the round will end
  * @param currentTime - The current timestamp (defaults to Date.now())
- * @returns The calculated score: 100 (base) to 150 (with full time bonus)
+ * @param missedRounds - Number of rounds the player missed (for catch-up bonus)
+ * @returns The calculated score: 100 (base) to 150 (with full time bonus), plus catch-up bonus
  */
 export function calculateCorrectGuessScore(
   roundEndTime: number,
-  currentTime: number = Date.now()
+  currentTime: number = Date.now(),
+  missedRounds = 0
 ): number {
   const timeRemaining = Math.max(0, roundEndTime - currentTime)
   const timeRatio = Math.min(1, Math.max(0, timeRemaining / ROUND_DURATION_MS))
-  return Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
+  const baseScore = Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
+  const catchUpBonus = Math.min(missedRounds * CATCH_UP_BONUS_PER_ROUND, MAX_CATCH_UP_BONUS)
+  return baseScore + catchUpBonus
 }
 
 /**
@@ -634,4 +640,84 @@ export function findNextDrawer(
   }
 
   return { drawerId: null, roundNumber: nextRound }
+}
+
+/**
+ * Computes the Levenshtein edit distance between two strings.
+ *
+ * @param a - First string
+ * @param b - Second string
+ * @returns The minimum number of single-character edits (insertions, deletions, substitutions)
+ *          required to change a into b
+ */
+export function editDistance(a: string, b: string): number {
+  const m = a.length
+  const n = b.length
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  )
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+    }
+  }
+  return dp[m][n]
+}
+
+/**
+ * Builds a space-separated hint string for a word, masking unrevealed characters with '_'.
+ * Spaces and hyphens in the original word are always shown as-is.
+ *
+ * @param word - The word to build a hint for
+ * @param revealedPositions - Array of character indices that should be revealed
+ * @returns A hint string with characters joined by spaces, e.g. '_ p _ _ e'
+ */
+export function buildHintString(word: string, revealedPositions: number[]): string {
+  const revealed = new Set(revealedPositions)
+  return word
+    .split('')
+    .map((char, i) => {
+      if (char === ' ' || char === '-') return char
+      return revealed.has(i) ? char : '_'
+    })
+    .join(' ')
+}
+
+/**
+ * Picks the next set of positions to reveal in a hint, up to targetFraction of maskable chars.
+ * Spaces and hyphens are excluded from the maskable count.
+ *
+ * @param word - The word being hinted
+ * @param existing - Already-revealed positions
+ * @param targetFraction - Target fraction of maskable characters to reveal (0–1)
+ * @returns New array of revealed positions (existing + newly picked)
+ */
+export function pickNextRevealPositions(
+  word: string,
+  existing: number[],
+  targetFraction: number
+): number[] {
+  const maskable = word
+    .split('')
+    .map((char, i) => ({ char, i }))
+    .filter(({ char }) => char !== ' ' && char !== '-')
+    .map(({ i }) => i)
+
+  const targetCount = Math.max(1, Math.ceil(maskable.length * targetFraction))
+  const currentRevealed = new Set(existing)
+  const unrevealed = maskable.filter((i) => !currentRevealed.has(i))
+
+  const needed = Math.max(0, targetCount - existing.length)
+  if (needed === 0 || unrevealed.length === 0) return [...existing]
+
+  const shuffled = [...unrevealed]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+
+  return [...existing, ...shuffled.slice(0, needed)]
 }
