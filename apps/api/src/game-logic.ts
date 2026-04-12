@@ -30,6 +30,9 @@ export interface TimerContainer {
   tickTimer: ReturnType<typeof setInterval> | null
   roundEndTimer: ReturnType<typeof setTimeout> | null
   gameEndTimer: ReturnType<typeof setTimeout> | null
+  wordChoiceTimer: ReturnType<typeof setTimeout> | null
+  hintTimer1: ReturnType<typeof setTimeout> | null
+  hintTimer2: ReturnType<typeof setTimeout> | null
 }
 
 /**
@@ -42,11 +45,17 @@ export function clearTimers(container: TimerContainer) {
   if (container.tickTimer) clearInterval(container.tickTimer)
   if (container.roundEndTimer) clearTimeout(container.roundEndTimer)
   if (container.gameEndTimer) clearTimeout(container.gameEndTimer)
+  if (container.wordChoiceTimer) clearTimeout(container.wordChoiceTimer)
+  if (container.hintTimer1) clearTimeout(container.hintTimer1)
+  if (container.hintTimer2) clearTimeout(container.hintTimer2)
 
   container.roundTimer = null
   container.tickTimer = null
   container.roundEndTimer = null
   container.gameEndTimer = null
+  container.wordChoiceTimer = null
+  container.hintTimer1 = null
+  container.hintTimer2 = null
 }
 
 /**
