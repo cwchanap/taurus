@@ -419,6 +419,8 @@ describe('type guards', () => {
       roundGuesserScores: new Map(),
       usedWords: new Set(),
       endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      revealedPositions: [],
     }
     expect(isActiveGameState(playing)).toBe(true)
 

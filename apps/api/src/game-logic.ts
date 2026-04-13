@@ -498,6 +498,7 @@ export function handlePlayerLeaveInActiveGame(
     roundGuessers: new Set(gameState.roundGuessers),
     roundGuesserScores: new Map(gameState.roundGuesserScores),
     usedWords: new Set(gameState.usedWords),
+    consecutiveMissedRounds: new Map(gameState.consecutiveMissedRounds),
   }
 
   // Remove from correct guessers, round guessers, and round guesser scores
@@ -557,6 +558,7 @@ export function handlePlayerLeaveInActiveGame(
         roundStartTime: gameState.roundStartTime,
         roundEndTime: gameState.roundEndTime,
         endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
+        revealedPositions: isPlayingState(gameState) ? gameState.revealedPositions : [],
         ...baseClone,
       }
     } else {
@@ -570,6 +572,7 @@ export function handlePlayerLeaveInActiveGame(
         roundStartTime: gameState.roundStartTime,
         roundEndTime: gameState.roundEndTime,
         endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
+        revealedPositions: [],
         ...baseClone,
       }
     }
