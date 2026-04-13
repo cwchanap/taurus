@@ -14,6 +14,7 @@ type BaseGameState = {
   correctGuessers: Set<string> // Players who guessed correctly this round
   roundGuessers: Set<string> // Players eligible to guess this round
   roundGuesserScores: Map<string, number> // Scores earned by guessers this round
+  consecutiveMissedRounds: Map<string, number> // Tracks consecutive missed rounds per player
 }
 
 // Lobby state - waiting for game to start
@@ -40,6 +41,19 @@ export type StartingState = BaseGameState & {
   roundEndTime: null
 }
 
+// Word choice state - drawer is choosing a word
+export type WordChoiceState = BaseGameState & {
+  status: 'word-choice'
+  currentRound: number
+  totalRounds: number
+  currentDrawerId: string
+  currentWord: null
+  wordLength: null
+  roundStartTime: null
+  roundEndTime: null
+  endGameAfterCurrentRound: boolean
+}
+
 // Playing state - active round in progress
 export type PlayingState = BaseGameState & {
   status: 'playing'
@@ -51,6 +65,7 @@ export type PlayingState = BaseGameState & {
   roundStartTime: number // non-null - when round started
   roundEndTime: number // non-null - when round ends
   endGameAfterCurrentRound: boolean // Flag to end game after current round
+  revealedPositions: number[] // Indices of revealed letters
 }
 
 // Round end state - between rounds, showing results
@@ -80,7 +95,13 @@ export type GameOverState = BaseGameState & {
 }
 
 // Discriminated union of all game states
-export type GameState = LobbyState | StartingState | PlayingState | RoundEndState | GameOverState
+export type GameState =
+  | LobbyState
+  | StartingState
+  | WordChoiceState
+  | PlayingState
+  | RoundEndState
+  | GameOverState
 
 // Type guards for narrowing GameState
 export function isLobbyState(state: GameState): state is LobbyState {
@@ -89,6 +110,10 @@ export function isLobbyState(state: GameState): state is LobbyState {
 
 export function isStartingState(state: GameState): state is StartingState {
   return state.status === 'starting'
+}
+
+export function isWordChoiceState(state: GameState): state is WordChoiceState {
+  return state.status === 'word-choice'
 }
 
 export function isPlayingState(state: GameState): state is PlayingState {
@@ -103,9 +128,13 @@ export function isGameOverState(state: GameState): state is GameOverState {
   return state.status === 'game-over'
 }
 
-// Type guard for active game states (playing or round-end)
-export function isActiveGameState(state: GameState): state is PlayingState | RoundEndState {
-  return state.status === 'playing' || state.status === 'round-end'
+// Type guard for active game states (word-choice, playing, or round-end)
+export function isActiveGameState(
+  state: GameState
+): state is WordChoiceState | PlayingState | RoundEndState {
+  return (
+    state.status === 'word-choice' || state.status === 'playing' || state.status === 'round-end'
+  )
 }
 
 export interface PlayerScore {
@@ -133,6 +162,7 @@ export function createInitialGameState(): LobbyState {
     roundGuessers: new Set(),
     roundGuesserScores: new Map(),
     usedWords: new Set(),
+    consecutiveMissedRounds: new Map(),
   }
 }
 
@@ -163,6 +193,8 @@ export interface StoredGameState {
   usedWords: string[]
   endGameAfterCurrentRound?: boolean
   nextTransitionAt?: number
+  consecutiveMissedRounds?: [string, number][]
+  revealedPositions?: number[]
 }
 
 /**
@@ -184,16 +216,22 @@ export function gameStateToStorage(state: GameState): StoredGameState {
     roundGuessers: Array.from(state.roundGuessers),
     roundGuesserScores: Array.from(state.roundGuesserScores.entries()),
     usedWords: Array.from(state.usedWords),
+    consecutiveMissedRounds: Array.from(state.consecutiveMissedRounds.entries()),
   }
 
   // Only include endGameAfterCurrentRound for states that have it
-  if (isPlayingState(state) || isRoundEndState(state)) {
+  if (isWordChoiceState(state) || isPlayingState(state) || isRoundEndState(state)) {
     stored.endGameAfterCurrentRound = state.endGameAfterCurrentRound
   }
 
   // Only include nextTransitionAt for round-end state
   if (isRoundEndState(state)) {
     stored.nextTransitionAt = state.nextTransitionAt
+  }
+
+  // Only include revealedPositions for playing state
+  if (isPlayingState(state)) {
+    stored.revealedPositions = state.revealedPositions
   }
 
   return stored
@@ -212,6 +250,7 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
     roundGuessers: new Set(stored.roundGuessers),
     roundGuesserScores: new Map(stored.roundGuesserScores),
     usedWords: new Set(stored.usedWords),
+    consecutiveMissedRounds: new Map(stored.consecutiveMissedRounds ?? []),
   }
 
   switch (stored.status) {
@@ -251,6 +290,22 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         roundEndTime: null,
       } as StartingState
     }
+    case 'word-choice': {
+      if (!stored.currentDrawerId) {
+        console.error('Corrupt word-choice state: missing drawerId, falling back to lobby')
+        return createInitialGameState()
+      }
+      return {
+        ...baseState,
+        status: 'word-choice',
+        currentDrawerId: stored.currentDrawerId,
+        currentWord: null,
+        wordLength: null,
+        roundStartTime: null,
+        roundEndTime: null,
+        endGameAfterCurrentRound: stored.endGameAfterCurrentRound ?? false,
+      } as WordChoiceState
+    }
     case 'playing': {
       // Validate required fields for playing state
       if (
@@ -274,6 +329,7 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         roundStartTime: stored.roundStartTime,
         roundEndTime: stored.roundEndTime,
         endGameAfterCurrentRound: stored.endGameAfterCurrentRound ?? false,
+        revealedPositions: stored.revealedPositions ?? [],
       } as PlayingState
     }
     case 'round-end': {
@@ -323,6 +379,18 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
  */
 export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateWire {
   // Use type guards to access fields correctly
+  if (isWordChoiceState(state)) {
+    return {
+      status: state.status,
+      currentRound: state.currentRound,
+      totalRounds: state.totalRounds,
+      currentDrawerId: state.currentDrawerId,
+      wordLength: undefined,
+      roundEndTime: null,
+      scores: scoresToRecord(state.scores),
+    }
+  }
+
   if (isPlayingState(state)) {
     return {
       status: state.status,
@@ -348,7 +416,7 @@ export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateW
     }
   }
 
-  // Lobby or game-over state
+  // Lobby, starting, or game-over state
   return {
     status: state.status,
     currentRound: state.currentRound,

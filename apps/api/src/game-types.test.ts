@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, it } from 'bun:test'
 import {
   gameStateToStorage,
   gameStateFromStorage,
@@ -13,6 +13,7 @@ import {
   type GameOverState,
   type StartingState,
   type StoredGameState,
+  type WordChoiceState,
 } from './game-types'
 
 describe('gameStateToStorage / gameStateFromStorage round-trip', () => {
@@ -71,6 +72,8 @@ describe('gameStateToStorage / gameStateFromStorage round-trip', () => {
       roundGuesserScores: new Map([['p1', 120]]),
       usedWords: new Set(['cat', 'dog']),
       endGameAfterCurrentRound: true,
+      revealedPositions: [],
+      consecutiveMissedRounds: new Map(),
     }
     const stored = gameStateToStorage(state)
     const restored = gameStateFromStorage(stored)
@@ -108,6 +111,7 @@ describe('gameStateToStorage / gameStateFromStorage round-trip', () => {
       usedWords: new Set(['cat']),
       endGameAfterCurrentRound: false,
       nextTransitionAt: now + 5000,
+      consecutiveMissedRounds: new Map(),
     }
     const stored = gameStateToStorage(state)
     const restored = gameStateFromStorage(stored)
@@ -138,6 +142,7 @@ describe('gameStateToStorage / gameStateFromStorage round-trip', () => {
       roundGuessers: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(['cat', 'dog', 'elephant']),
+      consecutiveMissedRounds: new Map(),
     }
     const stored = gameStateToStorage(state)
     const restored = gameStateFromStorage(stored)
@@ -434,5 +439,85 @@ describe('type guards', () => {
       drawerOrder: ['p1'],
     }
     expect(isActiveGameState(starting)).toBe(false)
+  })
+})
+
+describe('WordChoiceState serialization', () => {
+  it('round-trips through gameStateToStorage/gameStateFromStorage', () => {
+    const state: WordChoiceState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'player1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      endGameAfterCurrentRound: false,
+      drawerOrder: ['player1', 'player2'],
+      scores: new Map([['player1', { score: 0, name: 'Alice' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['player2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map([['player2', 2]]),
+    }
+    const stored = gameStateToStorage(state)
+    const restored = gameStateFromStorage(stored)
+    expect(restored.status).toBe('word-choice')
+    expect((restored as WordChoiceState).currentDrawerId).toBe('player1')
+    expect(restored.consecutiveMissedRounds.get('player2')).toBe(2)
+  })
+})
+
+describe('PlayingState with revealedPositions', () => {
+  it('serializes and restores revealedPositions', () => {
+    const state: PlayingState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'player1',
+      currentWord: 'apple',
+      wordLength: 5,
+      roundStartTime: 1000,
+      roundEndTime: 61000,
+      endGameAfterCurrentRound: false,
+      revealedPositions: [1, 3],
+      drawerOrder: ['player1'],
+      scores: new Map(),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['apple']),
+      consecutiveMissedRounds: new Map(),
+    }
+    const stored = gameStateToStorage(state)
+    const restored = gameStateFromStorage(stored) as PlayingState
+    expect(restored.revealedPositions).toEqual([1, 3])
+  })
+
+  it('defaults revealedPositions to [] when absent from storage', () => {
+    const stored: StoredGameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'player1',
+      currentWord: 'apple',
+      wordLength: 5,
+      roundStartTime: 1000,
+      roundEndTime: 61000,
+      endGameAfterCurrentRound: false,
+      drawerOrder: ['player1'],
+      scores: [],
+      correctGuessers: [],
+      roundGuessers: [],
+      roundGuesserScores: [],
+      usedWords: ['apple'],
+      // revealedPositions absent (old storage)
+      // consecutiveMissedRounds absent (old storage)
+    }
+    const restored = gameStateFromStorage(stored) as PlayingState
+    expect(restored.revealedPositions).toEqual([])
+    expect(restored.consecutiveMissedRounds.size).toBe(0)
   })
 })
