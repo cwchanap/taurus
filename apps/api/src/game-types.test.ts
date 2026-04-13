@@ -283,6 +283,8 @@ describe('gameStateToWire', () => {
       roundGuesserScores: new Map(),
       usedWords: new Set(),
       endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      revealedPositions: [],
     }
 
     const wire = gameStateToWire(state, true)
@@ -308,6 +310,8 @@ describe('gameStateToWire', () => {
       roundGuesserScores: new Map(),
       usedWords: new Set(),
       endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      revealedPositions: [],
     }
 
     const wire = gameStateToWire(state, false)
