@@ -344,6 +344,7 @@ describe('gameStateToWire', () => {
       usedWords: new Set(),
       endGameAfterCurrentRound: false,
       nextTransitionAt: now + 5000,
+      consecutiveMissedRounds: new Map(),
     }
 
     const wire = gameStateToWire(state, false)
