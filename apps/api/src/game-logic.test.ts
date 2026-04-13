@@ -50,6 +50,8 @@ describe('handlePlayerLeaveInActiveGame', () => {
       roundGuesserScores: new Map(),
       usedWords: new Set(),
       endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      revealedPositions: [],
     }
 
     // Initialize scores for all players
@@ -432,6 +434,8 @@ describe('drawing operation helpers', () => {
     roundGuesserScores: new Map(),
     usedWords: new Set(),
     endGameAfterCurrentRound: false,
+    consecutiveMissedRounds: new Map(),
+    revealedPositions: [],
   })
 
   test('applyFill returns generated fill metadata and nonce echo event', () => {
