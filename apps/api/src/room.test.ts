@@ -269,6 +269,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
       roundGuessers: new Set(['p2', 'p3']),
       roundGuesserScores: new Map(),
       usedWords: new Set(['cat']),
+      consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
     }
 
@@ -592,6 +593,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
       roundGuessers: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
     }
 
@@ -624,6 +626,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
         scores: new Map(),
         lastRoundResult: null,
         usedWords: new Set(),
+        consecutiveMissedRounds: new Map(),
         endGameAfterCurrentRound: false,
         nextTransitionAt: Date.now() + 2_000,
       }
@@ -655,6 +658,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
         scores: new Map(),
         lastRoundResult: null,
         usedWords: new Set(),
+        consecutiveMissedRounds: new Map(),
         endGameAfterCurrentRound: false,
         nextTransitionAt: Date.now() + 2_000,
       }
@@ -940,6 +944,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
       roundGuessers: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
     }
   }
@@ -1023,6 +1028,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
       roundGuessers: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
     }
 
@@ -1431,6 +1437,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
       roundGuessers: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
     }
 
@@ -1530,6 +1537,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
       roundGuessers: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
     }
 
@@ -1759,6 +1767,7 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
       drawerOrder,
       scores,
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
     }
   }
@@ -1787,6 +1796,7 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
       roundGuessers: new Set(guessers),
       roundGuesserScores: new Map(),
       usedWords: new Set(['banana']),
+      consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
     }
   }
@@ -1832,7 +1842,7 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     }
   })
 
-  test('startRound sends word only to drawer and sets up timers', async () => {
+  test('startRound sends word-options to drawer and word-choice-start to others', async () => {
     const drawerWs = createMockWs('p1', 'Drawer')
     const guesserWs = createMockWs('p2', 'Guesser')
     mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
@@ -1852,31 +1862,28 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     const drawerMsgs = getSentMessages(drawerWs)
     const guesserMsgs = getSentMessages(guesserWs)
 
-    // Drawer should receive round-start with word
+    // Drawer should receive word-options
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const drawerRoundStart = drawerMsgs.find((m: any) => m?.type === 'round-start')
-    expect(drawerRoundStart).toBeDefined()
-    expect(drawerRoundStart.word).toBeDefined()
-    expect(typeof drawerRoundStart.word).toBe('string')
+    const wordOptions = drawerMsgs.find((m: any) => m?.type === 'word-options')
+    expect(wordOptions).toBeDefined()
+    expect(Array.isArray(wordOptions.words)).toBe(true)
+    expect(wordOptions.words.length).toBeGreaterThan(0)
 
-    // Guesser should receive round-start WITHOUT word
+    // Guesser should receive word-choice-start
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const guesserRoundStart = guesserMsgs.find((m: any) => m?.type === 'round-start')
-    expect(guesserRoundStart).toBeDefined()
-    expect(guesserRoundStart.word).toBeUndefined()
+    const wordChoiceStart = guesserMsgs.find((m: any) => m?.type === 'word-choice-start')
+    expect(wordChoiceStart).toBeDefined()
 
-    // Timers should be set
+    // Word-choice timer should be set
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).roundTimer).not.toBeNull()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).tickTimer).not.toBeNull()
+    expect((room as any).wordChoiceTimer).not.toBeNull()
 
-    // Game status should transition to 'playing'
+    // Game status should transition to 'word-choice'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).gameState.status).toBe('playing')
+    expect((room as any).gameState.status).toBe('word-choice')
   })
 
-  test('startRound broadcasts canvas clear message', async () => {
+  test('beginDrawing broadcasts canvas clear message and transitions to playing', async () => {
     const ws1 = createMockWs('p1', 'Player1')
     const ws2 = createMockWs('p2', 'Player2')
     mockGetWebSockets.mockReturnValue([ws1, ws2])
@@ -1889,8 +1896,32 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
       ])
     )
 
+    // Set up word-choice state first
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).startRound()
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Player1' }],
+        ['p2', { score: 0, name: 'Player2' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginDrawing('apple')
     await flushPromises()
 
     // Both players should receive a 'clear' message
@@ -1900,6 +1931,16 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     expect(p1Msgs.some((m: any) => m?.type === 'clear')).toBe(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(p2Msgs.some((m: any) => m?.type === 'clear')).toBe(true)
+
+    // Game status should transition to 'playing'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('playing')
+
+    // Round timers should be set
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).roundTimer).not.toBeNull()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).tickTimer).not.toBeNull()
   })
 
   test('startRound calls endGame when no valid drawers are connected', async () => {
@@ -2008,6 +2049,7 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
       drawerOrder: [],
       scores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
     }
 
     await room.webSocketClose(ws1 as unknown as WebSocket)
@@ -2039,6 +2081,7 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
       drawerOrder: [],
       scores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
     }
 
     await room.webSocketError(ws1 as unknown as WebSocket)
@@ -2085,6 +2128,7 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
       drawerOrder: [],
       scores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
     }
 
     await room.webSocketMessage(
@@ -2138,6 +2182,7 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
       drawerOrder: [],
       scores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
     }
 
     await room.webSocketMessage(
@@ -2567,6 +2612,7 @@ describe('DrawingRoom - storage error catch blocks', () => {
         roundGuessers: new Set(),
         roundGuesserScores: new Map(),
         usedWords: new Set(),
+        consecutiveMissedRounds: new Map(),
         endGameAfterCurrentRound: false,
       }
 
@@ -2598,6 +2644,7 @@ describe('DrawingRoom - storage error catch blocks', () => {
         scores: new Map(),
         lastRoundResult: null,
         usedWords: new Set(),
+        consecutiveMissedRounds: new Map(),
         endGameAfterCurrentRound: false,
         nextTransitionAt: null, // Null - should use fallback delay
       }
@@ -2718,18 +2765,18 @@ describe('DrawingRoom - sendError inner catch and startRound storage errors', ()
     expect(mockError).toHaveBeenCalled()
   })
 
-  test('startRound: stroke and fill delete failures mark storage as dirty', async () => {
+  test('beginDrawing: stroke and fill delete failures mark storage as dirty', async () => {
     const drawerWs = createMockWs('p1', 'Drawer')
     const guesserWs = createMockWs('p2', 'Guesser')
     mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
 
-    // Set up starting state
+    // Set up word-choice state (beginDrawing requires this state)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
-      status: 'starting',
-      currentRound: 0,
+      status: 'word-choice',
+      currentRound: 1,
       totalRounds: 2,
-      currentDrawerId: null,
+      currentDrawerId: 'p1',
       currentWord: null,
       wordLength: null,
       roundStartTime: null,
@@ -2744,7 +2791,10 @@ describe('DrawingRoom - sendError inner catch and startRound storage errors', ()
       roundGuesserScores: new Map<string, number>(),
       usedWords: new Set<string>(),
       endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map<string, number>(),
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['cat', 'dog', 'fish']
 
     // Add some existing strokes and fills
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2764,7 +2814,7 @@ describe('DrawingRoom - sendError inner catch and startRound storage errors', ()
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(room as any).startRound()
+      ;(room as any).beginDrawing('cat')
       await flushPromises()
     } finally {
       console.error = originalError
@@ -3090,6 +3140,7 @@ describe('DrawingRoom - timer callback coverage', () => {
         roundGuesserScores: new Map<string, number>(),
         usedWords: new Set<string>(),
         endGameAfterCurrentRound: false,
+        consecutiveMissedRounds: new Map<string, number>(),
       }
 
       // startRound sets roundTimer (which fires immediately calling endRound)
@@ -3106,7 +3157,7 @@ describe('DrawingRoom - timer callback coverage', () => {
     }
   })
 
-  test('startRound: tick timer callback fires and broadcasts tick', () => {
+  test('beginDrawing: tick timer callback fires and broadcasts tick', () => {
     const originalSetInterval = globalThis.setInterval
     globalThis.setInterval = ((fn: () => void) => {
       fn() // Fire immediately
@@ -3118,12 +3169,13 @@ describe('DrawingRoom - timer callback coverage', () => {
     mockGetWebSockets.mockReturnValue([ws1, ws2])
 
     try {
+      // Set up word-choice state (beginDrawing requires this state)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(room as any).gameState = {
-        status: 'starting',
-        currentRound: 0,
+        status: 'word-choice',
+        currentRound: 1,
         totalRounds: 2,
-        currentDrawerId: null,
+        currentDrawerId: 'p1',
         currentWord: null,
         wordLength: null,
         roundStartTime: null,
@@ -3138,12 +3190,15 @@ describe('DrawingRoom - timer callback coverage', () => {
         roundGuesserScores: new Map<string, number>(),
         usedWords: new Set<string>(),
         endGameAfterCurrentRound: false,
+        consecutiveMissedRounds: new Map<string, number>(),
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).pendingWordOptions = ['cat', 'dog', 'fish']
 
-      // startRound sets roundEndTime in the future, then tickTimer fires immediately
+      // beginDrawing sets roundEndTime in the future, then tickTimer fires immediately
       // remaining = roundEndTime - now = ROUND_DURATION_MS > 0, so tick is always broadcast
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(room as any).startRound()
+      ;(room as any).beginDrawing('cat')
 
       // Tick should have been broadcast since roundEndTime is 60s in the future
       const ws1Msgs = getSentMessages(ws1)

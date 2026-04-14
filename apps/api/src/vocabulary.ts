@@ -101,3 +101,20 @@ export function getRandomWordExcluding(usedWords: Set<string>): string {
   }
   return available[Math.floor(Math.random() * available.length)]
 }
+
+/**
+ * Pick N distinct random words not in the exclude set.
+ * Falls back to fewer words if vocabulary is exhausted.
+ */
+export function getRandomWordsExcluding(exclude: Set<string>, count: number): string[] {
+  const available = VOCABULARY.filter((w) => !exclude.has(w))
+  const result: string[] = []
+  const pool = [...available]
+  for (let i = pool.length - 1; i > 0 && result.length < count; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+    result.push(pool[i])
+  }
+  if (result.length < count && pool.length > 0) result.push(pool[0])
+  return result
+}
