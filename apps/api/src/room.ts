@@ -42,6 +42,8 @@ import {
   WORD_CHOICE_OPTIONS_COUNT,
   HINT_FRACTION_1,
   HINT_FRACTION_2,
+  CATCH_UP_BONUS_PER_ROUND,
+  MAX_CATCH_UP_BONUS,
 } from './constants'
 import { getRandomWordExcluding, getRandomWordsExcluding } from './vocabulary'
 import {
@@ -1726,6 +1728,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       }
     }
 
+    // Increment consecutiveMissedRounds for guessers who did not guess correctly this round
+    for (const eligibleId of this.gameState.roundGuessers) {
+      if (!this.gameState.correctGuessers.has(eligibleId)) {
+        const current = this.gameState.consecutiveMissedRounds.get(eligibleId) ?? 0
+        this.gameState.consecutiveMissedRounds.set(eligibleId, current + 1)
+      }
+      // correct guessers already reset to 0 when they guessed
+    }
+
     // Build round result
     const result: RoundResult = {
       drawerId,
@@ -1921,8 +1932,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Mark player as having guessed correctly
     this.gameState.correctGuessers.add(playerId)
 
-    // Calculate time-based score using extracted function
-    const score = calculateCorrectGuessScore(this.gameState.roundEndTime)
+    // Calculate time-based score with catch-up bonus
+    const missed = this.gameState.consecutiveMissedRounds.get(playerId) ?? 0
+    const score = calculateCorrectGuessScore(this.gameState.roundEndTime, Date.now(), missed)
+    const catchUpBonus = Math.min(missed * CATCH_UP_BONUS_PER_ROUND, MAX_CATCH_UP_BONUS)
+
+    // Reset missed rounds for this player now that they've guessed correctly
+    this.gameState.consecutiveMissedRounds.set(playerId, 0)
 
     // Update player score
     const scoreInfo = this.gameState.scores.get(playerId)
@@ -1946,6 +1962,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       playerName,
       score,
       timeRemaining: Math.ceil(timeRemaining / 1000),
+      ...(catchUpBonus > 0 ? { catchUpBonus } : {}),
     })
 
     // Check if all non-drawer players have guessed
