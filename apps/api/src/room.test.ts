@@ -3547,3 +3547,146 @@ describe('DrawingRoom - hint timers', () => {
     expect((room as any).hintTimer2).not.toBeNull()
   })
 })
+
+describe('DrawingRoom - close-guess feedback', () => {
+  let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+  let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
+  let mockState: Partial<DurableObjectState>
+  let mockGetWebSockets: ReturnType<typeof mock>
+  let mockWaitUntil: ReturnType<typeof mock>
+  let mockEnv: unknown
+
+  beforeEach(async () => {
+    ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+    mockGetWebSockets = mock(() => [])
+    mockWaitUntil = mock(() => {})
+
+    mockState = {
+      storage: {
+        get: mock(() => Promise.resolve(undefined)),
+        put: mock(() => Promise.resolve()),
+        delete: mock(() => Promise.resolve()),
+        list: mock(() => Promise.resolve(new Map())),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      id: {
+        toString: () => 'test-room-id',
+        equals: () => false,
+        name: 'test-room',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      waitUntil: mockWaitUntil,
+      blockConcurrencyWhile: mock(async (fn) => await fn()),
+      getWebSockets: mockGetWebSockets,
+    }
+
+    mockEnv = {}
+    void mockEnv
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+  })
+
+  afterEach(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).clearTimers()
+  })
+
+  function setPlayingStateWithWord(drawerId: string, guessers: string[], word: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: drawerId,
+      currentWord: word,
+      wordLength: word.length,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: [drawerId, ...guessers],
+      scores: new Map([
+        [drawerId, { score: 0, name: 'Drawer' }],
+        ...guessers.map(
+          (g) => [g, { score: 0, name: `Player ${g}` }] as [string, { score: number; name: string }]
+        ),
+      ]),
+      correctGuessers: new Set<string>(),
+      roundGuessers: new Set(guessers),
+      roundGuesserScores: new Map(),
+      usedWords: new Set([word]),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+  }
+
+  test('sends private "So close!" to guesser whose guess is 1 edit away from the word', async () => {
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    setPlayingStateWithWord('p1', ['p2'], 'cat') // 3 chars, threshold = 1
+
+    // 'ca' is 1 edit (deletion) away from 'cat'
+    await room.webSocketMessage(guesserWs, JSON.stringify({ type: 'chat', content: 'ca' }))
+    await flushPromises()
+
+    const guesserMsgs = getSentMessages(guesserWs)
+
+    const soClose = guesserMsgs.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (m: any) => m?.type === 'system-message' && m?.content === 'So close!'
+    )
+    expect(soClose).toBeDefined()
+  })
+
+  test('"So close!" is NOT broadcast to other players', async () => {
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    setPlayingStateWithWord('p1', ['p2'], 'cat')
+
+    await room.webSocketMessage(guesserWs, JSON.stringify({ type: 'chat', content: 'ca' }))
+    await flushPromises()
+
+    const drawerMsgs = getSentMessages(drawerWs)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(drawerMsgs.some((m: any) => m?.content === 'So close!')).toBe(false)
+  })
+
+  test('guess that is too far away does not trigger "So close!"', async () => {
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    setPlayingStateWithWord('p1', ['p2'], 'cat')
+
+    // 'xyz' is 3 edits away from 'cat', beyond threshold of 1
+    await room.webSocketMessage(guesserWs, JSON.stringify({ type: 'chat', content: 'xyz' }))
+    await flushPromises()
+
+    const guesserMsgs = getSentMessages(guesserWs)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(guesserMsgs.some((m: any) => m?.content === 'So close!')).toBe(false)
+  })
+
+  test('drawer sending a near-miss does not receive "So close!"', async () => {
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    setPlayingStateWithWord('p1', ['p2'], 'cat')
+
+    // Drawer sends 'ca' (1 edit from word) — should be suppressed (contains word check), no "So close!"
+    await room.webSocketMessage(drawerWs, JSON.stringify({ type: 'chat', content: 'ca' }))
+    await flushPromises()
+
+    const drawerMsgs = getSentMessages(drawerWs)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(drawerMsgs.some((m: any) => m?.content === 'So close!')).toBe(false)
+  })
+})
