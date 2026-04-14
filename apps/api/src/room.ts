@@ -40,6 +40,8 @@ import {
   SKIP_ROUND_TRANSITION_DELAY,
   WORD_CHOICE_DURATION_MS,
   WORD_CHOICE_OPTIONS_COUNT,
+  HINT_FRACTION_1,
+  HINT_FRACTION_2,
 } from './constants'
 import { getRandomWordExcluding, getRandomWordsExcluding } from './vocabulary'
 import {
@@ -81,6 +83,8 @@ import {
   undoFill,
   undoStroke,
   validateFillRequest,
+  buildHintString,
+  pickNextRevealPositions,
 } from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> implements TimerContainer {
@@ -1638,6 +1642,40 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         this.broadcast({ type: 'tick', timeRemaining: Math.ceil(remaining / 1000) })
       }
     }, 1000)
+    this.hintTimer1 = setTimeout(() => this.sendHint(1), ROUND_DURATION_MS * 0.5)
+    this.hintTimer2 = setTimeout(() => this.sendHint(2), ROUND_DURATION_MS * 0.75)
+  }
+
+  /**
+   * Send a progressive hint to non-drawers.
+   * Hint 1 (~25% letters revealed) fires at 50% elapsed; hint 2 (~50%) at 75%.
+   */
+  private sendHint(hintNumber: 1 | 2) {
+    if (!isPlayingState(this.gameState)) return
+    const word = this.gameState.currentWord
+    const drawerId = this.gameState.currentDrawerId
+    const targetFraction = hintNumber === 1 ? HINT_FRACTION_1 : HINT_FRACTION_2
+
+    const newPositions = pickNextRevealPositions(
+      word,
+      this.gameState.revealedPositions,
+      targetFraction
+    )
+    this.gameState = { ...this.gameState, revealedPositions: newPositions } as PlayingState
+
+    const hintString = buildHintString(word, newPositions)
+
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+      if (!attachment?.playerId) continue
+      if (attachment.playerId === drawerId) continue
+      if (this.gameState.correctGuessers.has(attachment.playerId)) continue
+      try {
+        ws.send(JSON.stringify({ type: 'hint', revealed: hintString }))
+      } catch {
+        // Connection may be closed
+      }
+    }
   }
 
   /**
