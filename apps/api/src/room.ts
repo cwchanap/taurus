@@ -85,6 +85,7 @@ import {
   validateFillRequest,
   buildHintString,
   pickNextRevealPositions,
+  editDistance,
 } from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> implements TimerContainer {
@@ -1245,6 +1246,23 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       if (isCorrectGuess(sanitizedContent, this.gameState.currentWord)) {
         await this.handleCorrectGuess(playerId, attachment.player.name)
         return
+      }
+
+      // Close-guess feedback: private "So close!" if within edit-distance threshold
+      if (
+        playerId !== this.gameState.currentDrawerId &&
+        !this.gameState.correctGuessers.has(playerId)
+      ) {
+        const normalized = sanitizedContent.toLowerCase().trim()
+        const currentWord = this.gameState.currentWord.toLowerCase()
+        const threshold = currentWord.length <= 5 ? 1 : 2
+        if (editDistance(normalized, currentWord) <= threshold && normalized !== currentWord) {
+          try {
+            ws.send(JSON.stringify({ type: 'system-message', content: 'So close!' }))
+          } catch {
+            // Connection may be closed
+          }
+        }
       }
     }
 
