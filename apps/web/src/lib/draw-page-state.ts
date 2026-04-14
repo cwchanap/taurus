@@ -355,7 +355,7 @@ export function buildRoundStartState(
   lastRoundResult: RoundResult | null
   undoStack: UndoItem[]
   redoStack: UndoItem[]
-  correctGuessNotification: { playerName: string; score: number } | null
+  correctGuessNotification: { playerName: string; score: number; catchUpBonus?: number } | null
 } {
   return {
     roundNumber,
@@ -432,7 +432,7 @@ export function buildGameResetState(): {
   fills: FillOperation[]
   undoStack: UndoItem[]
   redoStack: UndoItem[]
-  correctGuessNotification: { playerName: string; score: number } | null
+  correctGuessNotification: { playerName: string; score: number; catchUpBonus?: number } | null
   systemNotification: string | null
 } {
   return {
@@ -456,9 +456,10 @@ export function buildGameResetState(): {
 
 export function createCorrectGuessNotification(
   playerName: string,
-  score: number
-): { playerName: string; score: number } {
-  return { playerName, score }
+  score: number,
+  catchUpBonus?: number
+): { playerName: string; score: number; catchUpBonus?: number } {
+  return catchUpBonus ? { playerName, score, catchUpBonus } : { playerName, score }
 }
 
 export function clearCorrectGuessNotification(): null {

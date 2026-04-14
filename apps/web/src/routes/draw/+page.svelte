@@ -70,7 +70,11 @@
   let lastRevealedWord = $state('')
   let lastRoundResult = $state<RoundResult | null>(null)
   let gameWinners = $state<Winner[]>([])
-  let correctGuessNotification = $state<{ playerName: string; score: number } | null>(null)
+  let correctGuessNotification = $state<{
+    playerName: string
+    score: number
+    catchUpBonus?: number
+  } | null>(null)
   let systemNotification = $state<string | null>(null)
   let systemNotificationTimeoutId: ReturnType<typeof setTimeout> | null = null
 
@@ -637,11 +641,11 @@
         currentDrawerId = next.currentDrawerId
         currentWord = next.currentWord
       },
-      onCorrectGuess: (guesserId, guesserName, score, remaining) => {
+      onCorrectGuess: (guesserId, guesserName, score, remaining, catchUpBonus) => {
         if (correctGuessTimeoutId) {
           clearTimeout(correctGuessTimeoutId)
         }
-        correctGuessNotification = createCorrectGuessNotification(guesserName, score)
+        correctGuessNotification = createCorrectGuessNotification(guesserName, score, catchUpBonus)
         // Clear notification after a few seconds
         correctGuessTimeoutId = setTimeout(() => {
           correctGuessNotification = clearCorrectGuessNotification()
@@ -1127,7 +1131,10 @@
     {#if correctGuessNotification}
       <div class="correct-guess-notification">
         ✅ {correctGuessNotification.playerName} guessed correctly! +{correctGuessNotification.score}
-        pts
+        pts{#if correctGuessNotification.catchUpBonus}
+          <span class="catch-up-bonus"
+            >(+{correctGuessNotification.catchUpBonus} catch-up bonus!)</span
+          >{/if}
       </div>
     {/if}
 
@@ -1386,6 +1393,11 @@
     font-weight: 600;
     z-index: 100;
     animation: slideDown 0.3s ease;
+  }
+
+  .catch-up-bonus {
+    color: #ffd700;
+    font-style: italic;
   }
 
   .system-notification {

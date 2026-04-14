@@ -55,7 +55,8 @@ export type GameEventHandler = {
     playerId: string,
     playerName: string,
     score: number,
-    timeRemaining: number
+    timeRemaining: number,
+    catchUpBonus?: number
   ) => void
   onTick?: (timeRemaining: number) => void
   onGameReset?: () => void
@@ -222,7 +223,8 @@ export class GameWebSocket {
           data.playerId,
           data.playerName,
           data.score,
-          data.timeRemaining
+          data.timeRemaining,
+          data.catchUpBonus
         )
         break
       case 'tick':
