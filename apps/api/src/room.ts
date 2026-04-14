@@ -38,17 +38,21 @@ import {
   GAME_END_TRANSITION_DELAY,
   ROUND_END_TRANSITION_DELAY,
   SKIP_ROUND_TRANSITION_DELAY,
+  WORD_CHOICE_DURATION_MS,
+  WORD_CHOICE_OPTIONS_COUNT,
 } from './constants'
-import { getRandomWordExcluding } from './vocabulary'
+import { getRandomWordExcluding, getRandomWordsExcluding } from './vocabulary'
 import {
   type GameState,
   type PlayingState,
   type RoundEndState,
   type GameOverState,
+  type WordChoiceState,
   createInitialGameState,
   scoresToRecord,
   type RoundResult,
   isPlayingState,
+  isWordChoiceState,
   gameStateToStorage,
   gameStateFromStorage,
   type StoredGameState,
@@ -114,6 +118,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   tickTimer: ReturnType<typeof setInterval> | null = null
   roundEndTimer: ReturnType<typeof setTimeout> | null = null
   gameEndTimer: ReturnType<typeof setTimeout> | null = null
+  wordChoiceTimer: ReturnType<typeof setTimeout> | null = null
+  hintTimer1: ReturnType<typeof setTimeout> | null = null
+  hintTimer2: ReturnType<typeof setTimeout> | null = null
+  private pendingWordOptions: string[] | null = null
+  private wordChoiceStartTime: number | null = null
 
   private async ensureInitialized() {
     if (!this.initialized) {
@@ -194,7 +203,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // via /ws before any socket is accepted (getWebSockets() returns empty array).
       // Without this, games in 'playing' or 'round-end' states would remain stuck
       // indefinitely until another state-changing event occurs.
-      if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {
+      if (
+        this.gameState.status === 'word-choice' ||
+        this.gameState.status === 'playing' ||
+        this.gameState.status === 'round-end'
+      ) {
         this.resumeGameFlowFromState()
       }
     }
@@ -206,6 +219,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
    * based on stored roundEndTime so rounds can continue or end as expected.
    */
   private resumeGameFlowFromState() {
+    if (this.gameState.status === 'word-choice') {
+      // pendingWordOptions are ephemeral — pick a fresh word on DO restart
+      const word = getRandomWordExcluding(this.gameState.usedWords)
+      this.gameState.usedWords.add(word)
+      // Transition state directly to word-choice so beginDrawing guard passes
+      this.beginDrawing(word)
+      return
+    }
+
     if (this.gameState.status === 'playing') {
       const endTime = this.gameState.roundEndTime ?? 0
       const remainingMs = endTime - Date.now()
@@ -574,6 +596,30 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           sendError('Failed to process fill')
         }
         break
+      case 'choose-word': {
+        const playerId = this.getPlayerIdForSocket(ws)
+        if (!playerId) break
+        if (!isWordChoiceState(this.gameState)) break
+        if (playerId !== this.gameState.currentDrawerId) break
+        const word = typeof data.word === 'string' ? (data.word as string).trim() : ''
+        if (!this.pendingWordOptions || !this.pendingWordOptions.includes(word)) {
+          try {
+            ws.send(
+              JSON.stringify({
+                type: 'error',
+                message: 'Invalid word choice',
+                action: 'choose-word',
+              })
+            )
+          } catch {
+            // Connection may be closed
+          }
+          break
+        }
+        this.clearTimers()
+        this.beginDrawing(word)
+        break
+      }
     }
   }
 
@@ -666,6 +712,29 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       }
       console.error('Unexpected error sending init message:', e)
       throw e
+    }
+
+    // If in word-choice phase and this is the drawer reconnecting, resend word-options
+    if (
+      isWordChoiceState(this.gameState) &&
+      playerId === this.gameState.currentDrawerId &&
+      this.pendingWordOptions
+    ) {
+      const elapsed = this.wordChoiceStartTime
+        ? Date.now() - this.wordChoiceStartTime
+        : WORD_CHOICE_DURATION_MS
+      const remaining = Math.max(1, Math.ceil((WORD_CHOICE_DURATION_MS - elapsed) / 1000))
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'word-options',
+            words: this.pendingWordOptions,
+            timeToChoose: remaining,
+          })
+        )
+      } catch {
+        // Connection may be closed
+      }
     }
 
     // Notify others about the new player
@@ -1296,6 +1365,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       roundGuessers: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
     }
 
     // Persist game state
@@ -1381,43 +1451,126 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   }
 
   /**
-   * Start a new round
+   * Start a new round (thin wrapper that delegates to beginWordChoice)
    */
   private startRound() {
-    // Get next connected drawer
-    let drawerId: string | null = null
-    let drawerName = ''
-    const connectedPlayers = new Set(this.getPlayers().map((p) => p.id))
+    this.beginWordChoice()
+  }
 
-    // Find next valid drawer
-    const { drawerId: nextDrawerId, roundNumber } = findNextDrawer(
+  /**
+   * Begin the word-choice phase: pick options, set WordChoiceState,
+   * send word-options to drawer and word-choice-start to others.
+   */
+  private beginWordChoice() {
+    const connectedPlayers = new Set(this.getPlayers().map((p) => p.id))
+    const { drawerId, roundNumber } = findNextDrawer(
       this.gameState.currentRound,
       this.gameState.drawerOrder,
       connectedPlayers
     )
-
-    if (nextDrawerId) {
-      drawerId = nextDrawerId
-      drawerName = this.getPlayerName(nextDrawerId)
-      this.gameState.currentRound = roundNumber
-    }
 
     if (!drawerId) {
       this.endGame()
       return
     }
 
-    // Pick a random word
-    const word = getRandomWordExcluding(this.gameState.usedWords)
+    const drawerName = this.getPlayerName(drawerId)
+    this.gameState.currentRound = roundNumber
+
+    const options = getRandomWordsExcluding(this.gameState.usedWords, WORD_CHOICE_OPTIONS_COUNT)
+    this.pendingWordOptions = options
+
+    const now = Date.now()
+    this.wordChoiceStartTime = now
+    const wordChoiceEndTime = now + WORD_CHOICE_DURATION_MS
+
+    this.gameState = {
+      ...this.gameState,
+      status: 'word-choice',
+      currentDrawerId: drawerId,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      endGameAfterCurrentRound:
+        'endGameAfterCurrentRound' in this.gameState
+          ? ((this.gameState as { endGameAfterCurrentRound?: boolean }).endGameAfterCurrentRound ??
+            false)
+          : false,
+    } as WordChoiceState
+
+    this.ctx.waitUntil(
+      this.persistGameState().catch((e) => console.error('Failed to persist word-choice state:', e))
+    )
+
+    const deadSockets: WebSocket[] = []
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+      if (!attachment?.playerId) continue
+      try {
+        if (attachment.playerId === drawerId) {
+          ws.send(
+            JSON.stringify({
+              type: 'word-options',
+              words: options,
+              timeToChoose: WORD_CHOICE_DURATION_MS / 1000,
+            })
+          )
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: 'word-choice-start',
+              roundNumber,
+              totalRounds: this.gameState.totalRounds,
+              drawerId,
+              drawerName,
+              wordChoiceEndTime,
+            })
+          )
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'InvalidStateError') {
+          deadSockets.push(ws)
+          continue
+        }
+        console.error('Unexpected word-choice send error:', error)
+      }
+    }
+    for (const deadWs of deadSockets) {
+      try {
+        deadWs.close()
+      } catch {
+        // Connection already closed
+      }
+    }
+
+    this.clearTimers()
+    this.wordChoiceTimer = setTimeout(() => {
+      if (this.pendingWordOptions && this.pendingWordOptions.length > 0) {
+        this.beginDrawing(this.pendingWordOptions[0])
+      }
+    }, WORD_CHOICE_DURATION_MS)
+  }
+
+  /**
+   * Begin the drawing phase for the chosen word.
+   * Sets PlayingState, clears canvas, broadcasts round-start, sets round timers.
+   */
+  private beginDrawing(word: string) {
+    if (!isWordChoiceState(this.gameState)) return
+
+    const drawerId = this.gameState.currentDrawerId
+    const drawerName = this.getPlayerName(drawerId)
+
+    this.pendingWordOptions = null
+    this.wordChoiceStartTime = null
     this.gameState.usedWords.add(word)
 
-    // Set round state
     const now = Date.now()
 
     this.gameState = {
       ...this.gameState,
       status: 'playing',
-      currentDrawerId: drawerId,
       currentWord: word,
       wordLength: word.length,
       roundStartTime: now,
@@ -1429,106 +1582,78 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           .filter((id) => id !== drawerId)
       ),
       roundGuesserScores: new Map(),
-      endGameAfterCurrentRound:
-        'endGameAfterCurrentRound' in this.gameState
-          ? ((this.gameState as { endGameAfterCurrentRound?: boolean }).endGameAfterCurrentRound ??
-            false)
-          : false,
+      revealedPositions: [],
     } as PlayingState
 
-    // Persist game state at round start
     this.ctx.waitUntil(
-      this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+      this.persistGameState().catch((e) => console.error('Failed to persist playing state:', e))
     )
 
-    // Clear canvas for new round - clear in-memory arrays immediately to prevent
-    // race conditions where new strokes/fills get added then wiped by async callback
+    // Clear canvas
     if (this.storageWriteTimer) {
       clearTimeout(this.storageWriteTimer)
       this.storageWriteTimer = null
     }
     this.strokeStorageDirty = false
     this.fillStorageDirty = false
-
-    // Clear in-memory arrays immediately before async storage deletion
-    // This prevents race conditions where new drawer actions could be added
-    // and then wiped when the async delete callback runs later
     this.strokes = []
     this.fills = []
 
-    // Async storage deletion - errors will mark storage as dirty for retry
     const strokeDeletePromise = this.queueStrokeDelete().catch((e) => {
       console.error('Failed to delete strokes from storage:', e)
       this.strokeStorageDirty = true
       this.scheduleStorageWrite('strokes')
     })
-
     const fillDeletePromise = this.queueFillDelete().catch((e) => {
       console.error('Failed to delete fills from storage:', e)
       this.fillStorageDirty = true
       this.scheduleStorageWrite('fills')
     })
-
     this.ctx.waitUntil(strokeDeletePromise)
     this.ctx.waitUntil(fillDeletePromise)
 
-    // Broadcast round start to all players
-    // Note: Send word only to the drawer
+    // Broadcast round-start (with word to drawer only)
     const deadSockets: WebSocket[] = []
     for (const ws of this.ctx.getWebSockets()) {
       const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
-      if (attachment?.playerId) {
-        try {
-          ws.send(
-            JSON.stringify({
-              type: 'round-start',
-              roundNumber: this.gameState.currentRound,
-              totalRounds: this.gameState.totalRounds,
-              drawerId,
-              drawerName,
-              word: attachment.playerId === drawerId ? word : undefined,
-              wordLength: word.length,
-              endTime: this.gameState.roundEndTime,
-            })
-          )
-        } catch (error) {
-          if (error instanceof DOMException && error.name === 'InvalidStateError') {
-            deadSockets.push(ws)
-            continue
-          }
-          console.error('Unexpected round-start send error:', error)
+      if (!attachment?.playerId) continue
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'round-start',
+            roundNumber: this.gameState.currentRound,
+            totalRounds: this.gameState.totalRounds,
+            drawerId,
+            drawerName,
+            word: attachment.playerId === drawerId ? word : undefined,
+            wordLength: word.length,
+            endTime: this.gameState.roundEndTime,
+          })
+        )
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'InvalidStateError') {
+          deadSockets.push(ws)
+          continue
         }
+        console.error('Unexpected round-start send error:', error)
       }
     }
-
-    // Close dead connections to prevent accumulation
     for (const deadWs of deadSockets) {
       try {
         deadWs.close()
-      } catch (e) {
-        if (!(e instanceof DOMException && e.name === 'InvalidStateError')) {
-          console.error('Unexpected error closing dead socket:', e)
-        }
+      } catch {
+        // Connection already closed
       }
     }
 
-    // Broadcast canvas clear
     this.broadcast({ type: 'clear' })
 
-    // Set round timer
     this.clearTimers()
-    this.roundTimer = setTimeout(() => {
-      this.endRound(false)
-    }, ROUND_DURATION_MS)
-
-    // Set tick timer for countdown
+    this.roundTimer = setTimeout(() => this.endRound(false), ROUND_DURATION_MS)
     this.tickTimer = setInterval(() => {
       const remaining = Math.max(0, (this.gameState.roundEndTime || 0) - Date.now())
       if (remaining > 0) {
-        this.broadcast({
-          type: 'tick',
-          timeRemaining: Math.ceil(remaining / 1000),
-        })
+        this.broadcast({ type: 'tick', timeRemaining: Math.ceil(remaining / 1000) })
       }
     }, 1000)
   }
