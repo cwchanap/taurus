@@ -1961,6 +1961,130 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     expect(endGameSpy).toHaveBeenCalled()
   })
 
+  test('choose-word: drawer choosing a valid word transitions to playing state', async () => {
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    // Set up word-choice state with p1 as drawer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['cat', 'dog', 'fish']
+
+    await room.webSocketMessage(drawerWs, JSON.stringify({ type: 'choose-word', word: 'cat' }))
+    await flushPromises()
+
+    // Game should now be in playing state with the chosen word
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('playing')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.currentWord).toBe('cat')
+  })
+
+  test('choose-word: invalid word (not in options) is rejected with error', async () => {
+    const drawerWs = createMockWs('p1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([drawerWs])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1'],
+      scores: new Map([['p1', { score: 0, name: 'Drawer' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['cat', 'dog', 'fish']
+
+    await room.webSocketMessage(drawerWs, JSON.stringify({ type: 'choose-word', word: 'elephant' }))
+    await flushPromises()
+
+    // Game should remain in word-choice state
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('word-choice')
+
+    const msgs = getSentMessages(drawerWs)
+    const errorMsg = msgs.find((m) => m?.type === 'error')
+    expect(errorMsg).toBeDefined()
+  })
+
+  test('choose-word: non-drawer sending choose-word is silently ignored', async () => {
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['cat', 'dog', 'fish']
+
+    // Guesser (p2) sends choose-word — should be silently ignored
+    await room.webSocketMessage(guesserWs, JSON.stringify({ type: 'choose-word', word: 'cat' }))
+    await flushPromises()
+
+    // Game should remain in word-choice state
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('word-choice')
+  })
+
   test('handleCorrectGuess updates score and broadcasts correct-guess', async () => {
     const drawerWs = createMockWs('p1', 'Drawer')
     const guesserWs = createMockWs('p2', 'Guesser')

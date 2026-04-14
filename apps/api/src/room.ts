@@ -714,28 +714,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       throw e
     }
 
-    // If in word-choice phase and this is the drawer reconnecting, resend word-options
-    if (
-      isWordChoiceState(this.gameState) &&
-      playerId === this.gameState.currentDrawerId &&
-      this.pendingWordOptions
-    ) {
-      const elapsed = this.wordChoiceStartTime
-        ? Date.now() - this.wordChoiceStartTime
-        : WORD_CHOICE_DURATION_MS
-      const remaining = Math.max(1, Math.ceil((WORD_CHOICE_DURATION_MS - elapsed) / 1000))
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'word-options',
-            words: this.pendingWordOptions,
-            timeToChoose: remaining,
-          })
-        )
-      } catch {
-        // Connection may be closed
-      }
-    }
+    // Note: reconnecting drawers during word-choice cannot be identified because
+    // every join generates a fresh playerId via crypto.randomUUID(). The game has
+    // no persistent player identity, so resending word-options on reconnect is not
+    // currently supported.
 
     // Notify others about the new player
     this.broadcast(
