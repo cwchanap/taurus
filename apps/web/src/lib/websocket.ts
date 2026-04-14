@@ -60,6 +60,14 @@ export type GameEventHandler = {
   onTick?: (timeRemaining: number) => void
   onGameReset?: () => void
   onServerError?: (message: string, action?: string, nonce?: string) => void
+  onWordChoiceStart?: (
+    roundNumber: number,
+    totalRounds: number,
+    drawerId: string,
+    drawerName: string,
+    wordChoiceEndTime: number
+  ) => void
+  onWordOptions?: (words: string[], timeToChoose: number) => void
 }
 
 export class GameWebSocket {
@@ -222,6 +230,21 @@ export class GameWebSocket {
       case 'game-reset':
         this.handlers.onGameReset?.()
         break
+      case 'word-choice-start':
+        this.handlers.onWordChoiceStart?.(
+          data.roundNumber,
+          data.totalRounds,
+          data.drawerId,
+          data.drawerName,
+          data.wordChoiceEndTime
+        )
+        break
+      case 'word-options':
+        this.handlers.onWordOptions?.(data.words, data.timeToChoose)
+        break
+      case 'hint':
+        // handled in Task 11
+        break
       case 'error':
         console.error('Server error:', data.message)
         this.handlers.onServerError?.(data.message, data.action, data.nonce)
@@ -303,6 +326,10 @@ export class GameWebSocket {
 
   sendResetGame(): boolean {
     return this.send({ type: 'reset-game' })
+  }
+
+  sendChooseWord(word: string) {
+    this.send({ type: 'choose-word', word })
   }
 
   disconnect() {

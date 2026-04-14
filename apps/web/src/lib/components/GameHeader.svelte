@@ -38,7 +38,7 @@
   const timerClass = $derived(timeRemaining <= 10 ? 'urgent' : timeRemaining <= 30 ? 'warning' : '')
 </script>
 
-{#if status === 'playing' || status === 'round-end'}
+{#if status === 'playing' || status === 'round-end' || status === 'word-choice'}
   <div class="game-header">
     <div class="round-info">
       <span class="round-badge">Round {roundNumber}/{totalRounds}</span>
@@ -57,7 +57,11 @@
       {/if}
     </div>
 
-    {#if status === 'playing'}
+    {#if status === 'word-choice'}
+      <div class="timer-display round-over">
+        <span class="round-over-text">Choosing word...</span>
+      </div>
+    {:else if status === 'playing'}
       <div class="timer-display {timerClass}">
         <svg
           class="timer-icon"

@@ -1765,7 +1765,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       currentDrawerId: null,
       currentWord: null,
       wordLength: null,
-    } as RoundEndState
+    } as unknown as RoundEndState
 
     // Persist round-end state
     this.ctx.waitUntil(

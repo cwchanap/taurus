@@ -74,6 +74,12 @@
   let systemNotification = $state<string | null>(null)
   let systemNotificationTimeoutId: ReturnType<typeof setTimeout> | null = null
 
+  // Word choice state
+  let wordChoiceOptions = $state<string[]>([])
+  let wordChoiceEndTime = $state<number | null>(null)
+  let wordChoiceTimeRemaining = $state(0)
+  let wordChoiceTimerId: ReturnType<typeof setInterval> | null = null
+
   let color = $state<PaletteColor>('#4ECDC4')
   let brushSize = $state(8)
   let tool = $state<Tool>('pencil')
@@ -543,7 +549,34 @@
         scores = initialScores
         gameStatus = 'starting'
       },
+      onWordChoiceStart: (round, rounds, drawerId, drawerNameVal, endTime) => {
+        gameStatus = 'word-choice'
+        currentDrawerId = drawerId
+        currentDrawerName = drawerNameVal
+        roundNumber = round
+        totalRounds = rounds
+        wordChoiceEndTime = endTime
+        if (wordChoiceTimerId) clearInterval(wordChoiceTimerId)
+        wordChoiceTimerId = setInterval(() => {
+          wordChoiceTimeRemaining = Math.max(0, Math.ceil((wordChoiceEndTime! - Date.now()) / 1000))
+        }, 250)
+      },
+      onWordOptions: (words, timeToChoose) => {
+        wordChoiceOptions = words
+        wordChoiceEndTime = Date.now() + timeToChoose * 1000
+        if (wordChoiceTimerId) clearInterval(wordChoiceTimerId)
+        wordChoiceTimerId = setInterval(() => {
+          wordChoiceTimeRemaining = Math.max(0, Math.ceil((wordChoiceEndTime! - Date.now()) / 1000))
+        }, 250)
+      },
       onRoundStart: (round, rounds, drawerId, drawerNameVal, word, wordLen, endTime) => {
+        wordChoiceOptions = []
+        wordChoiceEndTime = null
+        wordChoiceTimeRemaining = 0
+        if (wordChoiceTimerId) {
+          clearInterval(wordChoiceTimerId)
+          wordChoiceTimerId = null
+        }
         const next = buildRoundStartState(
           round,
           rounds,
@@ -620,6 +653,13 @@
           clearTimeout(systemNotificationTimeoutId)
           systemNotificationTimeoutId = null
         }
+        if (wordChoiceTimerId) {
+          clearInterval(wordChoiceTimerId)
+          wordChoiceTimerId = null
+        }
+        wordChoiceOptions = []
+        wordChoiceEndTime = null
+        wordChoiceTimeRemaining = 0
 
         const next = buildGameResetState()
         gameStatus = next.gameStatus
@@ -708,6 +748,11 @@
       optimisticFillCleanupId = null
     }
   })
+
+  function chooseWord(word: string) {
+    ws?.sendChooseWord(word)
+    wordChoiceOptions = []
+  }
 
   function handleStrokeStart(stroke: Stroke): boolean {
     strokes = [...strokes, stroke]
@@ -1032,7 +1077,7 @@
     </header>
 
     <!-- Game Header for active game -->
-    {#if gameStatus === 'playing' || gameStatus === 'round-end'}
+    {#if gameStatus === 'playing' || gameStatus === 'round-end' || gameStatus === 'word-choice'}
       <GameHeader
         status={gameStatus}
         {currentWord}
@@ -1043,6 +1088,30 @@
         {roundNumber}
         {totalRounds}
       />
+    {/if}
+
+    <!-- Word choice overlay -->
+    {#if gameStatus === 'word-choice'}
+      <div class="word-choice-overlay">
+        {#if wordChoiceOptions.length > 0}
+          <div class="word-choice-card">
+            <h2>Choose a word to draw</h2>
+            <p class="word-choice-timer">{wordChoiceTimeRemaining}s</p>
+            <div class="word-choice-options">
+              {#each wordChoiceOptions as word}
+                <button class="word-option-btn" onclick={() => chooseWord(word)}>
+                  {word}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {:else}
+          <div class="word-choice-card">
+            <p>{currentDrawerName} is choosing a word...</p>
+            <p class="word-choice-timer">{wordChoiceTimeRemaining}s</p>
+          </div>
+        {/if}
+      </div>
     {/if}
 
     <!-- Correct guess notification -->
@@ -1332,6 +1401,64 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+  }
+
+  .word-choice-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+
+  .word-choice-card {
+    background: linear-gradient(135deg, rgb(30 30 50), rgb(20 20 40));
+    border: 1px solid rgb(78 205 196 / 0.3);
+    border-radius: 20px;
+    padding: 40px;
+    text-align: center;
+    min-width: 320px;
+  }
+
+  .word-choice-card h2 {
+    color: #4ecdc4;
+    font-size: 22px;
+    margin: 0 0 8px;
+  }
+
+  .word-choice-timer {
+    font-size: 36px;
+    font-weight: 700;
+    color: #ffeaa7;
+    margin: 0 0 24px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .word-choice-options {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .word-option-btn {
+    padding: 16px 32px;
+    background: rgb(78 205 196 / 0.15);
+    border: 2px solid rgb(78 205 196 / 0.3);
+    border-radius: 12px;
+    color: white;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    letter-spacing: 1px;
+  }
+
+  .word-option-btn:hover {
+    background: rgb(78 205 196 / 0.3);
+    border-color: #4ecdc4;
+    transform: translateY(-2px);
   }
 
   .round-overlay,
