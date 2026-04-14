@@ -68,6 +68,7 @@ export type GameEventHandler = {
     wordChoiceEndTime: number
   ) => void
   onWordOptions?: (words: string[], timeToChoose: number) => void
+  onHint?: (revealed: string) => void
 }
 
 export class GameWebSocket {
@@ -243,7 +244,7 @@ export class GameWebSocket {
         this.handlers.onWordOptions?.(data.words, data.timeToChoose)
         break
       case 'hint':
-        // handled in Task 11
+        this.handlers.onHint?.(data.revealed)
         break
       case 'error':
         console.error('Server error:', data.message)

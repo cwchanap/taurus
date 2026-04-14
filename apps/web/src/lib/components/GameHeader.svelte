@@ -10,6 +10,7 @@
     isCurrentDrawer: boolean
     roundNumber: number
     totalRounds: number
+    hintString?: string
   }
 
   let {
@@ -21,6 +22,7 @@
     isCurrentDrawer,
     roundNumber,
     totalRounds,
+    hintString,
   }: Props = $props()
 
   // Generate masked word (underscores with spaces) - always mask, never reveal
@@ -51,7 +53,7 @@
       {:else}
         <span class="word-label">Guess:</span>
         {#if wordLength > 0}
-          <span class="word masked">{maskedWord}</span>
+          <span class="word masked">{hintString || maskedWord}</span>
           <span class="word-hint">({wordLength} letters)</span>
         {/if}
       {/if}
