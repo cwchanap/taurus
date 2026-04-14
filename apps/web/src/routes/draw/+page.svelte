@@ -80,6 +80,9 @@
   let wordChoiceTimeRemaining = $state(0)
   let wordChoiceTimerId: ReturnType<typeof setInterval> | null = null
 
+  // Hint state
+  let hintString = $state('')
+
   let color = $state<PaletteColor>('#4ECDC4')
   let brushSize = $state(8)
   let tool = $state<Tool>('pencil')
@@ -569,10 +572,14 @@
           wordChoiceTimeRemaining = Math.max(0, Math.ceil((wordChoiceEndTime! - Date.now()) / 1000))
         }, 250)
       },
+      onHint: (revealed) => {
+        hintString = revealed
+      },
       onRoundStart: (round, rounds, drawerId, drawerNameVal, word, wordLen, endTime) => {
         wordChoiceOptions = []
         wordChoiceEndTime = null
         wordChoiceTimeRemaining = 0
+        hintString = ''
         if (wordChoiceTimerId) {
           clearInterval(wordChoiceTimerId)
           wordChoiceTimerId = null
@@ -660,6 +667,7 @@
         wordChoiceOptions = []
         wordChoiceEndTime = null
         wordChoiceTimeRemaining = 0
+        hintString = ''
 
         const next = buildGameResetState()
         gameStatus = next.gameStatus
@@ -1087,6 +1095,7 @@
         {isCurrentDrawer}
         {roundNumber}
         {totalRounds}
+        hintString={isCurrentDrawer ? undefined : hintString}
       />
     {/if}
 
