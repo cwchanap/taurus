@@ -569,6 +569,15 @@
         }, 250)
       },
       onWordOptions: (words, timeToChoose) => {
+        if (gameStatus !== 'word-choice') {
+          roundNumber = Math.min(totalRounds, Math.max(1, roundNumber + 1))
+        }
+        gameStatus = 'word-choice'
+        currentDrawerId = playerId
+        currentDrawerName = playerName
+        currentWord = undefined
+        wordLength = 0
+        hintString = ''
         wordChoiceOptions = words
         wordChoiceEndTime = Date.now() + timeToChoose * 1000
         if (wordChoiceTimerId) clearInterval(wordChoiceTimerId)
@@ -759,11 +768,14 @@
       clearInterval(optimisticFillCleanupId)
       optimisticFillCleanupId = null
     }
+    if (wordChoiceTimerId) {
+      clearInterval(wordChoiceTimerId)
+      wordChoiceTimerId = null
+    }
   })
 
   function chooseWord(word: string) {
     ws?.sendChooseWord(word)
-    wordChoiceOptions = []
   }
 
   function handleStrokeStart(stroke: Stroke): boolean {
@@ -1105,23 +1117,34 @@
 
     <!-- Word choice overlay -->
     {#if gameStatus === 'word-choice'}
-      <div class="word-choice-overlay">
+      <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
         {#if wordChoiceOptions.length > 0}
-          <div class="word-choice-card">
-            <h2>Choose a word to draw</h2>
-            <p class="word-choice-timer">{wordChoiceTimeRemaining}s</p>
-            <div class="word-choice-options">
+          <div
+            class="min-w-80 rounded-[20px] border border-[#4ecdc4]/30 bg-[linear-gradient(135deg,rgb(30_30_50),rgb(20_20_40))] p-10 text-center"
+          >
+            <h2 class="mb-2 text-[22px] font-semibold text-[#4ecdc4]">Choose a word to draw</h2>
+            <p class="mb-6 font-mono text-4xl font-bold text-[#ffeaa7]">
+              {wordChoiceTimeRemaining}s
+            </p>
+            <div class="flex flex-col gap-3">
               {#each wordChoiceOptions as word}
-                <button class="word-option-btn" onclick={() => chooseWord(word)}>
+                <button
+                  class="rounded-xl border-2 border-[#4ecdc4]/30 bg-[#4ecdc4]/15 px-8 py-4 text-lg font-semibold tracking-[0.06em] text-white transition duration-150 hover:-translate-y-0.5 hover:border-[#4ecdc4] hover:bg-[#4ecdc4]/30"
+                  onclick={() => chooseWord(word)}
+                >
                   {word}
                 </button>
               {/each}
             </div>
           </div>
         {:else}
-          <div class="word-choice-card">
+          <div
+            class="min-w-80 rounded-[20px] border border-[#4ecdc4]/30 bg-[linear-gradient(135deg,rgb(30_30_50),rgb(20_20_40))] p-10 text-center"
+          >
             <p>{currentDrawerName} is choosing a word...</p>
-            <p class="word-choice-timer">{wordChoiceTimeRemaining}s</p>
+            <p class="mt-2 font-mono text-4xl font-bold text-[#ffeaa7]">
+              {wordChoiceTimeRemaining}s
+            </p>
           </div>
         {/if}
       </div>
@@ -1422,64 +1445,6 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
-  }
-
-  .word-choice-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgb(0 0 0 / 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-
-  .word-choice-card {
-    background: linear-gradient(135deg, rgb(30 30 50), rgb(20 20 40));
-    border: 1px solid rgb(78 205 196 / 0.3);
-    border-radius: 20px;
-    padding: 40px;
-    text-align: center;
-    min-width: 320px;
-  }
-
-  .word-choice-card h2 {
-    color: #4ecdc4;
-    font-size: 22px;
-    margin: 0 0 8px;
-  }
-
-  .word-choice-timer {
-    font-size: 36px;
-    font-weight: 700;
-    color: #ffeaa7;
-    margin: 0 0 24px;
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  .word-choice-options {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .word-option-btn {
-    padding: 16px 32px;
-    background: rgb(78 205 196 / 0.15);
-    border: 2px solid rgb(78 205 196 / 0.3);
-    border-radius: 12px;
-    color: white;
-    font-size: 18px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    letter-spacing: 1px;
-  }
-
-  .word-option-btn:hover {
-    background: rgb(78 205 196 / 0.3);
-    border-color: #4ecdc4;
-    transform: translateY(-2px);
   }
 
   .round-overlay,

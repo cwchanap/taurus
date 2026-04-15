@@ -114,7 +114,7 @@ Spaces and hyphens always shown. Drawer never receives hints.
 
 ### Reveal Algorithm
 
-```
+```text
 word = "apple"
 masked = ["_", "_", "_", "_", "_"]
 at 50%: reveal 1 random position → ["_", "_", "_", "_", "e"]

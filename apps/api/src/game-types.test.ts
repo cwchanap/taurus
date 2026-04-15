@@ -451,6 +451,7 @@ describe('type guards', () => {
 
 describe('WordChoiceState serialization', () => {
   it('round-trips through gameStateToStorage/gameStateFromStorage', () => {
+    const choiceDeadline = Date.now() + 10_000
     const state: WordChoiceState = {
       status: 'word-choice',
       currentRound: 1,
@@ -461,6 +462,8 @@ describe('WordChoiceState serialization', () => {
       roundStartTime: null,
       roundEndTime: null,
       endGameAfterCurrentRound: false,
+      offeredWords: ['apple', 'banana', 'cherry'],
+      choiceDeadline,
       drawerOrder: ['player1', 'player2'],
       scores: new Map([['player1', { score: 0, name: 'Alice' }]]),
       correctGuessers: new Set(),
@@ -473,7 +476,33 @@ describe('WordChoiceState serialization', () => {
     const restored = gameStateFromStorage(stored)
     expect(restored.status).toBe('word-choice')
     expect((restored as WordChoiceState).currentDrawerId).toBe('player1')
+    expect((restored as WordChoiceState).offeredWords).toEqual(['apple', 'banana', 'cherry'])
+    expect((restored as WordChoiceState).choiceDeadline).toBe(choiceDeadline)
     expect(restored.consecutiveMissedRounds.get('player2')).toBe(2)
+  })
+
+  it('defaults word-choice metadata when restoring older storage records', () => {
+    const stored: StoredGameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'player1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      endGameAfterCurrentRound: false,
+      drawerOrder: ['player1', 'player2'],
+      scores: [],
+      correctGuessers: [],
+      roundGuessers: ['player2'],
+      roundGuesserScores: [],
+      usedWords: [],
+    }
+
+    const restored = gameStateFromStorage(stored) as WordChoiceState
+    expect(restored.offeredWords).toEqual([])
+    expect(restored.choiceDeadline).toBeNull()
   })
 })
 

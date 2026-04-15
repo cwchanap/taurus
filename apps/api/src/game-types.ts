@@ -52,6 +52,8 @@ export type WordChoiceState = BaseGameState & {
   roundStartTime: null
   roundEndTime: null
   endGameAfterCurrentRound: boolean
+  offeredWords: string[]
+  choiceDeadline: number | null
 }
 
 // Playing state - active round in progress
@@ -192,6 +194,8 @@ export interface StoredGameState {
   roundGuesserScores: [string, number][]
   usedWords: string[]
   endGameAfterCurrentRound?: boolean
+  offeredWords?: string[]
+  choiceDeadline?: number | null
   nextTransitionAt?: number
   consecutiveMissedRounds?: [string, number][]
   revealedPositions?: number[]
@@ -216,12 +220,17 @@ export function gameStateToStorage(state: GameState): StoredGameState {
     roundGuessers: Array.from(state.roundGuessers),
     roundGuesserScores: Array.from(state.roundGuesserScores.entries()),
     usedWords: Array.from(state.usedWords),
-    consecutiveMissedRounds: Array.from(state.consecutiveMissedRounds.entries()),
+    consecutiveMissedRounds: Array.from((state.consecutiveMissedRounds ?? new Map()).entries()),
   }
 
   // Only include endGameAfterCurrentRound for states that have it
   if (isWordChoiceState(state) || isPlayingState(state) || isRoundEndState(state)) {
     stored.endGameAfterCurrentRound = state.endGameAfterCurrentRound
+  }
+
+  if (isWordChoiceState(state)) {
+    stored.offeredWords = state.offeredWords
+    stored.choiceDeadline = state.choiceDeadline
   }
 
   // Only include nextTransitionAt for round-end state
@@ -304,6 +313,8 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         roundStartTime: null,
         roundEndTime: null,
         endGameAfterCurrentRound: stored.endGameAfterCurrentRound ?? false,
+        offeredWords: stored.offeredWords ?? [],
+        choiceDeadline: stored.choiceDeadline ?? null,
       } as WordChoiceState
     }
     case 'playing': {

@@ -15,10 +15,16 @@ import {
   undoStroke,
   validateFillRequest,
   editDistance,
+  isCloseGuess,
   buildHintString,
   pickNextRevealPositions,
 } from './game-logic'
-import { createInitialGameState, type PlayingState, type RoundEndState } from './game-types'
+import {
+  createInitialGameState,
+  isPlayingState,
+  type PlayingState,
+  type RoundEndState,
+} from './game-types'
 import {
   ROUND_DURATION_MS,
   CORRECT_GUESS_BASE_SCORE,
@@ -93,6 +99,7 @@ describe('handlePlayerLeaveInActiveGame', () => {
 
     test('should remove player from drawer order and adjust rounds', () => {
       const state = createPlayingGameState(['p1', 'p2', 'p3'], 0)
+      state.revealedPositions = [1, 4]
       const remainingPlayers = ['p1', 'p2'] // p3 leaving
 
       const result = handlePlayerLeaveInActiveGame('p3', state, remainingPlayers)
@@ -103,6 +110,9 @@ describe('handlePlayerLeaveInActiveGame', () => {
       expect(result.updatedGameState.drawerOrder).toEqual(['p1', 'p2'])
       expect(result.updatedGameState.totalRounds).toBe(2)
       expect(result.updatedGameState.currentRound).toBe(1) // Should not decrement
+      expect(isPlayingState(result.updatedGameState)).toBe(true)
+      if (!isPlayingState(result.updatedGameState)) throw new Error('Expected playing state')
+      expect(result.updatedGameState.revealedPositions).toEqual([1, 4])
       expect(result.updatedGameState.correctGuessers.has('p3')).toBe(false)
       expect(result.updatedGameState.roundGuessers.has('p3')).toBe(false)
     })
@@ -771,6 +781,21 @@ describe('editDistance', () => {
     expect(editDistance('', 'abc')).toBe(3)
     expect(editDistance('abc', '')).toBe(3)
     expect(editDistance('', '')).toBe(0)
+  })
+})
+
+describe('isCloseGuess', () => {
+  it('matches near guesses within the short-word threshold', () => {
+    expect(isCloseGuess(' appl ', 'apple')).toBe(true)
+  })
+
+  it('matches near guesses within the long-word threshold', () => {
+    expect(isCloseGuess('elepant', 'elephant')).toBe(true)
+  })
+
+  it('rejects exact matches and guesses outside the threshold', () => {
+    expect(isCloseGuess('apple', 'apple')).toBe(false)
+    expect(isCloseGuess('dog', 'elephant')).toBe(false)
   })
 })
 
