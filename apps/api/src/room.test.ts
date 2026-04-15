@@ -163,6 +163,10 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect((room as any).roundTimer).not.toBeNull()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).tickTimer).not.toBeNull()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hintTimer1).not.toBeNull()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hintTimer2).not.toBeNull()
   })
 
   test('rehydrates timers even when no active sockets exist (cold restart scenario)', async () => {
@@ -217,6 +221,63 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect((room as any).roundTimer).not.toBeNull()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).tickTimer).not.toBeNull()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hintTimer1).not.toBeNull()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hintTimer2).not.toBeNull()
+  })
+
+  test('rehydrates word-choice state without auto-starting the round', async () => {
+    const choiceDeadline = Date.now() + 10_000
+    mockStorageGet.mockImplementation((key: string) => {
+      switch (key) {
+        case 'strokes':
+          return Promise.resolve([])
+        case 'created':
+          return Promise.resolve(true)
+        case 'chatHistory':
+          return Promise.resolve([])
+        case 'hostPlayerId':
+          return Promise.resolve('host-1')
+        case 'gameState':
+          return Promise.resolve({
+            status: 'word-choice',
+            currentRound: 1,
+            totalRounds: 2,
+            currentDrawerId: 'drawer-1',
+            currentWord: null,
+            wordLength: null,
+            roundStartTime: null,
+            roundEndTime: null,
+            drawerOrder: ['drawer-1', 'guesser-1'],
+            scores: [
+              ['drawer-1', { score: 0, name: 'Drawer' }],
+              ['guesser-1', { score: 0, name: 'Guesser' }],
+            ],
+            correctGuessers: [],
+            roundGuessers: ['guesser-1'],
+            roundGuesserScores: [],
+            usedWords: [],
+            endGameAfterCurrentRound: false,
+            offeredWords: ['apple', 'cat', 'dog'],
+            choiceDeadline,
+          })
+        default:
+          return Promise.resolve(undefined)
+      }
+    })
+
+    mockGetWebSockets.mockReturnValue([])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).ensureInitialized()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('word-choice')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).pendingWordOptions).toEqual(['apple', 'cat', 'dog'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).wordChoiceTimer).not.toBeNull()
   })
 
   test('persists updated game state when player leaves but game continues', async () => {
@@ -3231,9 +3292,10 @@ describe('DrawingRoom - timer callback coverage', () => {
   test('startRound: round timer callback calls endRound when it fires', () => {
     const originalSetTimeout = globalThis.setTimeout
     const originalSetInterval = globalThis.setInterval
+    const scheduledTimeouts: Array<() => void> = []
     globalThis.setTimeout = ((fn: () => void) => {
-      fn()
-      return 1 as unknown as ReturnType<typeof setTimeout>
+      scheduledTimeouts.push(fn)
+      return scheduledTimeouts.length as unknown as ReturnType<typeof setTimeout>
     }) as unknown as typeof setTimeout
     globalThis.setInterval = (() => {
       // Don't call the tick interval callback immediately as it would loop
@@ -3247,14 +3309,16 @@ describe('DrawingRoom - timer callback coverage', () => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(room as any).gameState = {
-        status: 'starting',
-        currentRound: 0,
+        status: 'word-choice',
+        currentRound: 1,
         totalRounds: 2,
-        currentDrawerId: null,
+        currentDrawerId: 'p1',
         currentWord: null,
         wordLength: null,
         roundStartTime: null,
         roundEndTime: null,
+        offeredWords: ['apple', 'cat', 'dog'],
+        choiceDeadline: Date.now() + 10_000,
         drawerOrder: ['p1', 'p2'],
         scores: new Map([
           ['p1', { score: 0, name: 'Drawer' }],
@@ -3267,19 +3331,72 @@ describe('DrawingRoom - timer callback coverage', () => {
         endGameAfterCurrentRound: false,
         consecutiveMissedRounds: new Map<string, number>(),
       }
-
-      // startRound sets roundTimer (which fires immediately calling endRound)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(room as any).startRound()
-
-      // After endRound fires, game should transition to round-end
+      ;(room as any).pendingWordOptions = ['apple', 'cat', 'dog']
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const status = (room as any).gameState.status
-      expect(['round-end', 'game-over']).toContain(status)
+      ;(room as any).beginDrawing('apple')
+
+      const endRoundSpy = mock(() => {})
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).endRound = endRoundSpy
+
+      const roundTimerCallback = scheduledTimeouts[0]
+      expect(roundTimerCallback).toBeDefined()
+      roundTimerCallback()
+
+      expect(endRoundSpy).toHaveBeenCalledWith(false)
     } finally {
       globalThis.setTimeout = originalSetTimeout
       globalThis.setInterval = originalSetInterval
     }
+  })
+
+  test('handleLeave advances word-choice when the current drawer disconnects', () => {
+    const leavingDrawerWs = createMockWs('p1', 'Drawer')
+    const nextDrawerWs = createMockWs('p2', 'Next Drawer')
+    mockGetWebSockets.mockReturnValue([leavingDrawerWs, nextDrawerWs])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      endGameAfterCurrentRound: false,
+      offeredWords: ['apple', 'cat', 'dog'],
+      choiceDeadline: Date.now() + 10_000,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Next Drawer' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['apple', 'cat', 'dog']
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).wordChoiceStartTime = Date.now()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).wordChoiceTimer = 1 as unknown as ReturnType<typeof setTimeout>
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(leavingDrawerWs)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('word-choice')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.currentDrawerId).toBe('p2')
+    const nextDrawerMessages = getSentMessages(nextDrawerWs)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(nextDrawerMessages.some((message: any) => message?.type === 'word-options')).toBe(true)
   })
 
   test('beginDrawing: tick timer callback fires and broadcasts tick', () => {
@@ -3338,6 +3455,7 @@ describe('DrawingRoom - hint timers', () => {
   let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
   let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
   let mockState: Partial<DurableObjectState>
+  let mockStoragePut: ReturnType<typeof mock>
   let mockGetWebSockets: ReturnType<typeof mock>
   let mockWaitUntil: ReturnType<typeof mock>
   let mockEnv: unknown
@@ -3345,13 +3463,14 @@ describe('DrawingRoom - hint timers', () => {
   beforeEach(async () => {
     ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
 
+    mockStoragePut = mock(() => Promise.resolve())
     mockGetWebSockets = mock(() => [])
     mockWaitUntil = mock(() => {})
 
     mockState = {
       storage: {
         get: mock(() => Promise.resolve(undefined)),
-        put: mock(() => Promise.resolve()),
+        put: mockStoragePut,
         delete: mock(() => Promise.resolve()),
         list: mock(() => Promise.resolve(new Map())),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3409,7 +3528,7 @@ describe('DrawingRoom - hint timers', () => {
     }
   }
 
-  test('sendHint(1) sends hint message to non-drawers but not to the drawer', () => {
+  test('sendHint(1) sends hint message to non-drawers but not to the drawer', async () => {
     const drawerWs = createMockWs('p1', 'Drawer')
     const guesserWs = createMockWs('p2', 'Guesser')
     mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
@@ -3417,7 +3536,7 @@ describe('DrawingRoom - hint timers', () => {
     setPlayingStateWithWord('p1', ['p2'], 'apple')
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).sendHint(1)
+    await (room as any).sendHint(1)
 
     const drawerMsgs = getSentMessages(drawerWs)
     const guesserMsgs = getSentMessages(guesserWs)
@@ -3434,7 +3553,7 @@ describe('DrawingRoom - hint timers', () => {
     expect(typeof (hintMsg as any).revealed).toBe('string')
   })
 
-  test('sendHint(2) builds on hint(1) — revealed positions are cumulative', () => {
+  test('sendHint(2) builds on hint(1) — revealed positions are cumulative', async () => {
     const drawerWs = createMockWs('p1', 'Drawer')
     const guesserWs = createMockWs('p2', 'Guesser')
     mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
@@ -3442,13 +3561,13 @@ describe('DrawingRoom - hint timers', () => {
     setPlayingStateWithWord('p1', ['p2'], 'elephant')
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).sendHint(1)
+    await (room as any).sendHint(1)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const positionsAfterHint1: number[] = (room as any).gameState.revealedPositions
     expect(positionsAfterHint1.length).toBeGreaterThan(0)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).sendHint(2)
+    await (room as any).sendHint(2)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const positionsAfterHint2: number[] = (room as any).gameState.revealedPositions
     expect(positionsAfterHint2.length).toBeGreaterThanOrEqual(positionsAfterHint1.length)
@@ -3487,7 +3606,7 @@ describe('DrawingRoom - hint timers', () => {
     expect(msgs.some((m: any) => m?.type === 'hint')).toBe(false)
   })
 
-  test('sendHint skips players who have already guessed correctly', () => {
+  test('sendHint skips players who have already guessed correctly', async () => {
     const drawerWs = createMockWs('p1', 'Drawer')
     const correctGuesserWs = createMockWs('p2', 'AlreadyGuessed')
     const pendingGuesserWs = createMockWs('p3', 'StillGuessing')
@@ -3498,7 +3617,7 @@ describe('DrawingRoom - hint timers', () => {
     ;(room as any).gameState.correctGuessers.add('p2')
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).sendHint(1)
+    await (room as any).sendHint(1)
 
     const correctGuesserMsgs = getSentMessages(correctGuesserWs)
     const pendingGuesserMsgs = getSentMessages(pendingGuesserWs)
@@ -3507,6 +3626,22 @@ describe('DrawingRoom - hint timers', () => {
     expect(correctGuesserMsgs.some((m: any) => m?.type === 'hint')).toBe(false)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(pendingGuesserMsgs.some((m: any) => m?.type === 'hint')).toBe(true)
+  })
+
+  test('sendHint persists revealedPositions after updating them', async () => {
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    setPlayingStateWithWord('p1', ['p2'], 'apple')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).sendHint(1)
+
+    const persistedState = mockStoragePut.mock.calls.find(
+      (call) => call[0] === 'gameState'
+    )?.[1] as { revealedPositions?: number[] } | undefined
+    expect(persistedState?.revealedPositions?.length).toBeGreaterThan(0)
   })
 
   test('beginDrawing sets hintTimer1 and hintTimer2', () => {

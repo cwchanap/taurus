@@ -103,7 +103,7 @@ Add after `| { type: 'reset-game' }`:
 - [ ] **Step 5: Verify types compile**
 
 ```bash
-cd /Users/chanwaichan/workspace/taurus && bun run check-types
+bun run check-types
 ```
 
 Expected: no errors (some downstream files will error until later tasks complete — that is acceptable at this step if only `game-types.ts` / `room.ts` errors appear).

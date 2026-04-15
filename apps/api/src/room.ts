@@ -40,12 +40,14 @@ import {
   SKIP_ROUND_TRANSITION_DELAY,
   WORD_CHOICE_DURATION_MS,
   WORD_CHOICE_OPTIONS_COUNT,
-  HINT_FRACTION_1,
-  HINT_FRACTION_2,
+  HINT_TIME_TRIGGER_1,
+  HINT_TIME_TRIGGER_2,
+  HINT_LETTER_FRACTION_1,
+  HINT_LETTER_FRACTION_2,
   CATCH_UP_BONUS_PER_ROUND,
   MAX_CATCH_UP_BONUS,
 } from './constants'
-import { getRandomWordExcluding, getRandomWordsExcluding } from './vocabulary'
+import { getRandomWordsExcluding } from './vocabulary'
 import {
   type GameState,
   type PlayingState,
@@ -87,7 +89,7 @@ import {
   validateFillRequest,
   buildHintString,
   pickNextRevealPositions,
-  editDistance,
+  isCloseGuess,
 } from './game-logic'
 
 export class DrawingRoom extends DurableObject<CloudflareBindings> implements TimerContainer {
@@ -227,11 +229,30 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
    */
   private resumeGameFlowFromState() {
     if (this.gameState.status === 'word-choice') {
-      // pendingWordOptions are ephemeral — pick a fresh word on DO restart
-      const word = getRandomWordExcluding(this.gameState.usedWords)
-      this.gameState.usedWords.add(word)
-      // Transition state directly to word-choice so beginDrawing guard passes
-      this.beginDrawing(word)
+      this.clearTimers()
+
+      this.pendingWordOptions = this.gameState.offeredWords
+      this.wordChoiceStartTime =
+        this.gameState.choiceDeadline != null
+          ? this.gameState.choiceDeadline - WORD_CHOICE_DURATION_MS
+          : null
+
+      if (!this.pendingWordOptions || this.pendingWordOptions.length === 0) {
+        this.beginWordChoice()
+        return
+      }
+
+      const remainingMs = (this.gameState.choiceDeadline ?? 0) - Date.now()
+      if (remainingMs <= 0) {
+        this.beginDrawing(this.pendingWordOptions[0])
+        return
+      }
+
+      this.wordChoiceTimer = setTimeout(() => {
+        if (this.pendingWordOptions && this.pendingWordOptions.length > 0) {
+          this.beginDrawing(this.pendingWordOptions[0])
+        }
+      }, remainingMs)
       return
     }
 
@@ -259,6 +280,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           })
         }
       }, 1000)
+
+      this.schedulePendingHints()
 
       return
     }
@@ -774,6 +797,24 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.playerStrokeTimestamps.delete(playerId)
     this.playerStrokeUpdateTimestamps.delete(playerId)
 
+    if (this.gameState.status === 'word-choice' && playerId === this.gameState.currentDrawerId) {
+      this.clearTimers()
+      this.pendingWordOptions = null
+      this.wordChoiceStartTime = null
+      this.gameState = {
+        ...this.gameState,
+        currentDrawerId: '',
+        offeredWords: [],
+        choiceDeadline: null,
+      } as WordChoiceState
+
+      // Clean up flag after a short delay to prevent race conditions with duplicate close events
+      setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
+
+      this.beginWordChoice()
+      return
+    }
+
     // Handle game state when player leaves during active game
     if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {
       const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
@@ -1253,17 +1294,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // Close-guess feedback: private "So close!" if within edit-distance threshold
       if (
         playerId !== this.gameState.currentDrawerId &&
-        !this.gameState.correctGuessers.has(playerId)
+        !this.gameState.correctGuessers.has(playerId) &&
+        isCloseGuess(sanitizedContent, this.gameState.currentWord)
       ) {
-        const normalized = sanitizedContent.toLowerCase().trim()
-        const currentWord = this.gameState.currentWord.toLowerCase()
-        const threshold = currentWord.length <= 5 ? 1 : 2
-        if (editDistance(normalized, currentWord) <= threshold && normalized !== currentWord) {
-          try {
-            ws.send(JSON.stringify({ type: 'system-message', content: 'So close!' }))
-          } catch {
-            // Connection may be closed
-          }
+        try {
+          ws.send(JSON.stringify({ type: 'system-message', content: 'So close!' }))
+        } catch {
+          // Connection may be closed
         }
       }
     }
@@ -1498,6 +1535,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       wordLength: null,
       roundStartTime: null,
       roundEndTime: null,
+      offeredWords: options,
+      choiceDeadline: wordChoiceEndTime,
       endGameAfterCurrentRound:
         'endGameAfterCurrentRound' in this.gameState
           ? ((this.gameState as { endGameAfterCurrentRound?: boolean }).endGameAfterCurrentRound ??
@@ -1662,26 +1701,28 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         this.broadcast({ type: 'tick', timeRemaining: Math.ceil(remaining / 1000) })
       }
     }, 1000)
-    this.hintTimer1 = setTimeout(() => this.sendHint(1), ROUND_DURATION_MS * 0.5)
-    this.hintTimer2 = setTimeout(() => this.sendHint(2), ROUND_DURATION_MS * 0.75)
+    this.schedulePendingHints()
   }
 
   /**
    * Send a progressive hint to non-drawers.
    * Hint 1 (~25% letters revealed) fires at 50% elapsed; hint 2 (~50%) at 75%.
    */
-  private sendHint(hintNumber: 1 | 2) {
+  private async sendHint(hintNumber: 1 | 2) {
     if (!isPlayingState(this.gameState)) return
     const word = this.gameState.currentWord
     const drawerId = this.gameState.currentDrawerId
-    const targetFraction = hintNumber === 1 ? HINT_FRACTION_1 : HINT_FRACTION_2
+    const targetFraction = hintNumber === 1 ? HINT_LETTER_FRACTION_1 : HINT_LETTER_FRACTION_2
 
-    const newPositions = pickNextRevealPositions(
-      word,
-      this.gameState.revealedPositions,
-      targetFraction
-    )
+    const revealedPositions = this.gameState.revealedPositions ?? []
+    const newPositions = pickNextRevealPositions(word, revealedPositions, targetFraction)
     this.gameState = { ...this.gameState, revealedPositions: newPositions } as PlayingState
+
+    try {
+      await this.persistGameState()
+    } catch (e) {
+      console.error('Failed to persist hint state:', e)
+    }
 
     const hintString = buildHintString(word, newPositions)
 
@@ -1695,6 +1736,41 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       } catch {
         // Connection may be closed
       }
+    }
+  }
+
+  private getHintTriggerAt(triggerFraction: number): number | null {
+    if (!isPlayingState(this.gameState) || this.gameState.roundStartTime == null) {
+      return null
+    }
+
+    return this.gameState.roundStartTime + ROUND_DURATION_MS * triggerFraction
+  }
+
+  private hasReachedHintFraction(targetFraction: number): boolean {
+    if (!isPlayingState(this.gameState)) return false
+
+    const maskableCharacters = this.gameState.currentWord
+      .split('')
+      .filter((char) => char !== ' ' && char !== '-').length
+    const requiredRevealCount = Math.max(1, Math.ceil(maskableCharacters * targetFraction))
+
+    return (this.gameState.revealedPositions ?? []).length >= requiredRevealCount
+  }
+
+  private schedulePendingHints() {
+    if (!isPlayingState(this.gameState)) return
+
+    const hint1At = this.getHintTriggerAt(HINT_TIME_TRIGGER_1)
+    const hint2At = this.getHintTriggerAt(HINT_TIME_TRIGGER_2)
+    if (hint1At == null || hint2At == null) return
+
+    if (!this.hasReachedHintFraction(HINT_LETTER_FRACTION_1)) {
+      this.hintTimer1 = setTimeout(() => void this.sendHint(1), Math.max(0, hint1At - Date.now()))
+    }
+
+    if (!this.hasReachedHintFraction(HINT_LETTER_FRACTION_2)) {
+      this.hintTimer2 = setTimeout(() => void this.sendHint(2), Math.max(0, hint2At - Date.now()))
     }
   }
 

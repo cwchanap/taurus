@@ -111,6 +111,23 @@ export function containsCurrentWord(message: string, word: string): boolean {
 }
 
 /**
+ * Check whether a guess is close enough to the target word to warrant "So close!" feedback.
+ *
+ * The comparison is case-insensitive and trims surrounding whitespace before applying
+ * a small edit-distance threshold that scales with word length.
+ */
+export function isCloseGuess(candidate: string, targetWord: string): boolean {
+  const normalizedCandidate = candidate.toLowerCase().trim()
+  const normalizedTarget = targetWord.toLowerCase().trim()
+  const threshold = normalizedTarget.length <= 5 ? 1 : 2
+
+  return (
+    normalizedCandidate !== normalizedTarget &&
+    editDistance(normalizedCandidate, normalizedTarget) <= threshold
+  )
+}
+
+/**
  * Calculate score for a correct guess based on time remaining
  *
  * @param roundEndTime - The timestamp when the round will end
@@ -572,7 +589,7 @@ export function handlePlayerLeaveInActiveGame(
         roundStartTime: gameState.roundStartTime,
         roundEndTime: gameState.roundEndTime,
         endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
-        revealedPositions: [],
+        revealedPositions: gameState.revealedPositions,
         ...baseClone,
       }
     }

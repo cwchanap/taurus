@@ -18,6 +18,7 @@ vi.mock('$lib/websocket', () => ({
     this.sendStartGame = vi.fn(() => true)
     this.sendResetGame = vi.fn(() => true)
     this.sendGuess = vi.fn(() => true)
+    this.sendChooseWord = vi.fn(() => true)
   }),
 }))
 
@@ -62,7 +63,8 @@ async function simulateJoinGame(playerName = 'Alice') {
     })
   )
 
-  const { component } = render(DrawPage)
+  const renderResult = render(DrawPage)
+  const { component } = renderResult
 
   const nameInput = screen.getByLabelText('Your Name') as HTMLInputElement
   await fireEvent.input(nameInput, { target: { value: playerName } })
@@ -103,7 +105,7 @@ async function simulateJoinGame(playerName = 'Alice') {
     expect(screen.queryByRole('button', { name: 'Create Room' })).toBeNull()
   })
 
-  return { component: component as unknown as DrawPageComponent }
+  return { component: component as unknown as DrawPageComponent, unmount: renderResult.unmount }
 }
 
 describe('Draw page - lobby state', () => {
@@ -432,6 +434,69 @@ describe('Draw page - game event handlers', () => {
     await waitFor(() => {
       expect(screen.getByText('Round Over!')).toBeTruthy()
     })
+  })
+
+  it('shows the drawer word-choice UI and updates round context when word options arrive', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+
+    handlers.onGameStarted?.(3, ['player-123'], { 'player-123': { name: 'Alice', score: 0 } })
+    handlers.onWordOptions?.(['apple', 'cat', 'dog'], 10)
+
+    await waitFor(() => {
+      expect(screen.getByText('Choose a word to draw')).toBeTruthy()
+      expect(screen.getByText('Round 1/3')).toBeTruthy()
+      expect(screen.getByText("🎨 You're drawing!")).toBeTruthy()
+    })
+  })
+
+  it('keeps word choices visible until round-start confirms the selection', async () => {
+    await simulateJoinGame('Alice')
+    const handlers = getWsHandlers()
+    const wsInstance = vi.mocked(GameWebSocket).mock.instances.at(-1) as unknown as {
+      sendChooseWord: ReturnType<typeof vi.fn>
+    }
+
+    handlers.onGameStarted?.(3, ['player-123'], { 'player-123': { name: 'Alice', score: 0 } })
+    handlers.onWordOptions?.(['apple', 'cat', 'dog'], 10)
+
+    const chooseButton = await screen.findByRole('button', { name: 'apple' })
+    await fireEvent.click(chooseButton)
+
+    expect(wsInstance.sendChooseWord).toHaveBeenCalledWith('apple')
+    expect(screen.getByRole('button', { name: 'apple' })).toBeTruthy()
+
+    handlers.onRoundStart?.(1, 3, 'player-123', 'Alice', 'apple', 5, Date.now() + 60_000)
+
+    await waitFor(() => {
+      expect(screen.queryByText('Choose a word to draw')).toBeNull()
+    })
+  })
+
+  it('clears the word-choice timer on component teardown', async () => {
+    const originalSetInterval = globalThis.setInterval
+    const originalClearInterval = globalThis.clearInterval
+    const intervalIds = [101, 202]
+    const clearIntervalSpy = vi.fn()
+    globalThis.setInterval = (() =>
+      intervalIds.shift() as unknown as ReturnType<
+        typeof setInterval
+      >) as unknown as typeof setInterval
+    globalThis.clearInterval = clearIntervalSpy as unknown as typeof clearInterval
+
+    try {
+      const { unmount } = await simulateJoinGame('Alice')
+      const handlers = getWsHandlers()
+
+      handlers.onWordChoiceStart?.(1, 3, 'other-player', 'Bob', Date.now() + 10_000)
+      unmount()
+
+      expect(clearIntervalSpy).toHaveBeenCalledWith(101)
+      expect(clearIntervalSpy).toHaveBeenCalledWith(202)
+    } finally {
+      globalThis.setInterval = originalSetInterval
+      globalThis.clearInterval = originalClearInterval
+    }
   })
 
   it('handles server errors for drawing actions', async () => {

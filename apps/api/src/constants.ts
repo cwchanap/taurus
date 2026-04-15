@@ -33,8 +33,10 @@ export const WORD_CHOICE_DURATION_MS = 10000 // 10s for drawer to pick a word
 export const WORD_CHOICE_OPTIONS_COUNT = 3
 
 // Hints
-export const HINT_FRACTION_1 = 0.25 // 25% of letters revealed at 50% time elapsed
-export const HINT_FRACTION_2 = 0.5 // 50% of letters revealed at 75% time elapsed
+export const HINT_TIME_TRIGGER_1 = 0.5 // First hint fires at 50% elapsed time
+export const HINT_TIME_TRIGGER_2 = 0.75 // Second hint fires at 75% elapsed time
+export const HINT_LETTER_FRACTION_1 = 0.25 // First hint reveals 25% of letters
+export const HINT_LETTER_FRACTION_2 = 0.5 // Second hint reveals 50% of letters total
 
 // Catch-up scoring
 export const CATCH_UP_BONUS_PER_ROUND = 10

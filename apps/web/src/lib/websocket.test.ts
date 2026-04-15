@@ -534,7 +534,7 @@ describe('handleMessage dispatch', () => {
       score: 10,
       timeRemaining: 30,
     })
-    expect(onCorrectGuess).toHaveBeenCalledWith('p1', 'A', 10, 30)
+    expect(onCorrectGuess).toHaveBeenCalledWith('p1', 'A', 10, 30, undefined)
   })
 
   it('dispatches tick to onTick', () => {
