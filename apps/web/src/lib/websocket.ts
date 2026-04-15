@@ -68,7 +68,13 @@ export type GameEventHandler = {
     drawerName: string,
     wordChoiceEndTime: number
   ) => void
-  onWordOptions?: (words: string[], timeToChoose: number) => void
+  onWordOptions?: (
+    words: string[],
+    timeToChoose: number,
+    roundNumber: number,
+    totalRounds: number,
+    wordChoiceEndTime: number
+  ) => void
   onHint?: (revealed: string) => void
 }
 
@@ -243,7 +249,13 @@ export class GameWebSocket {
         )
         break
       case 'word-options':
-        this.handlers.onWordOptions?.(data.words, data.timeToChoose)
+        this.handlers.onWordOptions?.(
+          data.words,
+          data.timeToChoose,
+          data.roundNumber,
+          data.totalRounds,
+          data.wordChoiceEndTime
+        )
         break
       case 'hint':
         this.handlers.onHint?.(data.revealed)

@@ -568,18 +568,17 @@
           wordChoiceTimeRemaining = Math.max(0, Math.ceil((wordChoiceEndTime! - Date.now()) / 1000))
         }, 250)
       },
-      onWordOptions: (words, timeToChoose) => {
-        if (gameStatus !== 'word-choice') {
-          roundNumber = Math.min(totalRounds, Math.max(1, roundNumber + 1))
-        }
+      onWordOptions: (words, timeToChoose, round, rounds, endTime) => {
         gameStatus = 'word-choice'
         currentDrawerId = playerId
         currentDrawerName = playerName
+        roundNumber = round
+        totalRounds = rounds
         currentWord = undefined
         wordLength = 0
         hintString = ''
         wordChoiceOptions = words
-        wordChoiceEndTime = Date.now() + timeToChoose * 1000
+        wordChoiceEndTime = endTime
         if (wordChoiceTimerId) clearInterval(wordChoiceTimerId)
         wordChoiceTimerId = setInterval(() => {
           wordChoiceTimeRemaining = Math.max(0, Math.ceil((wordChoiceEndTime! - Date.now()) / 1000))

@@ -359,6 +359,40 @@ describe('gameStateToWire', () => {
     expect(wire.currentWord).toBeUndefined()
     expect(wire.scores).toEqual({ p1: { score: 100, name: 'Player 1' } })
   })
+
+  test('word-choice state wire format includes choiceDeadline as roundEndTime', () => {
+    const now = Date.now()
+    const choiceDeadline = now + 15_000
+    const state: WordChoiceState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      endGameAfterCurrentRound: false,
+      offeredWords: ['apple', 'banana', 'cherry'],
+      choiceDeadline,
+      drawerOrder: ['drawer1', 'p2'],
+      scores: new Map([['drawer1', { score: 0, name: 'Drawer' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    const wire = gameStateToWire(state, true)
+    expect(wire.status).toBe('word-choice')
+    expect(wire.currentRound).toBe(1)
+    expect(wire.totalRounds).toBe(3)
+    expect(wire.currentDrawerId).toBe('drawer1')
+    expect(wire.wordLength).toBeUndefined()
+    expect(wire.roundEndTime).toBe(choiceDeadline)
+    expect(wire.scores).toEqual({ drawer1: { score: 0, name: 'Drawer' } })
+  })
 })
 
 describe('type guards', () => {
@@ -403,7 +437,7 @@ describe('type guards', () => {
     expect(isGameOverState(gameOver)).toBe(true)
   })
 
-  test('isActiveGameState returns true for playing and round-end, false for others', () => {
+  test('isActiveGameState returns true for word-choice, playing and round-end, false for others', () => {
     const now = Date.now()
     const lobby = createInitialGameState()
     expect(isActiveGameState(lobby)).toBe(false)
@@ -438,6 +472,28 @@ describe('type guards', () => {
       nextTransitionAt: now + 5000,
     }
     expect(isActiveGameState(roundEnd)).toBe(true)
+
+    const wordChoice: WordChoiceState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      endGameAfterCurrentRound: false,
+      offeredWords: ['cat', 'dog'],
+      choiceDeadline: now + 15000,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([['p1', { score: 0, name: 'Player 1' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+    expect(isActiveGameState(wordChoice)).toBe(true)
 
     const starting: StartingState = {
       ...lobby,

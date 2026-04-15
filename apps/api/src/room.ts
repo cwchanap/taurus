@@ -702,7 +702,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // If a game is in progress (but not game-over), add the player to the scores map
     // so their name is captured. Late joiners during game-over should not affect final scores.
-    const isActiveGame = ['starting', 'playing', 'round-end'].includes(this.gameState.status)
+    const isActiveGame = ['starting', 'word-choice', 'playing', 'round-end'].includes(
+      this.gameState.status
+    )
     if (isActiveGame && !this.gameState.scores.has(playerId)) {
       this.gameState.scores.set(playerId, { score: 0, name: player.name })
     }
@@ -1559,6 +1561,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
               type: 'word-options',
               words: options,
               timeToChoose: WORD_CHOICE_DURATION_MS / 1000,
+              roundNumber,
+              totalRounds: this.gameState.totalRounds,
+              wordChoiceEndTime,
             })
           )
         } else {
@@ -1835,13 +1840,26 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     })
 
     // Transition to round-end state (awaits either next round or game end)
+    const prev = this.gameState as PlayingState
     this.gameState = {
-      ...this.gameState,
+      scores: prev.scores,
+      usedWords: prev.usedWords,
+      drawerOrder: prev.drawerOrder,
+      correctGuessers: prev.correctGuessers,
+      roundGuessers: prev.roundGuessers,
+      roundGuesserScores: prev.roundGuesserScores,
+      consecutiveMissedRounds: prev.consecutiveMissedRounds,
       status: 'round-end',
+      currentRound: prev.currentRound,
+      totalRounds: prev.totalRounds,
       currentDrawerId: null,
       currentWord: null,
       wordLength: null,
-    } as unknown as RoundEndState
+      roundStartTime: prev.roundStartTime,
+      roundEndTime: prev.roundEndTime,
+      endGameAfterCurrentRound: prev.endGameAfterCurrentRound,
+      nextTransitionAt: 0, // Set immediately after in the shouldEnd/skipToNext branches
+    } satisfies RoundEndState
 
     // Persist round-end state
     this.ctx.waitUntil(
