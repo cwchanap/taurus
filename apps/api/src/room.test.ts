@@ -1923,12 +1923,15 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     const drawerMsgs = getSentMessages(drawerWs)
     const guesserMsgs = getSentMessages(guesserWs)
 
-    // Drawer should receive word-options
+    // Drawer should receive word-options with round context
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const wordOptions = drawerMsgs.find((m: any) => m?.type === 'word-options')
     expect(wordOptions).toBeDefined()
     expect(Array.isArray(wordOptions.words)).toBe(true)
     expect(wordOptions.words.length).toBeGreaterThan(0)
+    expect(wordOptions.roundNumber).toBe(1)
+    expect(wordOptions.totalRounds).toBe(2)
+    expect(typeof wordOptions.wordChoiceEndTime).toBe('number')
 
     // Guesser should receive word-choice-start
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

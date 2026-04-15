@@ -441,7 +441,7 @@ describe('Draw page - game event handlers', () => {
     const handlers = getWsHandlers()
 
     handlers.onGameStarted?.(3, ['player-123'], { 'player-123': { name: 'Alice', score: 0 } })
-    handlers.onWordOptions?.(['apple', 'cat', 'dog'], 10)
+    handlers.onWordOptions?.(['apple', 'cat', 'dog'], 10, 1, 3, Date.now() + 10_000)
 
     await waitFor(() => {
       expect(screen.getByText('Choose a word to draw')).toBeTruthy()
@@ -458,7 +458,7 @@ describe('Draw page - game event handlers', () => {
     }
 
     handlers.onGameStarted?.(3, ['player-123'], { 'player-123': { name: 'Alice', score: 0 } })
-    handlers.onWordOptions?.(['apple', 'cat', 'dog'], 10)
+    handlers.onWordOptions?.(['apple', 'cat', 'dog'], 10, 1, 3, Date.now() + 10_000)
 
     const chooseButton = await screen.findByRole('button', { name: 'apple' })
     await fireEvent.click(chooseButton)

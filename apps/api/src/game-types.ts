@@ -397,7 +397,7 @@ export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateW
       totalRounds: state.totalRounds,
       currentDrawerId: state.currentDrawerId,
       wordLength: undefined,
-      roundEndTime: null,
+      roundEndTime: state.choiceDeadline,
       scores: scoresToRecord(state.scores),
     }
   }

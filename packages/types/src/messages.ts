@@ -162,7 +162,14 @@ export type ServerMessage =
       drawerName: string
       wordChoiceEndTime: number
     }
-  | { type: 'word-options'; words: string[]; timeToChoose: number }
+  | {
+      type: 'word-options'
+      words: string[]
+      timeToChoose: number
+      roundNumber: number
+      totalRounds: number
+      wordChoiceEndTime: number
+    }
   | { type: 'hint'; revealed: string }
   | { type: 'system-message'; content: string }
   | { type: 'error'; message: string; action?: ClientMessage['type']; nonce?: string }
