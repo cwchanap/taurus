@@ -172,9 +172,9 @@ describe('draw-page-state helpers', () => {
       p2: { name: 'Fallback', score: 0 },
     }
 
-    expect(getDrawerDisplayName('p1', [{ id: 'p1', name: 'Alice', color: '#000' }], scores)).toBe(
-      'Alice'
-    )
+    expect(
+      getDrawerDisplayName('p1', [{ id: 'p1', name: 'Alice', color: '#FF6B6B' }], scores)
+    ).toBe('Alice')
     expect(getDrawerDisplayName('p2', [], scores)).toBe('Fallback')
     expect(getDrawerDisplayName('p3', [], scores)).toBe('Unknown')
 
