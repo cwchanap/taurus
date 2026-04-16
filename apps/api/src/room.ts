@@ -806,7 +806,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.gameState = {
         ...this.gameState,
         currentDrawerId: '',
-        offeredWords: [],
+        offeredWords: [] as unknown as [string, string, string],
         choiceDeadline: null,
       } as WordChoiceState
 

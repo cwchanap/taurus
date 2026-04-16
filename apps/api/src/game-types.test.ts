@@ -541,28 +541,26 @@ describe('WordChoiceState serialization', () => {
     expect(restored.consecutiveMissedRounds.get('player2')).toBe(2)
   })
 
-  it('defaults word-choice metadata when restoring older storage records', () => {
+  it('falls back to lobby when word-choice state has missing offeredWords', () => {
     const stored: StoredGameState = {
       status: 'word-choice',
-      currentRound: 1,
+      currentRound: 2,
       totalRounds: 3,
-      currentDrawerId: 'player1',
+      currentDrawerId: 'player-1',
       currentWord: null,
       wordLength: null,
       roundStartTime: null,
       roundEndTime: null,
-      endGameAfterCurrentRound: false,
-      drawerOrder: ['player1', 'player2'],
+      drawerOrder: ['player-1', 'player-2'],
       scores: [],
       correctGuessers: [],
-      roundGuessers: ['player2'],
+      roundGuessers: [],
       roundGuesserScores: [],
       usedWords: [],
+      // offeredWords intentionally omitted (simulates older storage)
     }
-
-    const restored = gameStateFromStorage(stored) as WordChoiceState
-    expect(restored.offeredWords).toHaveLength(0)
-    expect(restored.choiceDeadline).toBeNull()
+    const restored = gameStateFromStorage(stored)
+    expect(restored.status).toBe('lobby')
   })
 })
 

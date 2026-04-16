@@ -305,6 +305,13 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         console.error('Corrupt word-choice state: missing drawerId, falling back to lobby', stored)
         return createInitialGameState()
       }
+      if (!stored.offeredWords || stored.offeredWords.length < 3) {
+        console.error(
+          'Corrupt word-choice state: offeredWords missing or incomplete, falling back to lobby',
+          stored
+        )
+        return createInitialGameState()
+      }
       return {
         ...baseState,
         status: 'word-choice',
@@ -314,7 +321,7 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         roundStartTime: null,
         roundEndTime: null,
         endGameAfterCurrentRound: stored.endGameAfterCurrentRound ?? false,
-        offeredWords: stored.offeredWords ?? [],
+        offeredWords: stored.offeredWords as [string, string, string],
         choiceDeadline: stored.choiceDeadline ?? null,
       } as WordChoiceState
     }
