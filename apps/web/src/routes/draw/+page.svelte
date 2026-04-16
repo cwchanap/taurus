@@ -574,7 +574,10 @@
         roundNumber = round
         totalRounds = rounds
         wordChoiceEndTime = endTime
-        if (wordChoiceTimerId) clearInterval(wordChoiceTimerId)
+        if (wordChoiceTimerId) {
+          clearInterval(wordChoiceTimerId)
+          wordChoiceTimerId = null
+        }
         wordChoiceTimerId = setInterval(() => {
           if (wordChoiceEndTime != null) {
             wordChoiceTimeRemaining = Math.max(
@@ -595,7 +598,10 @@
         hintString = ''
         wordChoiceOptions = words
         wordChoiceEndTime = endTime
-        if (wordChoiceTimerId) clearInterval(wordChoiceTimerId)
+        if (wordChoiceTimerId) {
+          clearInterval(wordChoiceTimerId)
+          wordChoiceTimerId = null
+        }
         wordChoiceTimerId = setInterval(() => {
           if (wordChoiceEndTime != null) {
             wordChoiceTimeRemaining = Math.max(
@@ -794,10 +800,18 @@
     }
   })
 
+  /** Show a transient error that auto-clears after durationMs. */
+  function showTransientError(msg: string, durationMs = 5000) {
+    errorMessage = msg
+    setTimeout(() => {
+      if (errorMessage === msg) errorMessage = ''
+    }, durationMs)
+  }
+
   function chooseWord(word: string) {
     const sent = ws?.sendChooseWord(word) ?? false
     if (!sent) {
-      errorMessage = 'Word choice not sent — connection lost. Please try again.'
+      showTransientError('Word choice not sent — connection lost. Please try again.')
     }
   }
 
@@ -1076,14 +1090,14 @@
   function handleSendMessage(content: string) {
     const sent = ws?.sendChat(content) ?? false
     if (!sent) {
-      errorMessage = 'Message not sent — connection lost. Please wait for reconnect.'
+      showTransientError('Message not sent — connection lost. Please wait for reconnect.')
     }
   }
 
   function handleStartGame() {
     const sent = ws?.sendStartGame() ?? false
     if (!sent) {
-      errorMessage = 'Could not start game — connection lost. Please wait for reconnect.'
+      showTransientError('Could not start game — connection lost. Please wait for reconnect.')
     }
   }
 
