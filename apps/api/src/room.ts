@@ -646,6 +646,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         }
         try {
           this.clearTimers()
+          // beginDrawing is synchronous and not expected to throw; this catch is defense-in-depth
           this.beginDrawing(word)
         } catch (e) {
           console.error('Handler error for choose-word:', e)
