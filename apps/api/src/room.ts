@@ -242,6 +242,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       const remainingMs = (this.gameState.choiceDeadline ?? 0) - Date.now()
       if (remainingMs <= 0) {
+        if (!this.pendingWordOptions || this.pendingWordOptions.length === 0) {
+          console.warn(
+            'resumeGameFlowFromState: no pending word options on expired deadline, re-running word choice'
+          )
+          this.beginWordChoice()
+          return
+        }
         this.beginDrawing(this.pendingWordOptions[0])
         return
       }
@@ -801,17 +808,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.clearTimers()
       this.pendingWordOptions = null
       this.wordChoiceStartTime = null
-      this.gameState = {
-        ...this.gameState,
-        currentDrawerId: '',
-        offeredWords: [] as unknown as [string, string, string],
-        choiceDeadline: null,
-      } as WordChoiceState
-
       // Clean up flag after a short delay to prevent race conditions with duplicate close events
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
-
-      this.beginWordChoice()
+      try {
+        this.beginWordChoice()
+      } catch (e) {
+        console.error(
+          'handleLeave: beginWordChoice failed after drawer left during word-choice:',
+          e
+        )
+      }
       return
     }
 
@@ -1521,7 +1527,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.gameState.currentRound = roundNumber
 
     const options = getRandomWordsExcluding(this.gameState.usedWords, WORD_CHOICE_OPTIONS_COUNT)
-    this.pendingWordOptions = options
+    if (options.length === 0) {
+      console.error('beginWordChoice: vocabulary exhausted, ending game')
+      this.endGame()
+      return
+    }
+    this.pendingWordOptions = options as [string, string, string]
 
     const now = Date.now()
     this.wordChoiceStartTime = now
@@ -1535,7 +1546,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       wordLength: null,
       roundStartTime: null,
       roundEndTime: null,
-      offeredWords: options,
+      offeredWords: options as [string, string, string],
       choiceDeadline: wordChoiceEndTime,
       endGameAfterCurrentRound:
         'endGameAfterCurrentRound' in this.gameState

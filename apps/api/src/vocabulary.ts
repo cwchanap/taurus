@@ -116,5 +116,10 @@ export function getRandomWordsExcluding(exclude: Set<string>, count: number): st
     result.push(pool[i])
   }
   if (result.length < count && pool.length > 0) result.push(pool[0])
+  if (result.length < count) {
+    console.warn(
+      `getRandomWordsExcluding: vocabulary exhausted — requested ${count}, got ${result.length}`
+    )
+  }
   return result
 }
