@@ -2154,10 +2154,9 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     const guesserWs = createMockWs('p2', 'Guesser')
     mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
 
-    setPlayingState('p1', ['p2'])(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      room as any
-    ).handleCorrectGuess('p2', 'Guesser')
+    setPlayingState('p1', ['p2'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleCorrectGuess('p2', 'Guesser')
     await flushPromises()
 
     // Both players receive correct-guess broadcast
@@ -2189,11 +2188,10 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
 
     const endRoundSpy = mock(() => {})
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).endRound = endRoundSpy(
-      // p2 is the only guesser - guessing correctly should trigger early round end
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      room as any
-    ).handleCorrectGuess('p2', 'Guesser')
+    ;(room as any).endRound = endRoundSpy
+    // p2 is the only guesser - guessing correctly should trigger early round end
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleCorrectGuess('p2', 'Guesser')
 
     expect(endRoundSpy).toHaveBeenCalledWith(false)
   })
@@ -2203,19 +2201,14 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     const guesserWs = createMockWs('p2', 'Guesser')
     mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
 
-    setPlayingState('p1', ['p2'])(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      room as any
-    ).handleCorrectGuess('p2', 'Guesser')
+    setPlayingState('p1', ['p2'])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const firstScore = (room as any).gameState.scores
-      .get('p2')
-      .score(
-        // Second call should be a no-op
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        room as any
-      )
-      .handleCorrectGuess('p2', 'Guesser')
+    ;(room as any).handleCorrectGuess('p2', 'Guesser')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const firstScore = (room as any).gameState.scores.get('p2').score
+    // Second call should be a no-op
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleCorrectGuess('p2', 'Guesser')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const secondScore = (room as any).gameState.scores.get('p2').score
 
