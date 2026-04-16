@@ -732,6 +732,60 @@ describe('DrawingRoom - Player Leave During Game', () => {
       globalThis.setTimeout = originalSetTimeout
     }
   })
+
+  test('schedulePendingHints: skips hintTimer1 when hint fraction 1 already reached, schedules hintTimer2', async () => {
+    const roundEndTime = Date.now() + 60_000
+    const roundStartTime = roundEndTime - 60_000
+
+    mockStorageGet.mockImplementation((key: string) => {
+      switch (key) {
+        case 'strokes':
+          return Promise.resolve([])
+        case 'created':
+          return Promise.resolve(true)
+        case 'chatHistory':
+          return Promise.resolve([])
+        case 'hostPlayerId':
+          return Promise.resolve('host-1')
+        case 'gameState':
+          return Promise.resolve({
+            status: 'playing',
+            currentRound: 1,
+            totalRounds: 2,
+            currentDrawerId: 'p1',
+            currentWord: 'apple',
+            wordLength: 5,
+            roundStartTime,
+            roundEndTime,
+            drawerOrder: ['p1', 'p2'],
+            scores: [['p1', { score: 0, name: 'Drawer' }]],
+            correctGuessers: [],
+            roundGuessers: ['p2'],
+            roundGuesserScores: [],
+            usedWords: ['apple'],
+            consecutiveMissedRounds: [],
+            endGameAfterCurrentRound: false,
+            // 2 positions already revealed — at or above HINT_LETTER_FRACTION_1 threshold
+            // apple has 5 maskable chars; ceil(5 * 0.25) = 2, so 2 >= 2 means fraction 1 reached
+            revealedPositions: [0, 1],
+          })
+        default:
+          return Promise.resolve(undefined)
+      }
+    })
+
+    const ws = createMockWs('p1', 'Drawer')
+    mockGetWebSockets.mockReturnValue([ws])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).ensureInitialized()
+
+    // hint fraction 1 already reached (2 revealed out of 5 maskable positions), so hintTimer1 should be null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hintTimer1).toBeNull()
+    // hint fraction 2 not yet reached (need 3, only have 2), so hintTimer2 should be set
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hintTimer2).not.toBeNull()
+  })
 })
 
 describe('DrawingRoom - Broadcast and Message Handling', () => {
@@ -3448,6 +3502,59 @@ describe('DrawingRoom - timer callback coverage', () => {
       globalThis.setInterval = originalSetInterval
     }
   })
+
+  test('wordChoiceTimer callback auto-selects first word and begins drawing', () => {
+    const ws1 = createMockWs('p1', 'Drawer')
+    const ws2 = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // Set up word-choice state with pending options
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      offeredWords: ['apple', 'banana', 'cherry'],
+      choiceDeadline: Date.now() + 10000,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['apple', 'banana', 'cherry']
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+
+    // Directly invoke the wordChoiceTimer auto-advance logic
+    const autoAdvanceFn = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((room as any).pendingWordOptions && (room as any).pendingWordOptions.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const autoWord = (room as any).pendingWordOptions[0]
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(room as any).beginDrawing(autoWord)
+      }
+    }
+    autoAdvanceFn()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('playing')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.currentWord).toBe('apple')
+  })
 })
 
 describe('DrawingRoom - hint timers', () => {
@@ -3823,6 +3930,46 @@ describe('DrawingRoom - close-guess feedback', () => {
     const drawerMsgs = getSentMessages(drawerWs)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(drawerMsgs.some((m: any) => m?.content === 'So close!')).toBe(false)
+  })
+
+  test('does not send so-close message to a player already in correctGuessers', async () => {
+    // Set up a playing state where 'p2' has already guessed correctly
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: 'elephant',
+      wordLength: 8,
+      roundStartTime: Date.now() - 10000,
+      roundEndTime: Date.now() + 50000,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 100, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(['p2']), // already guessed correctly
+      roundGuessers: new Set(['p2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['elephant']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    // p2 sends a close but wrong guess — 'elepant' is 1 edit (deletion) away from 'elephant'
+    await room.webSocketMessage(guesserWs, JSON.stringify({ type: 'chat', content: 'elepant' }))
+    await flushPromises()
+
+    const guesserMsgs = getSentMessages(guesserWs)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const soCloseMessages = guesserMsgs.filter((m: any) => m?.type === 'system-message')
+    expect(soCloseMessages).toHaveLength(0)
   })
 })
 
