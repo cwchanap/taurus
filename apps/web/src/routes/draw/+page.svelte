@@ -314,12 +314,22 @@
           initialGameState.scores,
           deriveGameWinners
         )
-        timeRemaining = getTimeRemainingSeconds(initialGameState.roundEndTime)
         currentDrawerName = getDrawerDisplayName(currentDrawerId, players, scores)
 
-        wordLength = initialGameState.wordLength ?? 0
-        currentWord =
-          initialGameState.currentWord !== undefined ? initialGameState.currentWord : undefined
+        if (initialGameState.status === 'playing') {
+          timeRemaining = getTimeRemainingSeconds(initialGameState.deadlineTime)
+          wordLength = initialGameState.wordLength
+          currentWord = initialGameState.currentWord
+        } else if (initialGameState.status === 'word-choice') {
+          timeRemaining = 0
+          wordLength = 0
+          currentWord = undefined
+          wordChoiceEndTime = initialGameState.deadlineTime
+        } else {
+          timeRemaining = 0
+          wordLength = 0
+          currentWord = undefined
+        }
 
         pageState = 'game'
         isLoading = false
@@ -557,6 +567,7 @@
         gameStatus = 'starting'
       },
       onWordChoiceStart: (round, rounds, drawerId, drawerNameVal, endTime) => {
+        wordChoiceOptions = []
         gameStatus = 'word-choice'
         currentDrawerId = drawerId
         currentDrawerName = drawerNameVal
@@ -565,7 +576,12 @@
         wordChoiceEndTime = endTime
         if (wordChoiceTimerId) clearInterval(wordChoiceTimerId)
         wordChoiceTimerId = setInterval(() => {
-          wordChoiceTimeRemaining = Math.max(0, Math.ceil((wordChoiceEndTime! - Date.now()) / 1000))
+          if (wordChoiceEndTime != null) {
+            wordChoiceTimeRemaining = Math.max(
+              0,
+              Math.ceil((wordChoiceEndTime - Date.now()) / 1000)
+            )
+          }
         }, 250)
       },
       onWordOptions: (words, timeToChoose, round, rounds, endTime) => {
@@ -581,7 +597,12 @@
         wordChoiceEndTime = endTime
         if (wordChoiceTimerId) clearInterval(wordChoiceTimerId)
         wordChoiceTimerId = setInterval(() => {
-          wordChoiceTimeRemaining = Math.max(0, Math.ceil((wordChoiceEndTime! - Date.now()) / 1000))
+          if (wordChoiceEndTime != null) {
+            wordChoiceTimeRemaining = Math.max(
+              0,
+              Math.ceil((wordChoiceEndTime - Date.now()) / 1000)
+            )
+          }
         }, 250)
       },
       onHint: (revealed) => {
@@ -774,7 +795,10 @@
   })
 
   function chooseWord(word: string) {
-    ws?.sendChooseWord(word)
+    const sent = ws?.sendChooseWord(word) ?? false
+    if (!sent) {
+      errorMessage = 'Word choice not sent — connection lost. Please try again.'
+    }
   }
 
   function handleStrokeStart(stroke: Stroke): boolean {
@@ -1050,11 +1074,17 @@
   }
 
   function handleSendMessage(content: string) {
-    ws?.sendChat(content)
+    const sent = ws?.sendChat(content) ?? false
+    if (!sent) {
+      errorMessage = 'Message not sent — connection lost. Please wait for reconnect.'
+    }
   }
 
   function handleStartGame() {
-    ws?.sendStartGame()
+    const sent = ws?.sendStartGame() ?? false
+    if (!sent) {
+      errorMessage = 'Could not start game — connection lost. Please wait for reconnect.'
+    }
   }
 
   function handlePlayAgain() {
