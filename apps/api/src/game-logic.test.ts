@@ -810,7 +810,8 @@ describe('isCloseGuess', () => {
   })
 
   it('is close for 6-char word with edit distance exactly 2 (threshold 2)', () => {
-    expect(isCloseGuess('brldge', 'bridge')).toBe(true)
+    // 'dringe' vs 'bridge': b→d at pos 0, d→n at pos 3 = distance 2 (within threshold 2)
+    expect(isCloseGuess('dringe', 'bridge')).toBe(true)
   })
 
   it('is NOT close for 6-char word with edit distance 3 (above threshold 2)', () => {
