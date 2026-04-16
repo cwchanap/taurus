@@ -139,12 +139,12 @@ export function calculateCorrectGuessScore(
   roundEndTime: number,
   currentTime: number = Date.now(),
   missedRounds = 0
-): number {
+): { score: number; catchUpBonus: number } {
   const timeRemaining = Math.max(0, roundEndTime - currentTime)
   const timeRatio = Math.min(1, Math.max(0, timeRemaining / ROUND_DURATION_MS))
   const baseScore = Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
   const catchUpBonus = Math.min(missedRounds * CATCH_UP_BONUS_PER_ROUND, MAX_CATCH_UP_BONUS)
-  return baseScore + catchUpBonus
+  return { score: baseScore + catchUpBonus, catchUpBonus }
 }
 
 /**
