@@ -19,17 +19,6 @@ interface WebSocketAttachment {
   player: Player
 }
 
-const COLORS = [
-  '#FF6B6B',
-  '#4ECDC4',
-  '#45B7D1',
-  '#96CEB4',
-  '#FFEAA7',
-  '#DDA0DD',
-  '#98D8C8',
-  '#F7DC6F',
-]
-
 import {
   MAX_STROKE_POINTS,
   ROUND_DURATION_MS,
@@ -687,7 +676,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     const playerId = crypto.randomUUID()
     const existingPlayers = this.getPlayers()
-    const color = COLORS[existingPlayers.length % COLORS.length]
+    const color = PALETTE_COLORS[existingPlayers.length % PALETTE_COLORS.length]
 
     const player: Player = {
       id: playerId,
@@ -1689,18 +1678,32 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
       if (!attachment?.playerId) continue
       try {
-        ws.send(
-          JSON.stringify({
-            type: 'round-start',
-            roundNumber: this.gameState.currentRound,
-            totalRounds: this.gameState.totalRounds,
-            drawerId,
-            drawerName,
-            word: attachment.playerId === drawerId ? word : undefined,
-            wordLength: word.length,
-            endTime: this.gameState.roundEndTime,
-          })
-        )
+        if (attachment.playerId === drawerId) {
+          ws.send(
+            JSON.stringify({
+              type: 'round-start-for-drawer',
+              roundNumber: this.gameState.currentRound,
+              totalRounds: this.gameState.totalRounds,
+              drawerId,
+              drawerName,
+              word,
+              wordLength: word.length,
+              endTime: this.gameState.roundEndTime,
+            })
+          )
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: 'round-start-for-guesser',
+              roundNumber: this.gameState.currentRound,
+              totalRounds: this.gameState.totalRounds,
+              drawerId,
+              drawerName,
+              wordLength: word.length,
+              endTime: this.gameState.roundEndTime,
+            })
+          )
+        }
       } catch (error) {
         if (error instanceof DOMException && error.name === 'InvalidStateError') {
           deadSockets.push(ws)
