@@ -217,4 +217,39 @@ describe('GameHeader', () => {
 
     expect(screen.getByText('—')).toBeTruthy()
   })
+
+  it('renders Choosing word... with round-over timer class when status is word-choice', () => {
+    const { container } = render(GameHeader, {
+      status: 'word-choice',
+      currentWord: undefined,
+      wordLength: 0,
+      timeRemaining: 0,
+      currentDrawerName: 'Bob',
+      isCurrentDrawer: false,
+      roundNumber: 2,
+      totalRounds: 4,
+    })
+
+    expect(screen.getByText('Choosing word...')).toBeTruthy()
+    expect(container.querySelector('.timer-display')?.classList.contains('round-over')).toBe(true)
+    expect(container.querySelector('.timer-display')?.classList.contains('urgent')).toBe(false)
+  })
+
+  it('renders hintString in place of maskedWord when provided', () => {
+    render(GameHeader, {
+      status: 'playing',
+      currentWord: undefined,
+      wordLength: 5,
+      timeRemaining: 30,
+      currentDrawerName: 'Bob',
+      isCurrentDrawer: false,
+      roundNumber: 1,
+      totalRounds: 3,
+      hintString: 'a _ _ l e',
+    })
+
+    expect(screen.getByText('a _ _ l e')).toBeTruthy()
+    // Masked word should NOT appear when hintString is set
+    expect(screen.queryByText('_ _ _ _ _')).toBeNull()
+  })
 })
