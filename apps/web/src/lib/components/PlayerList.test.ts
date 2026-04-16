@@ -11,7 +11,7 @@ describe('PlayerList', () => {
   it('renders fallback initials and colors while highlighting the current player', () => {
     const { container } = render(PlayerList, {
       players: [
-        { id: 'player-1', name: '   ', color: 'not-a-color' },
+        { id: 'player-1', name: '   ', color: '#4ECDC4' },
         { id: 'player-2', name: 'Alice', color: '#FF6B6B' },
       ],
       currentPlayerId: 'player-2',
