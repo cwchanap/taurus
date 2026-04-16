@@ -242,13 +242,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       const remainingMs = (this.gameState.choiceDeadline ?? 0) - Date.now()
       if (remainingMs <= 0) {
-        if (!this.pendingWordOptions || this.pendingWordOptions.length === 0) {
-          console.warn(
-            'resumeGameFlowFromState: no pending word options on expired deadline, re-running word choice'
-          )
-          this.beginWordChoice()
-          return
-        }
         this.beginDrawing(this.pendingWordOptions[0])
         return
       }
@@ -814,9 +807,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         this.beginWordChoice()
       } catch (e) {
         console.error(
-          'handleLeave: beginWordChoice failed after drawer left during word-choice:',
+          'handleLeave: beginWordChoice failed after drawer left during word-choice, ending game:',
           e
         )
+        this.endGame()
       }
       return
     }
