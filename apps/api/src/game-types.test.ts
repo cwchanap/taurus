@@ -288,8 +288,11 @@ describe('gameStateToWire', () => {
     }
 
     const wire = gameStateToWire(state, true)
-    expect(wire.currentWord).toBe('secret')
-    expect(wire.wordLength).toBe(6)
+    expect(wire.status).toBe('playing')
+    if (wire.status === 'playing') {
+      expect(wire.currentWord).toBe('secret')
+      expect(wire.wordLength).toBe(6)
+    }
   })
 
   test('guesser does not see the current word during playing state', () => {
@@ -315,8 +318,11 @@ describe('gameStateToWire', () => {
     }
 
     const wire = gameStateToWire(state, false)
-    expect(wire.currentWord).toBeUndefined()
-    expect(wire.wordLength).toBe(6)
+    expect(wire.status).toBe('playing')
+    if (wire.status === 'playing') {
+      expect(wire.currentWord).toBeUndefined()
+      expect(wire.wordLength).toBe(6)
+    }
   })
 
   test('lobby state has correct shape', () => {
@@ -325,7 +331,6 @@ describe('gameStateToWire', () => {
 
     expect(wire.status).toBe('lobby')
     expect(wire.currentDrawerId).toBeNull()
-    expect(wire.wordLength).toBeUndefined()
     expect(wire.scores).toEqual({})
   })
 
@@ -355,8 +360,6 @@ describe('gameStateToWire', () => {
     expect(wire.status).toBe('round-end')
     expect(wire.currentRound).toBe(2)
     expect(wire.totalRounds).toBe(3)
-    expect(wire.wordLength).toBeUndefined()
-    expect(wire.currentWord).toBeUndefined()
     expect(wire.scores).toEqual({ p1: { score: 100, name: 'Player 1' } })
   })
 
@@ -389,9 +392,10 @@ describe('gameStateToWire', () => {
     expect(wire.currentRound).toBe(1)
     expect(wire.totalRounds).toBe(3)
     expect(wire.currentDrawerId).toBe('drawer1')
-    expect(wire.wordLength).toBeUndefined()
-    expect(wire.roundEndTime).toBe(choiceDeadline)
     expect(wire.scores).toEqual({ drawer1: { score: 0, name: 'Drawer' } })
+    if (wire.status === 'word-choice') {
+      expect(wire.deadlineTime).toBe(choiceDeadline)
+    }
   })
 })
 
@@ -483,7 +487,7 @@ describe('type guards', () => {
       roundStartTime: null,
       roundEndTime: null,
       endGameAfterCurrentRound: false,
-      offeredWords: ['cat', 'dog'],
+      offeredWords: ['cat', 'dog', 'fish'],
       choiceDeadline: now + 15000,
       drawerOrder: ['p1', 'p2'],
       scores: new Map([['p1', { score: 0, name: 'Player 1' }]]),
@@ -557,7 +561,7 @@ describe('WordChoiceState serialization', () => {
     }
 
     const restored = gameStateFromStorage(stored) as WordChoiceState
-    expect(restored.offeredWords).toEqual([])
+    expect(restored.offeredWords).toHaveLength(0)
     expect(restored.choiceDeadline).toBeNull()
   })
 })
