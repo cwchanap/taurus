@@ -644,8 +644,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           }
           break
         }
-        this.clearTimers()
-        this.beginDrawing(word)
+        try {
+          this.clearTimers()
+          this.beginDrawing(word)
+        } catch (e) {
+          console.error('Handler error for choose-word:', e)
+          try {
+            ws.send(JSON.stringify({ type: 'error', message: 'Failed to process word choice' }))
+          } catch {
+            // Connection may be closed
+          }
+        }
         break
       }
     }
@@ -1287,7 +1296,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       // Check for exact-match correct guess (scoring)
       if (isCorrectGuess(sanitizedContent, this.gameState.currentWord)) {
-        await this.handleCorrectGuess(playerId, attachment.player.name)
+        this.handleCorrectGuess(playerId, attachment.player.name)
         return
       }
 
@@ -1600,7 +1609,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.clearTimers()
     this.wordChoiceTimer = setTimeout(() => {
       if (this.pendingWordOptions && this.pendingWordOptions.length > 0) {
-        this.beginDrawing(this.pendingWordOptions[0])
+        const autoWord = this.pendingWordOptions[0]
+        console.info(
+          `wordChoiceTimer: drawer timed out, auto-selecting word "${autoWord}" for round ${this.gameState.currentRound}`
+        )
+        try {
+          this.beginDrawing(autoWord)
+        } catch (e) {
+          console.error('wordChoiceTimer: beginDrawing failed after auto-advance:', e)
+        }
       }
     }, WORD_CHOICE_DURATION_MS)
   }
@@ -1774,11 +1791,21 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     if (hint1At == null || hint2At == null) return
 
     if (!this.hasReachedHintFraction(HINT_LETTER_FRACTION_1)) {
-      this.hintTimer1 = setTimeout(() => void this.sendHint(1), Math.max(0, hint1At - Date.now()))
+      this.hintTimer1 = setTimeout(
+        () => {
+          this.sendHint(1).catch((e) => console.error('sendHint(1) failed:', e))
+        },
+        Math.max(0, hint1At - Date.now())
+      )
     }
 
     if (!this.hasReachedHintFraction(HINT_LETTER_FRACTION_2)) {
-      this.hintTimer2 = setTimeout(() => void this.sendHint(2), Math.max(0, hint2At - Date.now()))
+      this.hintTimer2 = setTimeout(
+        () => {
+          this.sendHint(2).catch((e) => console.error('sendHint(2) failed:', e))
+        },
+        Math.max(0, hint2At - Date.now())
+      )
     }
   }
 
@@ -2018,7 +2045,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   /**
    * Handle a correct guess from a player
    */
-  private async handleCorrectGuess(playerId: string, playerName: string) {
+  private handleCorrectGuess(playerId: string, playerName: string) {
     if (!this.gameState.roundEndTime || !this.gameState.currentWord) return
 
     // Prevent duplicate scoring - check if player already guessed correctly
@@ -2049,8 +2076,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
     this.gameState.roundGuesserScores.set(playerId, score)
 
-    // Persist updated scores to durable storage before broadcasting
-    await this.persistGameState()
+    // Fire-and-forget persistence — broadcast must not wait on storage
+    this.ctx.waitUntil(
+      this.persistGameState().catch((e) =>
+        console.error('handleCorrectGuess: failed to persist after correct guess:', e)
+      )
+    )
 
     // Calculate time remaining for notification
     const timeRemaining = Math.max(0, this.gameState.roundEndTime - Date.now())
