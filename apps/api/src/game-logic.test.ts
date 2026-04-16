@@ -28,6 +28,8 @@ import {
 import {
   ROUND_DURATION_MS,
   CORRECT_GUESS_BASE_SCORE,
+  CATCH_UP_BONUS_PER_ROUND,
+  MAX_CATCH_UP_BONUS,
   MAX_MESSAGES_PER_WINDOW,
   MAX_STROKES_PER_WINDOW,
   MAX_STROKE_UPDATES_PER_WINDOW,
@@ -246,31 +248,31 @@ describe('calculateCorrectGuessScore', () => {
 
   test('full time remaining gives 150% base score', () => {
     const roundEndTime = FIXED_NOW + ROUND_DURATION_MS
-    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
+    const { score } = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(Math.round(CORRECT_GUESS_BASE_SCORE * 1.5))
   })
 
   test('no time remaining gives base score', () => {
     const roundEndTime = FIXED_NOW
-    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
+    const { score } = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
   })
 
   test('half time remaining gives 125% base score', () => {
     const roundEndTime = FIXED_NOW + ROUND_DURATION_MS / 2
-    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
+    const { score } = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(Math.round(CORRECT_GUESS_BASE_SCORE * 1.25))
   })
 
   test('time already expired gives base score', () => {
     const roundEndTime = FIXED_NOW - 1000
-    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
+    const { score } = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
   })
 
   test('handles very large negative time difference', () => {
     const roundEndTime = FIXED_NOW - 999999
-    const score = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
+    const { score } = calculateCorrectGuessScore(roundEndTime, FIXED_NOW)
     expect(score).toBe(CORRECT_GUESS_BASE_SCORE)
     expect(Number.isFinite(score)).toBe(true)
   })
@@ -797,6 +799,23 @@ describe('isCloseGuess', () => {
     expect(isCloseGuess('apple', 'apple')).toBe(false)
     expect(isCloseGuess('dog', 'elephant')).toBe(false)
   })
+
+  it('is close for 5-char word with edit distance exactly 1 (threshold 1)', () => {
+    expect(isCloseGuess('heard', 'heart')).toBe(true)
+    expect(isCloseGuess('hears', 'heart')).toBe(true)
+  })
+
+  it('is NOT close for 5-char word with edit distance 2 (above threshold 1)', () => {
+    expect(isCloseGuess('board', 'heart')).toBe(false)
+  })
+
+  it('is close for 6-char word with edit distance exactly 2 (threshold 2)', () => {
+    expect(isCloseGuess('brldge', 'bridge')).toBe(true)
+  })
+
+  it('is NOT close for 6-char word with edit distance 3 (above threshold 2)', () => {
+    expect(isCloseGuess('xxxxxx', 'bridge')).toBe(false)
+  })
 })
 
 describe('buildHintString', () => {
@@ -833,25 +852,46 @@ describe('pickNextRevealPositions', () => {
     const result = pickNextRevealPositions('hot dog', [], 0.5)
     expect(result.length).toBe(3) // ceil(6 * 0.5) = 3
   })
+
+  it('returns existing unchanged when already at or above targetCount', () => {
+    // 'apple' has 5 maskable chars; targetFraction 0.25 → targetCount = ceil(5*0.25) = 2
+    // existing already has 2 positions → no new positions should be added
+    const existing = [0, 2]
+    const result = pickNextRevealPositions('apple', existing, 0.25)
+    expect(result).toEqual(existing)
+    expect(result.length).toBe(2)
+  })
 })
 
 describe('calculateCorrectGuessScore with missedRounds', () => {
-  it('adds catch-up bonus for missed rounds', () => {
-    const roundEndTime = Date.now() + 30000
-    const baseScore = calculateCorrectGuessScore(roundEndTime, Date.now(), 0)
-    const bonusScore = calculateCorrectGuessScore(roundEndTime, Date.now(), 3)
-    expect(bonusScore - baseScore).toBe(30)
+  const FIXED_NOW = 1700000000000
+  const FIXED_END = FIXED_NOW + 30000
+
+  it('catchUpBonus is 0 when missedRounds is 0', () => {
+    const { catchUpBonus } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, 0)
+    expect(catchUpBonus).toBe(0)
   })
-  it('caps catch-up bonus at MAX_CATCH_UP_BONUS (50)', () => {
-    const roundEndTime = Date.now() + 30000
-    const score10 = calculateCorrectGuessScore(roundEndTime, Date.now(), 10)
-    const score5 = calculateCorrectGuessScore(roundEndTime, Date.now(), 5)
-    expect(score10).toBe(score5) // both capped at +50
+
+  it('catchUpBonus is missedRounds * CATCH_UP_BONUS_PER_ROUND when under cap', () => {
+    const { catchUpBonus } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, 3)
+    expect(catchUpBonus).toBe(3 * CATCH_UP_BONUS_PER_ROUND)
   })
-  it('returns same score as before when missedRounds is 0', () => {
-    const roundEndTime = Date.now() + 30000
-    const withZero = calculateCorrectGuessScore(roundEndTime, Date.now(), 0)
-    const withDefault = calculateCorrectGuessScore(roundEndTime, Date.now())
-    expect(withZero).toBe(withDefault)
+
+  it('catchUpBonus is capped at MAX_CATCH_UP_BONUS (50)', () => {
+    const { catchUpBonus: bonus10 } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, 10)
+    const { catchUpBonus: bonus5 } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, 5)
+    expect(bonus10).toBe(MAX_CATCH_UP_BONUS)
+    expect(bonus5).toBe(MAX_CATCH_UP_BONUS)
+  })
+
+  it('total score includes catchUpBonus', () => {
+    const { score, catchUpBonus } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, 3)
+    const { score: baseOnly } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, 0)
+    expect(score - baseOnly).toBe(catchUpBonus)
+  })
+
+  it('catchUpBonus defaults to 0 when missedRounds not provided', () => {
+    const { catchUpBonus } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW)
+    expect(catchUpBonus).toBe(0)
   })
 })

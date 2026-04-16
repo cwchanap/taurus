@@ -201,7 +201,7 @@ describe('Scoring Algorithm', () => {
   function scoreWithTimeRemaining(timeRemaining: number): number {
     const now = 100000
     const roundEndTime = now + timeRemaining
-    return calculateCorrectGuessScore(roundEndTime, now)
+    return calculateCorrectGuessScore(roundEndTime, now).score
   }
 
   test('should award base score when time is up', () => {
