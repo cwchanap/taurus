@@ -44,8 +44,6 @@ import {
   HINT_TIME_TRIGGER_2,
   HINT_LETTER_FRACTION_1,
   HINT_LETTER_FRACTION_2,
-  CATCH_UP_BONUS_PER_ROUND,
-  MAX_CATCH_UP_BONUS,
 } from './constants'
 import { getRandomWordsExcluding } from './vocabulary'
 import {
@@ -2028,8 +2026,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Calculate time-based score with catch-up bonus
     const missed = this.gameState.consecutiveMissedRounds.get(playerId) ?? 0
-    const score = calculateCorrectGuessScore(this.gameState.roundEndTime, Date.now(), missed)
-    const catchUpBonus = Math.min(missed * CATCH_UP_BONUS_PER_ROUND, MAX_CATCH_UP_BONUS)
+    const { score, catchUpBonus } = calculateCorrectGuessScore(
+      this.gameState.roundEndTime,
+      Date.now(),
+      missed
+    )
 
     // Reset missed rounds for this player now that they've guessed correctly
     this.gameState.consecutiveMissedRounds.set(playerId, 0)

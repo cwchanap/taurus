@@ -133,7 +133,7 @@ export function isCloseGuess(candidate: string, targetWord: string): boolean {
  * @param roundEndTime - The timestamp when the round will end
  * @param currentTime - The current timestamp (defaults to Date.now())
  * @param missedRounds - Number of rounds the player missed (for catch-up bonus)
- * @returns The calculated score: 100 (base) to 150 (with full time bonus), plus catch-up bonus
+ * @returns `{ score, catchUpBonus }` — total score (base + catch-up bonus) and the catch-up portion separately
  */
 export function calculateCorrectGuessScore(
   roundEndTime: number,
