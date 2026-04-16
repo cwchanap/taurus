@@ -410,8 +410,7 @@ export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateW
     return {
       ...base,
       status: 'word-choice',
-      currentDrawerId: state.currentDrawerId,
-      deadlineTime: state.choiceDeadline ?? 0,
+      deadlineTime: state.choiceDeadline ?? 0, // choiceDeadline is always set when entering word-choice
     }
   }
 
@@ -419,7 +418,6 @@ export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateW
     return {
       ...base,
       status: 'playing',
-      currentDrawerId: state.currentDrawerId,
       deadlineTime: state.roundEndTime,
       wordLength: state.wordLength,
       ...(isDrawer ? { currentWord: state.currentWord } : {}),

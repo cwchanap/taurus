@@ -15,6 +15,7 @@ import {
   type StoredGameState,
   type WordChoiceState,
 } from './game-types'
+import { buildHintString } from './game-logic'
 
 describe('gameStateToStorage / gameStateFromStorage round-trip', () => {
   test('lobby state round-trips correctly', () => {
@@ -363,7 +364,7 @@ describe('gameStateToWire', () => {
     expect(wire.scores).toEqual({ p1: { score: 100, name: 'Player 1' } })
   })
 
-  test('word-choice state wire format includes choiceDeadline as roundEndTime', () => {
+  test('word-choice state wire format includes choiceDeadline as deadlineTime', () => {
     const now = Date.now()
     const choiceDeadline = now + 15_000
     const state: WordChoiceState = {
@@ -395,6 +396,62 @@ describe('gameStateToWire', () => {
     expect(wire.scores).toEqual({ drawer1: { score: 0, name: 'Drawer' } })
     if (wire.status === 'word-choice') {
       expect(wire.deadlineTime).toBe(choiceDeadline)
+    }
+  })
+
+  it('playing state includes revealedHint when revealedPositions is non-empty', () => {
+    const now = Date.now()
+    const state: PlayingState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: now,
+      roundEndTime: now + 60000,
+      drawerOrder: ['drawer', 'p2', 'p3'],
+      scores: new Map([['drawer', { score: 0, name: 'Drawer' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2', 'p3']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      revealedPositions: [0, 2],
+    }
+    const wire = gameStateToWire(state, false)
+    expect(wire.status).toBe('playing')
+    if (wire.status === 'playing') {
+      expect(wire.revealedHint).toBe(buildHintString('cat', [0, 2]))
+    }
+  })
+
+  it('playing state omits revealedHint when revealedPositions is empty', () => {
+    const now = Date.now()
+    const state: PlayingState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: now,
+      roundEndTime: now + 60000,
+      drawerOrder: ['drawer', 'p2', 'p3'],
+      scores: new Map([['drawer', { score: 0, name: 'Drawer' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2', 'p3']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      revealedPositions: [],
+    }
+    const wire = gameStateToWire(state, false)
+    expect(wire.status).toBe('playing')
+    if (wire.status === 'playing') {
+      expect(wire.revealedHint).toBeUndefined()
     }
   })
 })
