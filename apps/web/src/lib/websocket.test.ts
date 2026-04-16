@@ -471,36 +471,93 @@ describe('handleMessage dispatch', () => {
     expect(onGameStarted).toHaveBeenCalledWith(3, ['p1'], {})
   })
 
-  it('dispatches round-start to onRoundStart', () => {
+  it('dispatches round-start-for-drawer to onRoundStart with word', () => {
     const onRoundStart = vi.fn()
     createConnectedWs({ onRoundStart })
     receive({
-      type: 'round-start',
+      type: 'round-start-for-drawer',
       roundNumber: 1,
       totalRounds: 3,
       drawerId: 'p1',
-      drawerName: 'A',
-      word: 'cat',
-      wordLength: 3,
-      endTime: 9999,
+      drawerName: 'Alice',
+      word: 'elephant',
+      wordLength: 8,
+      endTime: Date.now() + 60000,
     })
-    expect(onRoundStart).toHaveBeenCalledWith(1, 3, 'p1', 'A', 'cat', 3, 9999)
+    expect(onRoundStart).toHaveBeenCalledTimes(1)
+    const [rn, tr, did, dn, word, wl] = onRoundStart.mock.calls[0]
+    expect(rn).toBe(1)
+    expect(tr).toBe(3)
+    expect(did).toBe('p1')
+    expect(dn).toBe('Alice')
+    expect(word).toBe('elephant')
+    expect(wl).toBe(8)
   })
 
-  it('dispatches round-start with a default wordLength of 0 when omitted', () => {
+  it('dispatches round-start-for-guesser to onRoundStart with word undefined', () => {
     const onRoundStart = vi.fn()
     createConnectedWs({ onRoundStart })
     receive({
-      type: 'round-start',
+      type: 'round-start-for-guesser',
+      roundNumber: 1,
+      totalRounds: 3,
+      drawerId: 'p1',
+      drawerName: 'Alice',
+      wordLength: 8,
+      endTime: Date.now() + 60000,
+    })
+    expect(onRoundStart).toHaveBeenCalledTimes(1)
+    const [rn, tr, did, dn, word, wl] = onRoundStart.mock.calls[0]
+    expect(rn).toBe(1)
+    expect(tr).toBe(3)
+    expect(did).toBe('p1')
+    expect(dn).toBe('Alice')
+    expect(word).toBeUndefined()
+    expect(wl).toBe(8)
+  })
+
+  it('dispatches word-options to onWordOptions', () => {
+    const onWordOptions = vi.fn()
+    createConnectedWs({ onWordOptions })
+    receive({
+      type: 'word-options',
+      words: ['apple', 'banana', 'cherry'],
+      timeToChoose: 10000,
+      roundNumber: 1,
+      totalRounds: 3,
+      wordChoiceEndTime: Date.now() + 10000,
+    })
+    expect(onWordOptions).toHaveBeenCalledTimes(1)
+    expect(onWordOptions).toHaveBeenCalledWith(
+      ['apple', 'banana', 'cherry'],
+      expect.any(Number),
+      1,
+      3,
+      expect.any(Number)
+    )
+  })
+
+  it('dispatches word-choice-start to onWordChoiceStart', () => {
+    const onWordChoiceStart = vi.fn()
+    createConnectedWs({ onWordChoiceStart })
+    receive({
+      type: 'word-choice-start',
       roundNumber: 2,
       totalRounds: 3,
-      drawerId: 'p2',
-      drawerName: 'B',
-      word: 'dog',
-      endTime: 4321,
+      drawerId: 'p1',
+      drawerName: 'Alice',
+      wordChoiceEndTime: Date.now() + 10000,
     })
+    expect(onWordChoiceStart).toHaveBeenCalledTimes(1)
+    expect(onWordChoiceStart).toHaveBeenCalledWith(2, 3, 'p1', 'Alice', expect.any(Number))
+  })
 
-    expect(onRoundStart).toHaveBeenCalledWith(2, 3, 'p2', 'B', 'dog', 0, 4321)
+  it('dispatches hint to onHint', () => {
+    const onHint = vi.fn()
+    createConnectedWs({ onHint })
+    receive({ type: 'hint', revealed: 'a _ _ l e' })
+    expect(onHint).toHaveBeenCalledTimes(1)
+    expect(onHint).toHaveBeenCalledWith('a _ _ l e')
   })
 
   it('dispatches round-end to onRoundEnd', () => {
