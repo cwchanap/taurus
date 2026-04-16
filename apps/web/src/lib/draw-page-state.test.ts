@@ -249,8 +249,18 @@ describe('draw-page-state helpers', () => {
     expect(reset.systemNotification).toBeNull()
   })
 
-  it('creates and clears correct guess notifications', () => {
-    expect(createCorrectGuessNotification('Alice', 42)).toEqual({ playerName: 'Alice', score: 42 })
+  it('creates notification without catchUpBonus when not provided', () => {
+    const notification = createCorrectGuessNotification('Alice', 42)
+    expect(notification).toEqual({ playerName: 'Alice', score: 42 })
+    expect('catchUpBonus' in notification).toBe(false)
+  })
+
+  it('creates notification with catchUpBonus when provided', () => {
+    const notification = createCorrectGuessNotification('Alice', 150, 30)
+    expect(notification).toEqual({ playerName: 'Alice', score: 150, catchUpBonus: 30 })
+  })
+
+  it('clears notification', () => {
     expect(clearCorrectGuessNotification()).toBeNull()
   })
 
