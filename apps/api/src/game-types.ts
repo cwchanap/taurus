@@ -3,6 +3,7 @@
  */
 
 import type { GameStatus, ScoreEntry, RoundResult, Winner, GameStateWire } from '@repo/types'
+import { buildHintString } from './game-logic'
 
 export type { GameStatus, ScoreEntry, RoundResult, Winner, GameStateWire }
 
@@ -52,7 +53,7 @@ export type WordChoiceState = BaseGameState & {
   roundStartTime: null
   roundEndTime: null
   endGameAfterCurrentRound: boolean
-  offeredWords: string[]
+  offeredWords: [string, string, string]
   choiceDeadline: number | null
 }
 
@@ -301,7 +302,7 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
     }
     case 'word-choice': {
       if (!stored.currentDrawerId) {
-        console.error('Corrupt word-choice state: missing drawerId, falling back to lobby')
+        console.error('Corrupt word-choice state: missing drawerId, falling back to lobby', stored)
         return createInitialGameState()
       }
       return {
@@ -327,7 +328,8 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         stored.roundEndTime == null
       ) {
         console.error(
-          'Corrupt playing state in storage: missing required fields, falling back to lobby'
+          'Corrupt playing state in storage: missing required fields, falling back to lobby',
+          stored
         )
         return createInitialGameState()
       }
@@ -351,7 +353,8 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
         stored.nextTransitionAt == null
       ) {
         console.error(
-          'Corrupt round-end state in storage: missing required fields, falling back to lobby'
+          'Corrupt round-end state in storage: missing required fields, falling back to lobby',
+          stored
         )
         return createInitialGameState()
       }
@@ -389,52 +392,52 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
  * Helper to convert internal state to wire format
  */
 export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateWire {
-  // Use type guards to access fields correctly
+  const base = {
+    currentRound: state.currentRound,
+    totalRounds: state.totalRounds,
+    scores: scoresToRecord(state.scores),
+    currentDrawerId: state.currentDrawerId,
+  }
+
   if (isWordChoiceState(state)) {
     return {
-      status: state.status,
-      currentRound: state.currentRound,
-      totalRounds: state.totalRounds,
+      ...base,
+      status: 'word-choice',
       currentDrawerId: state.currentDrawerId,
-      wordLength: undefined,
-      roundEndTime: state.choiceDeadline,
-      scores: scoresToRecord(state.scores),
+      deadlineTime: state.choiceDeadline ?? 0,
     }
   }
 
   if (isPlayingState(state)) {
     return {
-      status: state.status,
-      currentRound: state.currentRound,
-      totalRounds: state.totalRounds,
+      ...base,
+      status: 'playing',
       currentDrawerId: state.currentDrawerId,
-      currentWord: isDrawer ? state.currentWord : undefined,
+      deadlineTime: state.roundEndTime,
       wordLength: state.wordLength,
-      roundEndTime: state.roundEndTime,
-      scores: scoresToRecord(state.scores),
+      ...(isDrawer ? { currentWord: state.currentWord } : {}),
+      ...(state.revealedPositions.length > 0
+        ? { revealedHint: buildHintString(state.currentWord, state.revealedPositions) }
+        : {}),
     }
   }
 
   if (isRoundEndState(state)) {
     return {
-      status: state.status,
-      currentRound: state.currentRound,
-      totalRounds: state.totalRounds,
-      currentDrawerId: state.currentDrawerId,
-      wordLength: undefined,
-      roundEndTime: state.roundEndTime,
-      scores: scoresToRecord(state.scores),
+      ...base,
+      status: 'round-end',
+      nextTransitionAt: state.nextTransitionAt,
     }
   }
 
-  // Lobby, starting, or game-over state
-  return {
-    status: state.status,
-    currentRound: state.currentRound,
-    totalRounds: state.totalRounds,
-    currentDrawerId: state.currentDrawerId,
-    wordLength: undefined,
-    roundEndTime: state.roundEndTime,
-    scores: scoresToRecord(state.scores),
+  if (isLobbyState(state)) {
+    return { ...base, status: 'lobby' }
   }
+
+  if (isStartingState(state)) {
+    return { ...base, status: 'starting' }
+  }
+
+  // game-over
+  return { ...base, status: 'game-over' }
 }
