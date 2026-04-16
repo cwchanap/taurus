@@ -1,9 +1,9 @@
-import type { GameStatus, ScoreEntry, RoundResult, Winner, ChatMessage, PaletteColor } from './game'
+import type { ScoreEntry, RoundResult, Winner, ChatMessage, PaletteColor } from './game'
 
 export interface Player {
   id: string
   name: string
-  color: string
+  color: PaletteColor
 }
 
 export interface Point {
@@ -58,17 +58,53 @@ export interface FillOperation {
    */
 }
 
-// Wire format for GameState (what goes over WebSocket)
-export interface GameStateWire {
-  status: GameStatus
+// Wire format for GameState — discriminated union matching internal GameState
+interface BaseGameStateWire {
   currentRound: number
   totalRounds: number
-  currentDrawerId: string | null
-  currentWord?: string // Optional - only sent to drawer
-  wordLength?: number
-  roundEndTime: number | null
   scores: Record<string, ScoreEntry>
+  currentDrawerId: string | null
 }
+
+export interface LobbyStateWire extends BaseGameStateWire {
+  status: 'lobby'
+}
+
+export interface StartingStateWire extends BaseGameStateWire {
+  status: 'starting'
+}
+
+export interface WordChoiceStateWire extends BaseGameStateWire {
+  status: 'word-choice'
+  currentDrawerId: string
+  deadlineTime: number
+}
+
+export interface PlayingStateWire extends BaseGameStateWire {
+  status: 'playing'
+  currentDrawerId: string
+  deadlineTime: number
+  wordLength: number
+  currentWord?: string // only present for the drawer
+  revealedHint?: string
+}
+
+export interface RoundEndStateWire extends BaseGameStateWire {
+  status: 'round-end'
+  nextTransitionAt: number
+}
+
+export interface GameOverStateWire extends BaseGameStateWire {
+  status: 'game-over'
+}
+
+export type GameStateWire =
+  | LobbyStateWire
+  | StartingStateWire
+  | WordChoiceStateWire
+  | PlayingStateWire
+  | RoundEndStateWire
+  | GameOverStateWire
 
 // Client-to-Server Messages
 export type ClientMessage =
@@ -124,12 +160,21 @@ export type ServerMessage =
       scores: Record<string, ScoreEntry>
     }
   | {
-      type: 'round-start'
+      type: 'round-start-for-drawer'
       roundNumber: number
       totalRounds: number
       drawerId: string
       drawerName: string
-      word?: string
+      word: string
+      wordLength: number
+      endTime: number
+    }
+  | {
+      type: 'round-start-for-guesser'
+      roundNumber: number
+      totalRounds: number
+      drawerId: string
+      drawerName: string
       wordLength?: number
       endTime: number
     }
@@ -164,7 +209,7 @@ export type ServerMessage =
     }
   | {
       type: 'word-options'
-      words: string[]
+      words: [string, string, string]
       timeToChoose: number
       roundNumber: number
       totalRounds: number
