@@ -207,13 +207,24 @@ export class GameWebSocket {
       case 'game-started':
         this.handlers.onGameStarted?.(data.totalRounds, data.drawerOrder, data.scores)
         break
-      case 'round-start':
+      case 'round-start-for-drawer':
         this.handlers.onRoundStart?.(
           data.roundNumber,
           data.totalRounds,
           data.drawerId,
           data.drawerName,
           data.word,
+          data.wordLength,
+          data.endTime
+        )
+        break
+      case 'round-start-for-guesser':
+        this.handlers.onRoundStart?.(
+          data.roundNumber,
+          data.totalRounds,
+          data.drawerId,
+          data.drawerName,
+          undefined,
           data.wordLength ?? 0,
           data.endTime
         )
@@ -331,20 +342,20 @@ export class GameWebSocket {
     return this.send({ type: 'clear' })
   }
 
-  sendChat(content: string) {
-    this.send({ type: 'chat', content })
+  sendChat(content: string): boolean {
+    return this.send({ type: 'chat', content })
   }
 
-  sendStartGame() {
-    this.send({ type: 'start-game' })
+  sendStartGame(): boolean {
+    return this.send({ type: 'start-game' })
   }
 
   sendResetGame(): boolean {
     return this.send({ type: 'reset-game' })
   }
 
-  sendChooseWord(word: string) {
-    this.send({ type: 'choose-word', word })
+  sendChooseWord(word: string): boolean {
+    return this.send({ type: 'choose-word', word })
   }
 
   disconnect() {
