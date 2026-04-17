@@ -61,9 +61,9 @@ Same tuple constraint applied to the internal backend state in `game-types.ts`. 
 
 ### 2a. Error handling in `room.ts`
 
-**`choose-word` handler (line 629):** Wrap the `clearTimers()` + `beginDrawing()` calls in a try-catch that logs the error and sends a descriptive error message to the client. Matches the pattern of every other handler in the WebSocket message switch.
+**`choose-word` branch (`DrawingRoom.webSocketMessage()` in `room.ts`):** Wrap the `clearTimers()` + `beginDrawing()` calls in a try-catch that logs the error and sends a descriptive error message to the client. Matches the pattern of every other handler in the WebSocket message switch.
 
-**`sendHint` timer callbacks (lines 1774–1779):** Replace `void this.sendHint(n)` with explicit `.catch()` handlers:
+**Hint timer callbacks (`DrawingRoom.schedulePendingHints()` in `room.ts`):** Replace `void this.sendHint(n)` with explicit `.catch()` handlers:
 
 ```typescript
 this.hintTimer1 = setTimeout(
@@ -74,35 +74,35 @@ this.hintTimer1 = setTimeout(
 )
 ```
 
-**`wordChoiceTimer` auto-advance (line 1598):** Wrap `beginDrawing()` in try-catch. Add a `console.info` log when the timer fires recording the drawer ID, auto-selected word, and round number.
+**`wordChoiceTimer` auto-advance (`DrawingRoom.beginWordChoice()` in `room.ts`):** Wrap `beginDrawing()` in try-catch. Add a `console.info` log when the timer fires recording the drawer ID, auto-selected word, and round number.
 
-**`handleCorrectGuess` persistence (line 2047):** Move `persistGameState()` into `ctx.waitUntil()` with a `.catch()`. Broadcast always fires regardless of persistence outcome. This prevents a persistence failure from silently blocking the correct-guess notification and round-end check.
+**`handleCorrectGuess` persistence (`DrawingRoom.handleCorrectGuess()` in `room.ts`):** Move `persistGameState()` into `ctx.waitUntil()` with a `.catch()`. Broadcast always fires regardless of persistence outcome. This prevents a persistence failure from silently blocking the correct-guess notification and round-end check.
 
 ### 2b. Vocabulary / word-choice safety
 
 **`getRandomWordsExcluding()` (`vocabulary.ts`):** Log a `console.warn` when the returned array is shorter than `count`, indicating vocabulary exhaustion.
 
-**`beginWordChoice()` (`room.ts` line 1525):** Guard after `getRandomWordsExcluding()`: if result is empty, log `console.error` and call `endGame()` instead of proceeding. Prevents permanent freeze in `word-choice` state. After the guard (when `options.length > 0`), assert `options as [string, string, string]` to satisfy the tuple type on `offeredWords` — valid because vocabulary exhaustion has been ruled out and `getRandomWordsExcluding` returns exactly `WORD_CHOICE_OPTIONS_COUNT` words when sufficient vocabulary is available.
+**`beginWordChoice()` (`DrawingRoom.beginWordChoice()` in `room.ts`):** Guard after `getRandomWordsExcluding()`: if `options.length !== WORD_CHOICE_OPTIONS_COUNT`, log `console.error` and call `endGame()` instead of proceeding. Prevents leaking short option arrays into `offeredWords`. After confirming `options.length === WORD_CHOICE_OPTIONS_COUNT`, assert `options as [string, string, string]` to satisfy the tuple type using `getRandomWordsExcluding()`'s contract.
 
-**`resumeGameFlowFromState()` (`room.ts` line 246):** Add `pendingWordOptions.length === 0` guard before the `remainingMs <= 0` fast-path that calls `beginDrawing(pendingWordOptions[0])`. If options are empty, call `beginWordChoice()` to regenerate rather than passing `undefined` to `beginDrawing()`.
+**`resumeGameFlowFromState()` (`DrawingRoom.resumeGameFlowFromState()` in `room.ts`):** Add `pendingWordOptions.length === 0` guard before the `remainingMs <= 0` fast-path that calls `beginDrawing(pendingWordOptions[0])`. If options are empty, call `beginWordChoice()` to regenerate rather than passing `undefined` to `beginDrawing()`.
 
-### 2c. `handleLeave` during word-choice (`room.ts` line 806)
+### 2c. `handleLeave` during word-choice (`DrawingRoom.handleLeave()` in `room.ts`)
 
 Remove the intermediate invalid state assignment (`this.gameState = { currentDrawerId: '', ... }`). Since `beginWordChoice()` replaces the entire game state unconditionally, the intermediate state is unnecessary and creates a window where `currentDrawerId` is an empty string (invalid). The corrected block: clear timers, null out `pendingWordOptions` and `wordChoiceStartTime`, schedule the `cleanedPlayers` cleanup, then call `beginWordChoice()` directly. Wrap `beginWordChoice()` in try-catch with error logging.
 
 ### 2d. Catch-up bonus consolidation
 
-Change `calculateCorrectGuessScore` in `game-logic.ts` to return `{ score: number; catchUpBonus: number }` instead of just `number`. `room.ts` uses the returned `catchUpBonus` in the broadcast message, eliminating the duplicate formula at line 2032. Single source of truth for the bonus cap logic.
+Change `calculateCorrectGuessScore()` in `game-logic.ts` to return `{ score: number; catchUpBonus: number }` instead of just `number`. `DrawingRoom.handleCorrectGuess()` in `room.ts` uses the returned `catchUpBonus` in the broadcast message, eliminating the duplicate bonus formula there. Single source of truth for the bonus cap logic.
 
-### 2e. Color import (`room.ts` lines 22–31)
+### 2e. Color import (`PALETTE_COLORS` usage in `room.ts`)
 
 Remove the local `COLORS` array. Import `PALETTE_COLORS` from `@repo/types` and use it for player color assignment. Fixes the drift between `'#98D8C8'`/`'#F7DC6F'` (old room.ts) and `'#96CEB4'`/`'#FFEAA7'` (types).
 
-### 2f. `gameStateToWire()` and `GameStateWire` adapter (`game-types.ts`)
+### 2f. `gameStateToWire()` and `GameStateWire` adapter (`gameStateToWire()` in `game-types.ts`, `GameStateWire` in `packages/types/src/messages.ts`)
 
 Update `gameStateToWire()` to return the correct discriminated union variant per status. Rename `roundEndTime` → `deadlineTime` in the `word-choice` and `playing` variants. Update `StoredGameState` fallback log calls to include the full stored state object to aid post-mortem debugging.
 
-### 2g. `round-start` broadcast split (`room.ts`)
+### 2g. `round-start` broadcast split (the round-start broadcast loop in `DrawingRoom.beginDrawing()` in `room.ts`)
 
 Replace the single `round-start` broadcast with:
 

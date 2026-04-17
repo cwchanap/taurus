@@ -223,20 +223,20 @@ describe('pickNextRevealPositions', () => {
 describe('calculateCorrectGuessScore with missedRounds', () => {
   it('adds catch-up bonus for missed rounds', () => {
     const roundEndTime = Date.now() + 30000
-    const baseScore = calculateCorrectGuessScore(roundEndTime, Date.now(), 0)
-    const bonusScore = calculateCorrectGuessScore(roundEndTime, Date.now(), 3)
+    const { score: baseScore } = calculateCorrectGuessScore(roundEndTime, Date.now(), 0)
+    const { score: bonusScore } = calculateCorrectGuessScore(roundEndTime, Date.now(), 3)
     expect(bonusScore - baseScore).toBe(30)
   })
   it('caps catch-up bonus at MAX_CATCH_UP_BONUS', () => {
     const roundEndTime = Date.now() + 30000
-    const score10 = calculateCorrectGuessScore(roundEndTime, Date.now(), 10)
-    const score5 = calculateCorrectGuessScore(roundEndTime, Date.now(), 5)
-    expect(score10).toBe(score5) // both capped at +50
+    const { catchUpBonus: bonus10 } = calculateCorrectGuessScore(roundEndTime, Date.now(), 10)
+    const { catchUpBonus: bonus5 } = calculateCorrectGuessScore(roundEndTime, Date.now(), 5)
+    expect(bonus10).toBe(bonus5) // both capped at +50
   })
   it('returns same score as before when missedRounds is 0', () => {
     const roundEndTime = Date.now() + 30000
-    const withZero = calculateCorrectGuessScore(roundEndTime, Date.now(), 0)
-    const withDefault = calculateCorrectGuessScore(roundEndTime, Date.now())
+    const { score: withZero } = calculateCorrectGuessScore(roundEndTime, Date.now(), 0)
+    const { score: withDefault } = calculateCorrectGuessScore(roundEndTime, Date.now())
     expect(withZero).toBe(withDefault)
   })
 })
@@ -277,12 +277,13 @@ export function calculateCorrectGuessScore(
   roundEndTime: number,
   currentTime: number = Date.now(),
   missedRounds = 0
-): number {
+): { score: number; catchUpBonus: number } {
   const timeRemaining = Math.max(0, roundEndTime - currentTime)
   const timeRatio = Math.min(1, Math.max(0, timeRemaining / ROUND_DURATION_MS))
   const baseScore = Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
   const catchUpBonus = Math.min(missedRounds * CATCH_UP_BONUS_PER_ROUND, MAX_CATCH_UP_BONUS)
-  return baseScore + catchUpBonus
+  const score = baseScore + catchUpBonus
+  return { score, catchUpBonus }
 }
 ```
 
@@ -812,7 +813,9 @@ describe('word choice flow', () => {
     await room.webSocketMessage(drawerWs, JSON.stringify({ type: 'choose-word', word: options[0] }))
 
     const allDrawerMessages = getSentMessages(drawerWs)
-    expect(allDrawerMessages.find((m) => m.type === 'round-start' && m.word)).toBeDefined()
+    expect(
+      allDrawerMessages.find((m) => m.type === 'round-start-for-drawer' && m.word)
+    ).toBeDefined()
   })
 
   it('rejects choose-word if word is not in offered options', async () => {
@@ -829,9 +832,11 @@ describe('word choice flow', () => {
       JSON.stringify({ type: 'choose-word', word: 'NOTAVALIDWORD_XYZ' })
     )
 
-    // Game should not have started drawing (no round-start with word yet)
+    // Game should not have started drawing (no round-start-for-drawer yet)
     const drawerMessages = getSentMessages(drawerWs)
-    const roundStartWithWord = drawerMessages.find((m) => m.type === 'round-start' && m.word)
+    const roundStartWithWord = drawerMessages.find(
+      (m) => m.type === 'round-start-for-drawer' && m.word
+    )
     expect(roundStartWithWord).toBeUndefined()
   })
 })
@@ -1055,22 +1060,34 @@ private beginDrawing(word: string) {
   this.ctx.waitUntil(strokeDeletePromise)
   this.ctx.waitUntil(fillDeletePromise)
 
-  // Broadcast round-start (with word to drawer only)
+  // Broadcast split round-start messages
   const deadSockets: WebSocket[] = []
   for (const ws of this.ctx.getWebSockets()) {
     const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
     if (!attachment?.playerId) continue
     try {
-      ws.send(JSON.stringify({
-        type: 'round-start',
-        roundNumber: this.gameState.currentRound,
-        totalRounds: this.gameState.totalRounds,
-        drawerId,
-        drawerName,
-        word: attachment.playerId === drawerId ? word : undefined,
-        wordLength: word.length,
-        endTime: this.gameState.roundEndTime,
-      }))
+      if (attachment.playerId === drawerId) {
+        ws.send(JSON.stringify({
+          type: 'round-start-for-drawer',
+          roundNumber: this.gameState.currentRound,
+          totalRounds: this.gameState.totalRounds,
+          drawerId,
+          drawerName,
+          word,
+          wordLength: word.length,
+          endTime: this.gameState.roundEndTime,
+        }))
+      } else {
+        ws.send(JSON.stringify({
+          type: 'round-start-for-guesser',
+          roundNumber: this.gameState.currentRound,
+          totalRounds: this.gameState.totalRounds,
+          drawerId,
+          drawerName,
+          wordLength: word.length,
+          endTime: this.gameState.roundEndTime,
+        }))
+      }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'InvalidStateError') {
         deadSockets.push(ws)
@@ -1295,9 +1312,9 @@ describe('close-guess feedback', () => {
     // trigger word choice + round start via timer
     // ... (use fake timers if needed)
 
-    // Find the current word from the drawer's round-start message
+    // Find the current word from the drawer's round-start-for-drawer message
     const ws1Messages = getSentMessages(ws1)
-    const drawerRoundStart = ws1Messages.find((m) => m.type === 'round-start' && m.word)
+    const drawerRoundStart = ws1Messages.find((m) => m.type === 'round-start-for-drawer' && m.word)
     if (!drawerRoundStart) return // drawer might be ws2, skip complex setup
 
     const word = (drawerRoundStart as { word: string }).word
@@ -1391,12 +1408,14 @@ describe('catch-up scoring', () => {
 
     // Now ws2 guesses correctly in round 2
     const ws1Messages = getSentMessages(ws1)
-    const roundStartMsg = ws1Messages.filter((m) => m.type === 'round-start' && m.word).at(-1)
+    const roundStartMsg = ws1Messages
+      .filter((m) => m.type === 'round-start-for-drawer' && m.word)
+      .at(-1)
     const word = roundStartMsg
       ? (roundStartMsg as { word: string }).word
       : (
           getSentMessages(ws2)
-            .filter((m) => m.type === 'round-start' && m.word)
+            .filter((m) => m.type === 'round-start-for-drawer' && m.word)
             .at(-1) as { word: string } | undefined
         )?.word
 
@@ -1406,7 +1425,7 @@ describe('catch-up scoring', () => {
     }
 
     const guesserWs = getSentMessages(ws1).some(
-      (m) => m.type === 'round-start' && (m as { word?: string }).word
+      (m) => m.type === 'round-start-for-drawer' && (m as { word?: string }).word
     )
       ? ws2
       : ws1
@@ -1431,7 +1450,7 @@ describe('catch-up scoring', () => {
 
     const ws1Messages = getSentMessages(ws1)
     const roundStart = ws1Messages.find(
-      (m) => m.type === 'round-start' && (m as { word?: string }).word
+      (m) => m.type === 'round-start-for-drawer' && (m as { word?: string }).word
     )
     const word = (roundStart as { word?: string } | undefined)?.word
     if (!word) {
@@ -1465,8 +1484,11 @@ Find where `correct-guess` is broadcast in the chat handler. Update to:
 const missed = isPlayingState(this.gameState)
   ? (this.gameState.consecutiveMissedRounds.get(playerId) ?? 0)
   : 0
-const score = calculateCorrectGuessScore(this.gameState.roundEndTime, Date.now(), missed)
-const catchUpBonus = Math.min(missed * CATCH_UP_BONUS_PER_ROUND, MAX_CATCH_UP_BONUS)
+const { score, catchUpBonus } = calculateCorrectGuessScore(
+  this.gameState.roundEndTime,
+  Date.now(),
+  missed
+)
 
 // Reset missed rounds for this player
 if (isPlayingState(this.gameState)) {
@@ -1594,9 +1616,9 @@ case 'word-options': {
 }
 ```
 
-- [ ] **Step 4: Handle `round-start` — clear word-choice state**
+- [ ] **Step 4: Handle `round-start-for-drawer` / `round-start-for-guesser` — clear word-choice state**
 
-In the existing `round-start` handler, add at the top:
+In both `round-start-for-drawer` and `round-start-for-guesser` handlers, add at the top:
 
 ```ts
 wordChoiceOptions = []
@@ -1802,9 +1824,9 @@ case 'hint': {
 }
 ```
 
-- [ ] **Step 5: Reset `hintString` on `round-start`**
+- [ ] **Step 5: Reset `hintString` on `round-start-for-drawer` / `round-start-for-guesser`**
 
-In the `round-start` handler, add:
+In both round-start handlers, add:
 
 ```ts
 hintString = ''

@@ -91,6 +91,8 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private pendingStrokeWrite: Promise<void> | null = null // Track latest in-flight stroke storage operation
   private fillStorageQueue: Promise<void> = Promise.resolve() // Serialize fill storage write/delete ops
   private pendingFillWrite: Promise<void> | null = null // Track latest in-flight fill storage operation
+  private gameStatePersistQueue: Promise<void> = Promise.resolve()
+  private latestGameStatePersistSeq = 0
   private strokeStorageDirty = false
   private fillStorageDirty = false
 
@@ -314,8 +316,19 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
   }
 
-  private async persistGameState(): Promise<void> {
-    await this.storagePutWithRetry('gameState', gameStateToStorage(this.gameState))
+  private persistGameState(): Promise<void> {
+    const persistSeq = ++this.latestGameStatePersistSeq
+    const persistOperation = this.gameStatePersistQueue.then(async () => {
+      if (persistSeq !== this.latestGameStatePersistSeq) {
+        return
+      }
+
+      await this.storagePutWithRetry('gameState', gameStateToStorage(this.gameState))
+    })
+
+    this.gameStatePersistQueue = persistOperation.catch(() => undefined)
+
+    return persistOperation
   }
 
   private async persistHost(): Promise<void> {
@@ -797,6 +810,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.playerStrokeUpdateTimestamps.delete(playerId)
 
     if (this.gameState.status === 'word-choice' && playerId === this.gameState.currentDrawerId) {
+      const removedIndex = this.gameState.drawerOrder.indexOf(playerId)
+      if (removedIndex !== -1) {
+        if (removedIndex <= this.gameState.currentRound - 1) {
+          this.gameState.currentRound = Math.max(0, this.gameState.currentRound - 1)
+        }
+        this.gameState.drawerOrder.splice(removedIndex, 1)
+        this.gameState.totalRounds = Math.max(1, this.gameState.drawerOrder.length)
+      }
+
       this.clearTimers()
       this.pendingWordOptions = null
       this.wordChoiceStartTime = null
@@ -1520,12 +1542,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.gameState.currentRound = roundNumber
 
     const options = getRandomWordsExcluding(this.gameState.usedWords, WORD_CHOICE_OPTIONS_COUNT)
-    if (options.length === 0) {
-      console.error('beginWordChoice: vocabulary exhausted, ending game')
+    if (options.length !== WORD_CHOICE_OPTIONS_COUNT) {
+      console.error(
+        `beginWordChoice: expected ${WORD_CHOICE_OPTIONS_COUNT} word options, got ${options.length}; ending game`
+      )
       this.endGame()
       return
     }
-    this.pendingWordOptions = options as [string, string, string]
+    const offeredWords = options as [string, string, string]
+    this.pendingWordOptions = offeredWords
 
     const now = Date.now()
     this.wordChoiceStartTime = now
@@ -1539,7 +1564,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       wordLength: null,
       roundStartTime: null,
       roundEndTime: null,
-      offeredWords: options as [string, string, string],
+      offeredWords,
       choiceDeadline: wordChoiceEndTime,
       endGameAfterCurrentRound:
         'endGameAfterCurrentRound' in this.gameState
@@ -1561,7 +1586,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           ws.send(
             JSON.stringify({
               type: 'word-options',
-              words: options,
+              words: offeredWords,
               timeToChoose: WORD_CHOICE_DURATION_MS / 1000,
               roundNumber,
               totalRounds: this.gameState.totalRounds,
