@@ -836,6 +836,20 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       return
     }
 
+    // Non-drawer leaving during word-choice: check if enough players remain
+    if (isWordChoiceState(this.gameState)) {
+      const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
+      setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
+      if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
+        this.clearTimers()
+        this.pendingWordOptions = null
+        this.wordChoiceStartTime = null
+        this.endGame()
+        return
+      }
+      return
+    }
+
     // Handle game state when player leaves during active game
     if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {
       const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)

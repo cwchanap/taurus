@@ -1227,4 +1227,103 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
     // Should NOT see the cannot-draw indicator (Alice IS the drawer)
     expect(screen.queryByText("👀 You're guessing! Type your answer in chat.")).toBeNull()
   })
+
+  it('hydrates revealedHint from init payload when reconnecting during playing state', async () => {
+    await simulateJoinGame('Bob')
+    const handlers = getWsHandlers()
+
+    // Re-init mid-round as a guesser with a revealed hint
+    handlers.onInit(
+      'player-456',
+      { id: 'player-456', name: 'Bob', color: '#4ECDC4' },
+      [
+        { id: 'player-123', name: 'Alice', color: '#FF6B6B' },
+        { id: 'player-456', name: 'Bob', color: '#4ECDC4' },
+      ],
+      [], // strokes
+      [], // fills
+      [], // chatHistory
+      false, // not host
+      {
+        status: 'playing',
+        currentRound: 1,
+        totalRounds: 2,
+        currentDrawerId: 'player-123',
+        deadlineTime: Date.now() + 60000,
+        scores: {
+          'player-123': { name: 'Alice', score: 0 },
+          'player-456': { name: 'Bob', score: 0 },
+        },
+        wordLength: 5,
+        revealedHint: 'a _ _ l e',
+      }
+    )
+
+    await waitFor(() => {
+      // The revealed hint should be rendered (not blank underscores)
+      expect(screen.queryByText('a _ _ l e')).toBeTruthy()
+    })
+  })
+
+  it('starts word-choice countdown timer from init payload when reconnecting mid-word-choice', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ roomId: 'TEST-ROOM' }),
+        text: vi.fn().mockResolvedValue(''),
+      })
+    )
+
+    render(DrawPage)
+
+    const nameInput = screen.getByLabelText('Your Name') as HTMLInputElement
+    await fireEvent.input(nameInput, { target: { value: 'Alice' } })
+
+    const createButton = screen.getByRole('button', { name: 'Create Room' })
+    await fireEvent.click(createButton)
+
+    await waitFor(() => {
+      expect(vi.mocked(GameWebSocket).mock.instances.length).toBeGreaterThan(0)
+    })
+
+    const handlers = getWsHandlers()
+
+    // Simulate joining during word-choice phase (e.g., reconnect or late join)
+    const futureDeadline = Date.now() + 15000
+    handlers.onInit(
+      'player-123',
+      { id: 'player-123', name: 'Alice', color: '#FF6B6B' },
+      [
+        { id: 'player-123', name: 'Alice', color: '#FF6B6B' },
+        { id: 'player-456', name: 'Bob', color: '#4ECDC4' },
+      ],
+      [], // strokes
+      [], // fills
+      [], // chatHistory
+      true, // isHost
+      {
+        status: 'word-choice',
+        currentRound: 1,
+        totalRounds: 2,
+        currentDrawerId: 'player-456',
+        deadlineTime: futureDeadline,
+        scores: {
+          'player-123': { name: 'Alice', score: 0 },
+          'player-456': { name: 'Bob', score: 0 },
+        },
+      }
+    )
+
+    await waitFor(() => {
+      // The word-choice overlay should show a non-zero countdown
+      // (timer started from deadlineTime in init payload)
+      expect(screen.queryByText('0s')).toBeNull()
+    })
+
+    // The word-choice overlay should be visible
+    expect(
+      screen.queryByText(/Choosing word/i) || screen.queryByText(/Choose a word/i)
+    ).toBeTruthy()
+  })
 })

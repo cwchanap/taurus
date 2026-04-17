@@ -320,11 +320,24 @@
           timeRemaining = getTimeRemainingSeconds(initialGameState.deadlineTime)
           wordLength = initialGameState.wordLength
           currentWord = initialGameState.currentWord
+          hintString = initialGameState.revealedHint ?? ''
         } else if (initialGameState.status === 'word-choice') {
           timeRemaining = 0
           wordLength = 0
           currentWord = undefined
           wordChoiceEndTime = initialGameState.deadlineTime
+          if (wordChoiceTimerId) {
+            clearInterval(wordChoiceTimerId)
+            wordChoiceTimerId = null
+          }
+          wordChoiceTimerId = setInterval(() => {
+            if (wordChoiceEndTime != null) {
+              wordChoiceTimeRemaining = Math.max(
+                0,
+                Math.ceil((wordChoiceEndTime - Date.now()) / 1000)
+              )
+            }
+          }, 250)
         } else {
           timeRemaining = 0
           wordLength = 0

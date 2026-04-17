@@ -732,6 +732,137 @@ describe('DrawingRoom - Player Leave During Game', () => {
       globalThis.setTimeout = originalSetTimeout
     }
   })
+
+  test('non-drawer leaving during word-choice ends game when room drops below min players', async () => {
+    const ws1 = {
+      deserializeAttachment: () => ({
+        playerId: 'drawer-1',
+        player: { id: 'drawer-1', name: 'Drawer', color: '#111111' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    const ws2 = {
+      deserializeAttachment: () => ({
+        playerId: 'guesser-1',
+        player: { id: 'guesser-1', name: 'Guesser', color: '#222222' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+
+    mockGetWebSockets.mockReturnValue([ws1])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'drawer-1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'drawer-1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['drawer-1', 'guesser-1'],
+      scores: new Map([
+        ['drawer-1', { score: 0, name: 'Drawer' }],
+        ['guesser-1', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      offeredWords: ['apple', 'cat', 'dog'],
+      choiceDeadline: Date.now() + 10_000,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['apple', 'cat', 'dog']
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).wordChoiceStartTime = Date.now()
+
+    // Non-drawer (guesser) leaves during word-choice
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(ws2 as any)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('game-over')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).pendingWordOptions).toBeNull()
+  })
+
+  test('non-drawer leaving during word-choice continues if enough players remain', async () => {
+    const ws1 = {
+      deserializeAttachment: () => ({
+        playerId: 'drawer-1',
+        player: { id: 'drawer-1', name: 'Drawer', color: '#111111' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    const ws2 = {
+      deserializeAttachment: () => ({
+        playerId: 'guesser-1',
+        player: { id: 'guesser-1', name: 'Guesser1', color: '#222222' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    const ws3 = {
+      deserializeAttachment: () => ({
+        playerId: 'guesser-2',
+        player: { id: 'guesser-2', name: 'Guesser2', color: '#333333' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+
+    // After guesser-2 leaves, drawer-1 and guesser-1 remain (2 players)
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'drawer-1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer-1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['drawer-1', 'guesser-1', 'guesser-2'],
+      scores: new Map([
+        ['drawer-1', { score: 0, name: 'Drawer' }],
+        ['guesser-1', { score: 0, name: 'Guesser1' }],
+        ['guesser-2', { score: 0, name: 'Guesser2' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      offeredWords: ['apple', 'cat', 'dog'],
+      choiceDeadline: Date.now() + 10_000,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['apple', 'cat', 'dog']
+
+    // Non-drawer (guesser-2) leaves during word-choice — room still has 2 players
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(ws3 as any)
+
+    // Game should remain in word-choice (not ended)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('word-choice')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).pendingWordOptions).toEqual(['apple', 'cat', 'dog'])
+  })
 })
 
 describe('DrawingRoom - Broadcast and Message Handling', () => {
