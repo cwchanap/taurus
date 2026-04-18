@@ -1764,7 +1764,7 @@ And in the drawer-info section, add a word-choice branch:
 - [ ] **Step 9: Verify type checking**
 
 ```bash
-cd /Users/chanwaichan/workspace/taurus && bun run check-types 2>&1 | tail -20
+bun run check-types 2>&1 | tail -20
 ```
 
 Expected: no errors.
@@ -1843,7 +1843,7 @@ Find the `<GameHeader ... />` usage and add the prop:
 - [ ] **Step 7: Verify type checking**
 
 ```bash
-cd /Users/chanwaichan/workspace/taurus && bun run check-types 2>&1 | tail -10
+bun run check-types 2>&1 | tail -10
 ```
 
 Expected: no errors.
@@ -1920,7 +1920,7 @@ Add style:
 - [ ] **Step 4: Verify type checking and run web tests**
 
 ```bash
-cd /Users/chanwaichan/workspace/taurus && bun run check-types 2>&1 | tail -10
+bun run check-types 2>&1 | tail -10
 cd apps/web && bun run test 2>&1 | tail -15
 ```
 
@@ -1940,7 +1940,7 @@ git commit -m "feat(web): show catch-up comeback bonus in correct-guess notifica
 - [ ] **Step 1: Run full test suite**
 
 ```bash
-cd /Users/chanwaichan/workspace/taurus && bun test 2>&1 | tail -30
+bun test 2>&1 | tail -30
 ```
 
 Expected: all tests pass across API and web.
