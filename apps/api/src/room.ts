@@ -717,6 +717,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     )
     if (isActiveGame && !this.gameState.scores.has(playerId)) {
       this.gameState.scores.set(playerId, { score: 0, name: player.name })
+
+      // Persist score entry for non-playing active states so it survives DO hibernation.
+      // The 'playing' branch below also persists (along with roundGuessers).
+      if (this.gameState.status !== 'playing') {
+        this.ctx.waitUntil(
+          this.persistGameState().catch((e) =>
+            console.error('Failed to persist late joiner score:', e)
+          )
+        )
+      }
     }
 
     // Add late joiners to roundGuessers so "all guessed" check doesn't trigger early round end.
@@ -836,10 +846,21 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       return
     }
 
-    // Non-drawer leaving during word-choice: check if enough players remain
+    // Non-drawer leaving during word-choice: prune from drawerOrder and check if enough players remain
     if (isWordChoiceState(this.gameState)) {
       const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
+
+      // Remove leaving player from drawerOrder and rebase round counters
+      const removedIndex = this.gameState.drawerOrder.indexOf(playerId)
+      if (removedIndex !== -1) {
+        if (removedIndex <= this.gameState.currentRound - 1) {
+          this.gameState.currentRound = Math.max(0, this.gameState.currentRound - 1)
+        }
+        this.gameState.drawerOrder.splice(removedIndex, 1)
+        this.gameState.totalRounds = Math.max(1, this.gameState.drawerOrder.length)
+      }
+
       if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
         this.clearTimers()
         this.pendingWordOptions = null
@@ -847,6 +868,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         this.endGame()
         return
       }
+
+      // Persist updated drawerOrder/round counters after pruning
+      this.ctx.waitUntil(
+        this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
+      )
       return
     }
 
