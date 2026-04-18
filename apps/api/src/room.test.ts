@@ -862,6 +862,86 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect((room as any).gameState.status).toBe('word-choice')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).pendingWordOptions).toEqual(['apple', 'cat', 'dog'])
+
+    // Non-drawer should be pruned from drawerOrder and round counters rebased
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.drawerOrder).toEqual(['drawer-1', 'guesser-1'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.totalRounds).toBe(2)
+  })
+
+  test('non-drawer who already drew leaving during word-choice decrements currentRound', async () => {
+    const wsDrawer = {
+      deserializeAttachment: () => ({
+        playerId: 'drawer-2',
+        player: { id: 'drawer-2', name: 'Drawer2', color: '#111111' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    const wsPrevDrawer = {
+      deserializeAttachment: () => ({
+        playerId: 'p1',
+        player: { id: 'p1', name: 'P1', color: '#222222' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    const wsG = {
+      deserializeAttachment: () => ({
+        playerId: 'guesser-1',
+        player: { id: 'guesser-1', name: 'Guesser1', color: '#333333' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+
+    // After p1 leaves, drawer-2 and guesser-1 remain (2 players)
+    mockGetWebSockets.mockReturnValue([wsDrawer, wsG])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'drawer-2'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 2,
+      totalRounds: 3,
+      currentDrawerId: 'drawer-2',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'drawer-2', 'guesser-1'], // p1 already drew (round 1)
+      scores: new Map([
+        ['p1', { score: 10, name: 'P1' }],
+        ['drawer-2', { score: 0, name: 'Drawer2' }],
+        ['guesser-1', { score: 5, name: 'Guesser1' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      offeredWords: ['apple', 'cat', 'dog'],
+      choiceDeadline: Date.now() + 10_000,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['apple', 'cat', 'dog']
+
+    // p1 (non-drawer who already drew) leaves during word-choice
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(wsPrevDrawer as any)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('word-choice')
+    // p1 was at index 0 (already drew, index <= currentRound-1) so currentRound decremented
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.currentRound).toBe(1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.drawerOrder).toEqual(['drawer-2', 'guesser-1'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.totalRounds).toBe(2)
   })
 })
 
@@ -2516,6 +2596,75 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     const initMsg = msgs.find((m: any) => m?.type === 'init')
     expect(initMsg).toBeDefined()
     expect(initMsg.isHost).toBe(true)
+  })
+
+  test('handleJoin during word-choice persists late joiner score entry', async () => {
+    const existingWs = createMockWs('drawer-1', 'Drawer')
+    const newWs = {
+      deserializeAttachment: () => null,
+      serializeAttachment: mock(() => {}),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    } as unknown as WebSocket
+
+    let capturedAttachment: unknown = null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    newWs.serializeAttachment = mock((attachment: any) => {
+      capturedAttachment = attachment
+      newWs.deserializeAttachment = () => capturedAttachment
+    })
+
+    mockGetWebSockets.mockReturnValue([existingWs, newWs])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'drawer-1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'drawer-1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['drawer-1', 'guesser-1'],
+      scores: new Map([['drawer-1', { score: 0, name: 'Drawer' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      offeredWords: ['apple', 'cat', 'dog'],
+      choiceDeadline: Date.now() + 10_000,
+    }
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'LateJoiner' })
+    )
+    await flushPromises()
+
+    // Late joiner should be added to scores
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scores = (room as any).gameState.scores as Map<string, { score: number; name: string }>
+    expect(scores.has(expect.stringContaining('-'))).toBe(false) // sanity
+    // Find the new player in scores
+    let found = false
+    for (const [, entry] of scores) {
+      if (entry.name === 'LateJoiner') {
+        found = true
+        expect(entry.score).toBe(0)
+        break
+      }
+    }
+    expect(found).toBe(true)
+
+    // waitUntil should have been called to persist the score entry for word-choice state
+    expect(mockWaitUntil).toHaveBeenCalled()
   })
 })
 
