@@ -316,6 +316,14 @@
         )
         currentDrawerName = getDrawerDisplayName(currentDrawerId, players, scores)
 
+        // Reset drawer-only state to prevent stale UI on reconnect
+        wordChoiceOptions = []
+        if (wordChoiceTimerId) {
+          clearInterval(wordChoiceTimerId)
+          wordChoiceTimerId = null
+        }
+        wordChoiceEndTime = null
+
         if (initialGameState.status === 'playing') {
           timeRemaining = getTimeRemainingSeconds(initialGameState.deadlineTime)
           wordLength = initialGameState.wordLength
