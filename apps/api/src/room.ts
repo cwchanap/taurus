@@ -1786,11 +1786,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const newPositions = pickNextRevealPositions(word, revealedPositions, targetFraction)
     this.gameState = { ...this.gameState, revealedPositions: newPositions } as PlayingState
 
+    // Re-check state after persist since await can yield execution in Durable Objects.
     try {
       await this.persistGameState()
     } catch (e) {
       console.error('Failed to persist hint state:', e)
     }
+
+    if (!isPlayingState(this.gameState)) return
+    if (this.gameState.currentDrawerId !== drawerId) return
 
     const hintString = buildHintString(word, newPositions)
 
