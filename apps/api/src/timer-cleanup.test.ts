@@ -198,6 +198,7 @@ describe('DrawingRoom - timer callback coverage', () => {
         ]),
         correctGuessers: new Set<string>(),
         roundGuessers: new Set<string>(),
+        roundStartGuesserIds: new Set<string>(),
         roundGuesserScores: new Map<string, number>(),
         usedWords: new Set<string>(),
         endGameAfterCurrentRound: false,
@@ -293,6 +294,7 @@ describe('DrawingRoom - timer callback coverage', () => {
         ]),
         correctGuessers: new Set<string>(),
         roundGuessers: new Set<string>(),
+        roundStartGuesserIds: new Set(),
         roundGuesserScores: new Map<string, number>(),
         usedWords: new Set<string>(),
         endGameAfterCurrentRound: false,
@@ -346,6 +348,7 @@ describe('DrawingRoom - timer callback coverage', () => {
         ]),
         correctGuessers: new Set<string>(),
         roundGuessers: new Set<string>(),
+        roundStartGuesserIds: new Set(),
         roundGuesserScores: new Map<string, number>(),
         usedWords: new Set<string>(),
         endGameAfterCurrentRound: false,
@@ -405,6 +408,7 @@ describe('DrawingRoom - timer callback coverage', () => {
         ]),
         correctGuessers: new Set<string>(),
         roundGuessers: new Set<string>(),
+        roundStartGuesserIds: new Set(),
         roundGuesserScores: new Map<string, number>(),
         usedWords: new Set<string>(),
         endGameAfterCurrentRound: false,
@@ -433,13 +437,14 @@ describe('DrawingRoom - timer callback coverage', () => {
   test('handleLeave advances word-choice when the current drawer disconnects', () => {
     const leavingDrawerWs = createMockWs('p1', 'Drawer')
     const nextDrawerWs = createMockWs('p2', 'Next Drawer')
-    mockGetWebSockets.mockReturnValue([leavingDrawerWs, nextDrawerWs])
+    const thirdPlayerWs = createMockWs('p3', 'Third Player')
+    mockGetWebSockets.mockReturnValue([leavingDrawerWs, nextDrawerWs, thirdPlayerWs])
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'word-choice',
       currentRound: 1,
-      totalRounds: 2,
+      totalRounds: 3,
       currentDrawerId: 'p1',
       currentWord: null,
       wordLength: null,
@@ -448,13 +453,15 @@ describe('DrawingRoom - timer callback coverage', () => {
       endGameAfterCurrentRound: false,
       offeredWords: ['apple', 'cat', 'dog'],
       choiceDeadline: Date.now() + 10_000,
-      drawerOrder: ['p1', 'p2'],
+      drawerOrder: ['p1', 'p2', 'p3'],
       scores: new Map([
         ['p1', { score: 0, name: 'Drawer' }],
         ['p2', { score: 0, name: 'Next Drawer' }],
+        ['p3', { score: 0, name: 'Third Player' }],
       ]),
       correctGuessers: new Set(),
-      roundGuessers: new Set(['p2']),
+      roundGuessers: new Set(['p2', 'p3']),
+      roundStartGuesserIds: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
       consecutiveMissedRounds: new Map(),
@@ -476,9 +483,9 @@ describe('DrawingRoom - timer callback coverage', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).gameState.currentRound).toBe(1)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).gameState.totalRounds).toBe(1)
+    expect((room as any).gameState.totalRounds).toBe(2)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).gameState.drawerOrder).toEqual(['p2'])
+    expect((room as any).gameState.drawerOrder).toEqual(['p2', 'p3'])
     const nextDrawerMessages = getSentMessages(nextDrawerWs)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(nextDrawerMessages.some((message: any) => message?.type === 'word-options')).toBe(true)
@@ -513,6 +520,7 @@ describe('DrawingRoom - timer callback coverage', () => {
         ]),
         correctGuessers: new Set<string>(),
         roundGuessers: new Set<string>(),
+        roundStartGuesserIds: new Set(),
         roundGuesserScores: new Map<string, number>(),
         usedWords: new Set<string>(),
         endGameAfterCurrentRound: false,
@@ -570,6 +578,7 @@ describe('DrawingRoom - timer callback coverage', () => {
       ]),
       correctGuessers: new Set(),
       roundGuessers: new Set(['p2']),
+      roundStartGuesserIds: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
       consecutiveMissedRounds: new Map(),
@@ -622,6 +631,7 @@ describe('DrawingRoom - timer callback coverage', () => {
       ]),
       correctGuessers: new Set<string>(),
       roundGuessers: new Set<string>(['p2']),
+      roundStartGuesserIds: new Set(),
       roundGuesserScores: new Map<string, number>(),
       usedWords: new Set(VOCABULARY.slice(2)),
       consecutiveMissedRounds: new Map<string, number>(),
@@ -708,6 +718,7 @@ describe('DrawingRoom - hint timers', () => {
       ]),
       correctGuessers: new Set<string>(),
       roundGuessers: new Set(guessers),
+      roundStartGuesserIds: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set([word]),
       consecutiveMissedRounds: new Map(),
@@ -850,6 +861,7 @@ describe('DrawingRoom - hint timers', () => {
       ]),
       correctGuessers: new Set(),
       roundGuessers: new Set(['p2']),
+      roundStartGuesserIds: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
       consecutiveMissedRounds: new Map(),
@@ -897,6 +909,7 @@ describe('DrawingRoom - hint timers', () => {
             scores: [['p1', { score: 0, name: 'Drawer' }]],
             correctGuessers: [],
             roundGuessers: ['p2'],
+            roundStartGuesserIds: new Set(),
             roundGuesserScores: [],
             usedWords: ['apple'],
             consecutiveMissedRounds: [],

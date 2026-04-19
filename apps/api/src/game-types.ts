@@ -14,6 +14,7 @@ type BaseGameState = {
   drawerOrder: string[] // Player IDs in draw order
   correctGuessers: Set<string> // Players who guessed correctly this round
   roundGuessers: Set<string> // Players eligible to guess this round
+  roundStartGuesserIds: Set<string> // Players present at round start (excludes late joiners)
   roundGuesserScores: Map<string, number> // Scores earned by guessers this round
   consecutiveMissedRounds: Map<string, number> // Tracks consecutive missed rounds per player
 }
@@ -163,6 +164,7 @@ export function createInitialGameState(): LobbyState {
     scores: new Map(),
     correctGuessers: new Set(),
     roundGuessers: new Set(),
+    roundStartGuesserIds: new Set(),
     roundGuesserScores: new Map(),
     usedWords: new Set(),
     consecutiveMissedRounds: new Map(),
@@ -192,6 +194,7 @@ export interface StoredGameState {
   scores: [string, ScoreEntry][]
   correctGuessers: string[]
   roundGuessers: string[]
+  roundStartGuesserIds?: string[] // Optional for backward compat with old storage
   roundGuesserScores: [string, number][]
   usedWords: string[]
   endGameAfterCurrentRound?: boolean
@@ -219,6 +222,7 @@ export function gameStateToStorage(state: GameState): StoredGameState {
     scores: Array.from(state.scores.entries()),
     correctGuessers: Array.from(state.correctGuessers),
     roundGuessers: Array.from(state.roundGuessers),
+    roundStartGuesserIds: Array.from(state.roundStartGuesserIds),
     roundGuesserScores: Array.from(state.roundGuesserScores.entries()),
     usedWords: Array.from(state.usedWords),
     consecutiveMissedRounds: Array.from((state.consecutiveMissedRounds ?? new Map()).entries()),
@@ -258,6 +262,7 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
     scores: new Map(stored.scores),
     correctGuessers: new Set(stored.correctGuessers),
     roundGuessers: new Set(stored.roundGuessers),
+    roundStartGuesserIds: new Set(stored.roundStartGuesserIds ?? []),
     roundGuesserScores: new Map(stored.roundGuesserScores),
     usedWords: new Set(stored.usedWords),
     consecutiveMissedRounds: new Map(stored.consecutiveMissedRounds ?? []),
