@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { completeRoundByCorrectGuess } from './helpers/round-flow'
 import { getNonEmptyText } from './helpers/text'
+import { handleWordChoice } from './helpers/word-choice'
 
 test.describe('Drawing Game Feature', () => {
   test.describe('Game Lobby', () => {
@@ -116,6 +117,10 @@ test.describe('Drawing Game Feature', () => {
         // Start the game
         await hostPage.locator('.start-game-btn').click()
 
+        // Wait for word-choice phase to complete
+        await handleWordChoice(hostPage)
+        await handleWordChoice(playerPage)
+
         // Both players should see the game header
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
         await expect(playerPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
@@ -159,6 +164,10 @@ test.describe('Drawing Game Feature', () => {
 
         // Start the game
         await hostPage.locator('.start-game-btn').click()
+
+        // Wait for word-choice phase to complete
+        await handleWordChoice(hostPage)
+        await handleWordChoice(playerPage)
 
         // Wait for game to start
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
@@ -218,6 +227,10 @@ test.describe('Drawing Game Feature', () => {
         // Start the game
         await hostPage.locator('.start-game-btn').click()
 
+        // Wait for word-choice phase to complete
+        await handleWordChoice(hostPage)
+        await handleWordChoice(playerPage)
+
         // Wait for game to start
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
 
@@ -273,6 +286,10 @@ test.describe('Drawing Game Feature', () => {
         // Start the game
         await hostPage.locator('.start-game-btn').click()
 
+        // Wait for word-choice phase to complete
+        await handleWordChoice(hostPage)
+        await handleWordChoice(playerPage)
+
         // Wait for game to start
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
 
@@ -316,6 +333,10 @@ test.describe('Drawing Game Feature', () => {
 
         // Start the game
         await hostPage.locator('.start-game-btn').click()
+
+        // Wait for word-choice phase to complete
+        await handleWordChoice(hostPage)
+        await handleWordChoice(playerPage)
 
         // Wait for game to start
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
@@ -407,6 +428,10 @@ test.describe('Drawing Game Feature', () => {
 
         // Start the game
         await hostPage.locator('.start-game-btn').click()
+
+        // Wait for word-choice phase to complete
+        await handleWordChoice(hostPage)
+        await handleWordChoice(playerPage)
 
         // Wait for game to start
         await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })

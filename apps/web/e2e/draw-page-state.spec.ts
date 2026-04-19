@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { completeRoundByCorrectGuess } from './helpers/round-flow'
 import { getNonEmptyText } from './helpers/text'
+import { handleWordChoice } from './helpers/word-choice'
 
 test.describe('Draw Page State Transitions', () => {
   test('covers lobby -> startable -> playing transitions for host and guest', async ({
@@ -33,6 +34,10 @@ test.describe('Draw Page State Transitions', () => {
 
       await expect(hostPage.locator('.start-game-btn')).toBeVisible({ timeout: 10000 })
       await hostPage.locator('.start-game-btn').click()
+
+      // Wait for word-choice phase to complete
+      await handleWordChoice(hostPage)
+      await handleWordChoice(guestPage)
 
       await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 10000 })
       await expect(guestPage.locator('.game-header')).toBeVisible({ timeout: 10000 })
@@ -85,6 +90,10 @@ test.describe('Draw Page State Transitions', () => {
       await expect(playerPage.locator('.game-container')).toBeVisible({ timeout: 10000 })
 
       await hostPage.locator('.start-game-btn').click()
+
+      // Wait for word-choice phase to complete
+      await handleWordChoice(hostPage)
+      await handleWordChoice(playerPage)
 
       await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
       await expect(playerPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
