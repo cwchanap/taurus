@@ -233,13 +233,27 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       const remainingMs = (this.gameState.choiceDeadline ?? 0) - Date.now()
       if (remainingMs <= 0) {
-        this.beginDrawing(this.pendingWordOptions[0])
+        // Validate that the persisted drawer is still connected before auto-starting.
+        // The drawer may have disconnected while the DO was hibernating.
+        const drawerConnected = this.isPlayerConnected(this.gameState.currentDrawerId)
+        if (drawerConnected) {
+          this.beginDrawing(this.pendingWordOptions[0])
+        } else {
+          // Drawer gone — pick a new one or end game if too few players
+          this.beginWordChoice()
+        }
         return
       }
 
       this.wordChoiceTimer = setTimeout(() => {
         if (this.pendingWordOptions && this.pendingWordOptions.length > 0) {
-          this.beginDrawing(this.pendingWordOptions[0])
+          // Re-check drawer connectivity when the timer fires
+          const drawerConnected = this.isPlayerConnected(this.gameState.currentDrawerId)
+          if (drawerConnected) {
+            this.beginDrawing(this.pendingWordOptions[0])
+          } else {
+            this.beginWordChoice()
+          }
         }
       }, remainingMs)
       return
@@ -498,6 +512,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   private getPlayerIdForSocket(ws: WebSocket): string | null {
     const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
     return attachment?.playerId ?? null
+  }
+
+  /** Check whether a player has at least one live WebSocket connection. */
+  private isPlayerConnected(playerId: string | null): boolean {
+    if (!playerId) return false
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+      if (attachment?.playerId === playerId) return true
+    }
+    return false
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
@@ -834,6 +858,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.wordChoiceStartTime = null
       // Clean up flag after a short delay to prevent race conditions with duplicate close events
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
+
+      // Check if enough players remain before starting a new word-choice cycle.
+      // Without this, a 2-player room where the drawer drops would start a solo game.
+      const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
+      if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
+        this.endGame()
+        return
+      }
+
       try {
         this.beginWordChoice()
       } catch (e) {
@@ -1467,6 +1500,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       scores: new Map(playerIds.map((id) => [id, { score: 0, name: this.getPlayerName(id) }])),
       correctGuessers: new Set(),
       roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
       roundGuesserScores: new Map(),
       usedWords: new Set(),
       consecutiveMissedRounds: new Map(),
@@ -1706,6 +1740,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           .map((p) => p.id)
           .filter((id) => id !== drawerId)
       ),
+      roundStartGuesserIds: new Set(
+        this.getPlayers()
+          .map((p) => p.id)
+          .filter((id) => id !== drawerId)
+      ),
       roundGuesserScores: new Map(),
       revealedPositions: [],
     } as PlayingState
@@ -1912,8 +1951,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       }
     }
 
-    // Increment consecutiveMissedRounds for guessers who did not guess correctly this round
-    for (const eligibleId of this.gameState.roundGuessers) {
+    // Increment consecutiveMissedRounds for guessers who were present at round start
+    // and did not guess correctly. Late joiners are excluded — they weren't present
+    // for the full round so shouldn't receive "missed" credit or a catch-up bonus.
+    for (const eligibleId of this.gameState.roundStartGuesserIds) {
       if (!this.gameState.correctGuessers.has(eligibleId)) {
         const current = this.gameState.consecutiveMissedRounds.get(eligibleId) ?? 0
         this.gameState.consecutiveMissedRounds.set(eligibleId, current + 1)
@@ -1950,6 +1991,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       drawerOrder: prev.drawerOrder,
       correctGuessers: prev.correctGuessers,
       roundGuessers: prev.roundGuessers,
+      roundStartGuesserIds: prev.roundStartGuesserIds,
       roundGuesserScores: prev.roundGuesserScores,
       consecutiveMissedRounds: prev.consecutiveMissedRounds,
       status: 'round-end',

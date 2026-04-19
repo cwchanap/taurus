@@ -425,6 +425,7 @@ describe('DrawingRoom - catch-up scoring', () => {
       ]),
       correctGuessers: new Set<string>(),
       roundGuessers: new Set(guessers),
+      roundStartGuesserIds: new Set(guessers),
       roundGuesserScores: new Map(),
       usedWords: new Set([word]),
       consecutiveMissedRounds: missedRounds,

@@ -513,6 +513,7 @@ export function handlePlayerLeaveInActiveGame(
     scores: new Map(gameState.scores),
     correctGuessers: new Set(gameState.correctGuessers),
     roundGuessers: new Set(gameState.roundGuessers),
+    roundStartGuesserIds: new Set(gameState.roundStartGuesserIds),
     roundGuesserScores: new Map(gameState.roundGuesserScores),
     usedWords: new Set(gameState.usedWords),
     consecutiveMissedRounds: new Map(gameState.consecutiveMissedRounds),
@@ -521,6 +522,7 @@ export function handlePlayerLeaveInActiveGame(
   // Remove from correct guessers, round guessers, and round guesser scores
   baseClone.correctGuessers.delete(leavingPlayerId)
   baseClone.roundGuessers.delete(leavingPlayerId)
+  baseClone.roundStartGuesserIds.delete(leavingPlayerId)
   baseClone.roundGuesserScores.delete(leavingPlayerId)
 
   // Find the player's index in drawer order
