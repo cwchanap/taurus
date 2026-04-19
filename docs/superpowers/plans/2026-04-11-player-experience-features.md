@@ -61,7 +61,14 @@ Add after the `| { type: 'game-reset' }` line:
       drawerName: string
       wordChoiceEndTime: number
     }
-  | { type: 'word-options'; words: string[]; timeToChoose: number }
+  | {
+      type: 'word-options'
+      words: [string, string, string]
+      timeToChoose: number
+      roundNumber: number
+      totalRounds: number
+      wordChoiceEndTime: number
+    }
   | { type: 'hint'; revealed: string }
 ```
 

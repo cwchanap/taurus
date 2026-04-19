@@ -2666,13 +2666,14 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     // Late joiner should be added to scores
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const scores = (room as any).gameState.scores as Map<string, { score: number; name: string }>
-    expect(scores.has(expect.stringContaining('-'))).toBe(false) // sanity
-    // Find the new player in scores
+    // Find the new player in scores and verify entry
     let found = false
-    for (const [, entry] of scores) {
+    for (const [playerId, entry] of scores) {
       if (entry.name === 'LateJoiner') {
         found = true
         expect(entry.score).toBe(0)
+        // Verify the player was added with a valid UUID-style ID
+        expect(playerId).toMatch(/-/)
         break
       }
     }

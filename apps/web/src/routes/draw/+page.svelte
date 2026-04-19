@@ -333,6 +333,7 @@
           timeRemaining = 0
           wordLength = 0
           currentWord = undefined
+          hintString = ''
           wordChoiceEndTime = initialGameState.deadlineTime
           if (wordChoiceTimerId) {
             clearInterval(wordChoiceTimerId)
@@ -594,6 +595,10 @@
         currentDrawerName = drawerNameVal
         roundNumber = round
         totalRounds = rounds
+        hintString = ''
+        currentWord = undefined
+        wordLength = 0
+        timeRemaining = 0
         wordChoiceEndTime = endTime
         if (wordChoiceTimerId) {
           clearInterval(wordChoiceTimerId)

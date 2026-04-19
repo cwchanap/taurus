@@ -13,46 +13,9 @@ import {
   isValidPoint,
 } from './validation'
 import { ChatHistory } from './chat-history'
+import { setupCloudflareMock, flushPromises, createMockWs, getSentMessages } from './test-helpers'
 
-mock.module('cloudflare:workers', () => ({
-  DurableObject: class {
-    constructor(state: unknown, env: unknown) {
-      // @ts-expect-error - Mocking DurableObject constructor
-      this.ctx = state
-      // @ts-expect-error - Mocking DurableObject constructor
-      this.env = env
-    }
-  },
-}))
-
-function flushPromises(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve))
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createMockWs(playerId: string, playerName = 'TestPlayer'): any {
-  return {
-    deserializeAttachment: () => ({
-      playerId,
-      player: { id: playerId, name: playerName, color: '#FF6B6B' },
-    }),
-    serializeAttachment: mock(() => {}),
-    send: mock(() => {}),
-    close: mock(() => {}),
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getSentMessages(ws: ReturnType<typeof createMockWs>): any[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (ws.send as ReturnType<typeof mock>).mock.calls.map((call: any[]) => {
-    try {
-      return JSON.parse(call[0] as string)
-    } catch {
-      return null
-    }
-  })
-}
+setupCloudflareMock()
 
 // Test ChatMessage validation constants and logic (extracted from room.ts)
 

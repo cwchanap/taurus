@@ -239,7 +239,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         if (drawerConnected) {
           this.beginDrawing(this.pendingWordOptions[0])
         } else {
-          // Drawer gone — pick a new one or end game if too few players
+          // Drawer gone — prune from drawerOrder and rebase round counters
+          // before picking a new one, consistent with handleLeave().
+          this.pruneDrawerFromOrder(this.gameState.currentDrawerId)
           this.beginWordChoice()
         }
         return
@@ -252,6 +254,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           if (drawerConnected) {
             this.beginDrawing(this.pendingWordOptions[0])
           } else {
+            // Drawer gone — prune from drawerOrder and rebase round counters
+            // before picking a new one, consistent with handleLeave().
+            this.pruneDrawerFromOrder(this.gameState.currentDrawerId)
             this.beginWordChoice()
           }
         }
@@ -522,6 +527,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       if (attachment?.playerId === playerId) return true
     }
     return false
+  }
+
+  /**
+   * Remove a disconnected drawer from drawerOrder and rebase currentRound/totalRounds.
+   * Mirrors the pruning logic in handleLeave() so timer/alarm callbacks stay consistent.
+   */
+  private pruneDrawerFromOrder(drawerId: string | null) {
+    if (!drawerId) return
+    const removedIndex = this.gameState.drawerOrder.indexOf(drawerId)
+    if (removedIndex !== -1) {
+      if (removedIndex <= this.gameState.currentRound - 1) {
+        this.gameState.currentRound = Math.max(0, this.gameState.currentRound - 1)
+      }
+      this.gameState.drawerOrder.splice(removedIndex, 1)
+      this.gameState.totalRounds = Math.max(1, this.gameState.drawerOrder.length)
+    }
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
@@ -844,14 +865,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.playerStrokeUpdateTimestamps.delete(playerId)
 
     if (this.gameState.status === 'word-choice' && playerId === this.gameState.currentDrawerId) {
-      const removedIndex = this.gameState.drawerOrder.indexOf(playerId)
-      if (removedIndex !== -1) {
-        if (removedIndex <= this.gameState.currentRound - 1) {
-          this.gameState.currentRound = Math.max(0, this.gameState.currentRound - 1)
-        }
-        this.gameState.drawerOrder.splice(removedIndex, 1)
-        this.gameState.totalRounds = Math.max(1, this.gameState.drawerOrder.length)
-      }
+      this.pruneDrawerFromOrder(playerId)
 
       this.clearTimers()
       this.pendingWordOptions = null
@@ -885,14 +899,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
 
       // Remove leaving player from drawerOrder and rebase round counters
-      const removedIndex = this.gameState.drawerOrder.indexOf(playerId)
-      if (removedIndex !== -1) {
-        if (removedIndex <= this.gameState.currentRound - 1) {
-          this.gameState.currentRound = Math.max(0, this.gameState.currentRound - 1)
-        }
-        this.gameState.drawerOrder.splice(removedIndex, 1)
-        this.gameState.totalRounds = Math.max(1, this.gameState.drawerOrder.length)
-      }
+      this.pruneDrawerFromOrder(playerId)
 
       if (remainingPlayers.length < MIN_PLAYERS_TO_START) {
         this.clearTimers()
@@ -1860,6 +1867,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     if (!isPlayingState(this.gameState)) return
     if (this.gameState.currentDrawerId !== drawerId) return
+    if (this.gameState.currentWord !== word) return
 
     const hintString = buildHintString(word, newPositions)
 
