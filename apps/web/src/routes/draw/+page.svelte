@@ -1181,21 +1181,16 @@
 
     <!-- Word choice overlay -->
     {#if gameStatus === 'word-choice'}
-      <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
+      <div class="word-choice-overlay">
         {#if wordChoiceOptions.length > 0}
-          <div
-            class="min-w-80 rounded-[20px] border border-[#4ecdc4]/30 bg-[linear-gradient(135deg,rgb(30_30_50),rgb(20_20_40))] p-10 text-center"
-          >
+          <div class="word-choice-card">
             <h2 class="mb-2 text-[22px] font-semibold text-[#4ecdc4]">Choose a word to draw</h2>
             <p class="mb-6 font-mono text-4xl font-bold text-[#ffeaa7]">
               {wordChoiceTimeRemaining}s
             </p>
             <div class="flex flex-col gap-3">
               {#each wordChoiceOptions as word}
-                <button
-                  class="rounded-xl border-2 border-[#4ecdc4]/30 bg-[#4ecdc4]/15 px-8 py-4 text-lg font-semibold tracking-[0.06em] text-white transition duration-150 hover:-translate-y-0.5 hover:border-[#4ecdc4] hover:bg-[#4ecdc4]/30"
-                  onclick={() => chooseWord(word)}
-                >
+                <button class="word-choice-btn" onclick={() => chooseWord(word)}>
                   {word}
                 </button>
               {/each}
@@ -1580,5 +1575,43 @@
     border-radius: 10px;
     font-size: 14px;
     color: rgb(255 255 255 / 0.8);
+  }
+
+  .word-choice-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 0.7);
+  }
+
+  .word-choice-card {
+    min-width: 320px;
+    border-radius: 20px;
+    border: 1px solid rgb(78 205 196 / 0.3);
+    background: linear-gradient(135deg, rgb(30 30 50), rgb(20 20 40));
+    padding: 40px;
+    text-align: center;
+  }
+
+  .word-choice-btn {
+    border-radius: 12px;
+    border: 2px solid rgb(78 205 196 / 0.3);
+    background: rgb(78 205 196 / 0.15);
+    padding: 16px 32px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: white;
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+
+  .word-choice-btn:hover {
+    transform: translateY(-2px);
+    border-color: #4ecdc4;
+    background: rgb(78 205 196 / 0.3);
   }
 </style>
