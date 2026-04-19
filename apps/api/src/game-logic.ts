@@ -577,7 +577,7 @@ export function handlePlayerLeaveInActiveGame(
         roundStartTime: gameState.roundStartTime,
         roundEndTime: gameState.roundEndTime,
         endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
-        revealedPositions: isPlayingState(gameState) ? gameState.revealedPositions : [],
+        revealedPositions: gameState.revealedPositions,
         ...baseClone,
       }
     } else {
