@@ -1217,3 +1217,81 @@ describe('WebSocket reconnection', () => {
     })
   })
 })
+
+describe('Reconnection with playerId', () => {
+  let originalWebSocket: typeof globalThis.WebSocket
+  let mockSocket: MockWebSocket
+
+  beforeEach(() => {
+    originalWebSocket = globalThis.WebSocket
+    class TrackedMock extends MockWebSocket {
+      constructor(url: string) {
+        super(url)
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        mockSocket = this
+      }
+    }
+    Object.assign(TrackedMock, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 })
+    globalThis.WebSocket = TrackedMock as unknown as typeof WebSocket
+  })
+
+  afterEach(() => {
+    globalThis.WebSocket = originalWebSocket
+  })
+
+  it('should send playerId with join message when reconnecting', () => {
+    const gameWs = new GameWebSocket('http://localhost', 'room-1', 'Alice')
+    const onInit = vi.fn()
+
+    gameWs.on({ onInit })
+    gameWs.connect()
+    mockSocket.simulateOpen()
+
+    mockSocket.onmessage?.({
+      data: JSON.stringify({
+        type: 'init',
+        playerId: 'player-abc',
+        player: { id: 'player-abc', name: 'Alice', color: '#FF6B6B' },
+        players: [],
+        strokes: [],
+        fills: [],
+        chatHistory: [],
+        isHost: false,
+        gameState: {
+          status: 'lobby' as const,
+          currentDrawerId: null,
+          currentRound: 0,
+          totalRounds: 0,
+          scores: {},
+        },
+      }),
+    })
+
+    expect(gameWs.getPlayerId()).toBe('player-abc')
+
+    mockSocket.simulateClose()
+
+    gameWs.connect()
+    const sentSpy = vi.spyOn(mockSocket, 'send')
+    mockSocket.simulateOpen()
+
+    expect(sentSpy).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'player-abc' })
+    )
+  })
+
+  it('should send join without playerId when no playerId stored', () => {
+    const gameWs = new GameWebSocket('http://localhost', 'room-1', 'Bob')
+    gameWs.connect()
+
+    const sentSpy = vi.spyOn(mockSocket, 'send')
+    mockSocket.simulateOpen()
+
+    const joinCall = sentSpy.mock.calls.find((call) => JSON.parse(call[0]).type === 'join')
+    expect(joinCall).toBeDefined()
+    const parsed = JSON.parse(joinCall![0])
+    expect(parsed.type).toBe('join')
+    expect(parsed.name).toBe('Bob')
+    expect(parsed.playerId).toBeUndefined()
+  })
+})

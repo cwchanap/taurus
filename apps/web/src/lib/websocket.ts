@@ -85,14 +85,16 @@ export class GameWebSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private maxReconnectAttempts = 5
   private intentionalDisconnect = false
+  private storedPlayerId: string | null = null
   private roomId: string
   private playerName: string
   private apiUrl: string
 
-  constructor(apiUrl: string, roomId: string, playerName: string) {
+  constructor(apiUrl: string, roomId: string, playerName: string, playerId?: string) {
     this.apiUrl = apiUrl
     this.roomId = roomId
     this.playerName = playerName
+    this.storedPlayerId = playerId ?? null
   }
 
   connect() {
@@ -115,7 +117,10 @@ export class GameWebSocket {
         this.reconnectTimer = null
       }
       this.handlers.onConnectionChange?.(true)
-      this.send({ type: 'join', name: this.playerName })
+      const joinMsg: ClientMessage = this.storedPlayerId
+        ? { type: 'join', name: this.playerName, playerId: this.storedPlayerId }
+        : { type: 'join', name: this.playerName }
+      this.send(joinMsg)
     }
 
     this.ws.onmessage = (event) => {
@@ -146,6 +151,7 @@ export class GameWebSocket {
   private handleMessage(data: ServerMessage) {
     switch (data.type) {
       case 'init':
+        this.storedPlayerId = data.playerId
         this.handlers.onInit?.(
           data.playerId,
           data.player,
@@ -360,12 +366,15 @@ export class GameWebSocket {
 
   disconnect() {
     this.intentionalDisconnect = true
-    // Clear any pending reconnect timer
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
     this.ws?.close()
     this.ws = null
+  }
+
+  getPlayerId(): string | null {
+    return this.storedPlayerId
   }
 }
