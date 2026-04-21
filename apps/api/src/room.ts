@@ -732,10 +732,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     for (const ws of this.ctx.getWebSockets()) {
       const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
       if (attachment?.playerId === playerId) {
-        ws.serializeAttachment({
-          playerId: null as unknown as string,
-          player: null as unknown as Player,
-        })
+        // Null out the attachment so subsequent handleLeave on this old socket
+        // becomes a no-op (getPlayerIdForSocket returns null → early return).
+        ws.serializeAttachment(null)
       }
     }
   }
