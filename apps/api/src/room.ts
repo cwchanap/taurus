@@ -728,10 +728,122 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.handleLeave(ws)
   }
 
+  private supersedeOldSocket(playerId: string) {
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+      if (attachment?.playerId === playerId) {
+        ws.serializeAttachment({
+          playerId: null as unknown as string,
+          player: null as unknown as Player,
+        })
+      }
+    }
+  }
+
+  private findPlayerColor(playerId: string): string {
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+      if (attachment?.playerId === playerId && attachment.player?.color) {
+        return attachment.player.color
+      }
+    }
+    return PALETTE_COLORS[PALETTE_COLORS.length - 1]
+  }
+
+  private sendReconnectRoleState(ws: WebSocket, playerId: string) {
+    try {
+      if (isWordChoiceState(this.gameState) && playerId === this.gameState.currentDrawerId) {
+        const options = this.pendingWordOptions ?? Array.from(this.gameState.offeredWords)
+        if (options && options.length >= 3) {
+          ws.send(
+            JSON.stringify({
+              type: 'word-options',
+              words: options as [string, string, string],
+              timeToChoose: Math.max(
+                0,
+                Math.ceil(((this.gameState.choiceDeadline ?? 0) - Date.now()) / 1000)
+              ),
+              roundNumber: this.gameState.currentRound,
+              totalRounds: this.gameState.totalRounds,
+              wordChoiceEndTime: this.gameState.choiceDeadline ?? 0,
+            })
+          )
+        }
+      } else if (isPlayingState(this.gameState) && playerId === this.gameState.currentDrawerId) {
+        ws.send(
+          JSON.stringify({
+            type: 'round-start-for-drawer',
+            roundNumber: this.gameState.currentRound,
+            totalRounds: this.gameState.totalRounds,
+            drawerId: playerId,
+            drawerName: this.getPlayerName(playerId),
+            word: this.gameState.currentWord,
+            wordLength: this.gameState.wordLength,
+            endTime: this.gameState.roundEndTime,
+          })
+        )
+      }
+    } catch {
+      // Connection may be closed
+    }
+  }
+
   private async handleJoin(ws: WebSocket, data: Message & { name: string }) {
     // Validate player name
     const name = isValidPlayerName(data.name) ? data.name.trim() : 'Anonymous'
 
+    const reconnectId =
+      typeof data.playerId === 'string' && data.playerId.length > 0 ? data.playerId : null
+
+    if (reconnectId && this.gameState.scores.has(reconnectId)) {
+      const existingScore = this.gameState.scores.get(reconnectId)!
+      const player: Player = {
+        id: reconnectId,
+        name: existingScore.name,
+        color: this.findPlayerColor(reconnectId),
+      }
+
+      this.supersedeOldSocket(reconnectId)
+
+      const attachment: WebSocketAttachment = { playerId: reconnectId, player }
+      ws.serializeAttachment(attachment)
+      this.cleanedPlayers.delete(reconnectId)
+
+      await this.ensureInitialized()
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'init',
+            playerId: reconnectId,
+            player,
+            players: this.getPlayers(),
+            strokes: this.strokes,
+            fills: this.fills,
+            chatHistory: this.chatHistory.getMessages(),
+            isHost: reconnectId === this.hostPlayerId,
+            gameState: gameStateToWire(
+              this.gameState,
+              reconnectId === this.gameState.currentDrawerId
+            ),
+          })
+        )
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'InvalidStateError') {
+          console.warn(
+            `Failed to send init to reconnecting player ${reconnectId}: socket already closed`
+          )
+          this.handleLeave(ws)
+          return
+        }
+        console.error('Unexpected error sending init message:', e)
+        throw e
+      }
+
+      this.sendReconnectRoleState(ws, reconnectId)
+      return
+    }
+
+    // --- New player path ---
     const playerId = crypto.randomUUID()
     const existingPlayers = this.getPlayers()
     const color = PALETTE_COLORS[existingPlayers.length % PALETTE_COLORS.length]
@@ -810,11 +922,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       console.error('Unexpected error sending init message:', e)
       throw e
     }
-
-    // Note: reconnecting drawers during word-choice cannot be identified because
-    // every join generates a fresh playerId via crypto.randomUUID(). The game has
-    // no persistent player identity, so resending word-options on reconnect is not
-    // currently supported.
 
     // Notify others about the new player
     this.broadcast(
