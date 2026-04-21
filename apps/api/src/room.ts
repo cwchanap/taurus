@@ -1608,6 +1608,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
    */
   private beginWordChoice() {
     const connectedPlayers = new Set(this.getPlayers().map((p) => p.id))
+
+    if (connectedPlayers.size < MIN_PLAYERS_TO_START) {
+      console.warn(
+        `beginWordChoice: need at least ${MIN_PLAYERS_TO_START} players, got ${connectedPlayers.size}; ending game`
+      )
+      this.endGame()
+      return
+    }
+
     const { drawerId, roundNumber } = findNextDrawer(
       this.gameState.currentRound,
       this.gameState.drawerOrder,

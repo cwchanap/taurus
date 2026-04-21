@@ -3140,6 +3140,99 @@ describe('DrawingRoom - storage error catch blocks', () => {
       globalThis.setTimeout = originalSetTimeout
     }
   })
+
+  test('beginWordChoice ends game when player count drops below MIN_PLAYERS_TO_START', () => {
+    // Simulate a DO waking from hibernation with only 1 connected player
+    const ws1 = {
+      deserializeAttachment: () => ({
+        playerId: 'solo-player',
+        player: { id: 'solo-player', name: 'Solo', color: '#111111' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    mockGetWebSockets.mockReturnValue([ws1])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'solo-player',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['solo-player', 'gone-player'],
+      scores: new Map([
+        ['solo-player', { score: 0, name: 'Solo' }],
+        ['gone-player', { score: 0, name: 'Gone' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      offeredWords: null,
+      choiceDeadline: null,
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginWordChoice()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('game-over')
+  })
+
+  test('beginWordChoice proceeds normally when enough players are connected', () => {
+    const ws1 = {
+      deserializeAttachment: () => ({
+        playerId: 'player-1',
+        player: { id: 'player-1', name: 'Player1', color: '#111111' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    const ws2 = {
+      deserializeAttachment: () => ({
+        playerId: 'player-2',
+        player: { id: 'player-2', name: 'Player2', color: '#222222' },
+      }),
+      send: mock(() => {}),
+      close: mock(() => {}),
+    }
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 2,
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['player-1', 'player-2'],
+      scores: new Map(),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginWordChoice()
+
+    // Should have transitioned to word-choice, NOT game-over
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('word-choice')
+  })
 })
 
 describe('DrawingRoom - sendError inner catch and startRound storage errors', () => {
