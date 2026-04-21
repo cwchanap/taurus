@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
-import type { Player, Stroke, FillOperation, ChatMessage } from '@repo/types'
-import { PALETTE_COLORS } from '@repo/types'
+import type { Player, Stroke, FillOperation, ChatMessage, PaletteColor } from '@repo/types'
+import { PALETTE_COLORS, isPaletteColor } from '@repo/types'
 import { ChatHistory } from './chat-history'
 import { gameStateToWire } from './game-types'
 
@@ -739,11 +739,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     }
   }
 
-  private findPlayerColor(playerId: string): string {
+  private findPlayerColor(playerId: string): PaletteColor {
     for (const ws of this.ctx.getWebSockets()) {
       const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
       if (attachment?.playerId === playerId && attachment.player?.color) {
-        return attachment.player.color
+        const color = attachment.player.color
+        if (isPaletteColor(color)) return color
       }
     }
     return PALETTE_COLORS[PALETTE_COLORS.length - 1]
