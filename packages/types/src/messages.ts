@@ -108,7 +108,7 @@ export type GameStateWire =
 
 // Client-to-Server Messages
 export type ClientMessage =
-  | { type: 'join'; name: string }
+  | { type: 'join'; name: string; playerId?: string }
   | { type: 'chat'; content: string }
   | { type: 'stroke'; stroke: ClientStrokePayload }
   | { type: 'stroke-update'; strokeId: string; point: Point }
