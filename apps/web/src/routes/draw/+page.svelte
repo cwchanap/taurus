@@ -213,7 +213,11 @@
 
   function connectToRoom() {
     if (ws) ws.disconnect()
-    ws = new GameWebSocket(API_URL, roomId, playerName)
+    // Read persisted playerId for this room (for reconnection)
+    const storedPlayerId = browser
+      ? sessionStorage.getItem(`taurus-player-${roomId}`) || undefined
+      : undefined
+    ws = new GameWebSocket(API_URL, roomId, playerName, storedPlayerId)
 
     ws.on({
       onConnectionChange: (connected) => {
@@ -282,6 +286,10 @@
         initialGameState
       ) => {
         playerId = id
+        // Persist playerId for reconnection (scoped to room)
+        if (browser && roomId) {
+          sessionStorage.setItem(`taurus-player-${roomId}`, id)
+        }
         players = playerList
         isHost = hostFlag
         // Clear canvas before applying new state to avoid desync
@@ -807,6 +815,10 @@
 
   onDestroy(() => {
     ws?.disconnect()
+    // Clean up stored playerId on page destroy
+    if (browser && roomId) {
+      sessionStorage.removeItem(`taurus-player-${roomId}`)
+    }
     if (correctGuessTimeoutId) {
       clearTimeout(correctGuessTimeoutId)
     }
