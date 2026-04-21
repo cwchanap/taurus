@@ -3618,9 +3618,9 @@ describe('DrawingRoom - Player Reconnect', () => {
     expect(initMsg.player.name).toBe('Alice')
     expect(initMsg.isHost).toBe(true)
 
-    // Old socket should have been superseded (playerId nulled)
+    // Old socket should have been superseded (attachment nulled)
     const oldAttachment = oldWs.deserializeAttachment()
-    expect(oldAttachment.playerId).toBeNull()
+    expect(oldAttachment).toBeNull()
 
     // No player-joined broadcast for reconnects
     expect(msgs.some((m) => m?.type === 'player-joined')).toBe(false)
