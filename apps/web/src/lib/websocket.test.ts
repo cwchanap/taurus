@@ -698,6 +698,7 @@ describe('handleMessage dispatch', () => {
   })
 
   it('returns false when sending stroke while not connected', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const gameWs = new GameWebSocket('http://localhost', 'room-1', 'TestPlayer')
     gameWs.connect()
     // Socket is in CONNECTING state, not OPEN
@@ -711,6 +712,7 @@ describe('handleMessage dispatch', () => {
     }
     const result = gameWs.sendStroke(stroke)
     expect(result).toBe(false)
+    warnSpy.mockRestore()
   })
 
   it('warns and returns false when sending while not connected', () => {

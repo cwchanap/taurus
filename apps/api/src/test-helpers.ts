@@ -21,12 +21,15 @@ export function flushPromises(): Promise<void> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createMockWs(playerId: string, playerName = 'TestPlayer'): any {
+  let attachment: { playerId: string; player: { id: string; name: string; color: string } } = {
+    playerId,
+    player: { id: playerId, name: playerName, color: '#FF6B6B' },
+  }
   return {
-    deserializeAttachment: () => ({
-      playerId,
-      player: { id: playerId, name: playerName, color: '#FF6B6B' },
+    deserializeAttachment: () => attachment,
+    serializeAttachment: mock((data: unknown) => {
+      attachment = data as typeof attachment
     }),
-    serializeAttachment: mock(() => {}),
     send: mock(() => {}),
     close: mock(() => {}),
   }
