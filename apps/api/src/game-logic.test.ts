@@ -242,6 +242,20 @@ describe('handlePlayerLeaveInActiveGame', () => {
       expect(result.updatedGameState.correctGuessers.has('p3')).toBe(false)
     })
   })
+
+  describe('revealedPositions immutability', () => {
+    test('should not alias revealedPositions from original state', () => {
+      const state = createPlayingGameState(['p1', 'p2', 'p3'], 0)
+      state.revealedPositions = [1, 3, 5]
+      const remainingPlayers = ['p1', 'p2', 'p3'] // p4 leaving (not in drawer order)
+
+      const result = handlePlayerLeaveInActiveGame('p4', state, remainingPlayers)
+
+      const updated = result.updatedGameState as PlayingState
+      expect(updated.revealedPositions).toEqual([1, 3, 5])
+      expect(updated.revealedPositions).not.toBe(state.revealedPositions)
+    })
+  })
 })
 
 describe('calculateCorrectGuessScore', () => {
@@ -896,5 +910,20 @@ describe('calculateCorrectGuessScore with missedRounds', () => {
   it('catchUpBonus defaults to 0 when missedRounds not provided', () => {
     const { catchUpBonus } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW)
     expect(catchUpBonus).toBe(0)
+  })
+
+  it('normalizes negative missedRounds to 0', () => {
+    const { catchUpBonus } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, -5)
+    expect(catchUpBonus).toBe(0)
+  })
+
+  it('normalizes NaN missedRounds to 0', () => {
+    const { catchUpBonus } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, NaN)
+    expect(catchUpBonus).toBe(0)
+  })
+
+  it('normalizes fractional missedRounds by flooring', () => {
+    const { catchUpBonus } = calculateCorrectGuessScore(FIXED_END, FIXED_NOW, 2.7)
+    expect(catchUpBonus).toBe(2 * CATCH_UP_BONUS_PER_ROUND)
   })
 })

@@ -140,10 +140,11 @@ export function calculateCorrectGuessScore(
   currentTime: number = Date.now(),
   missedRounds = 0
 ): { score: number; catchUpBonus: number } {
+  const safeMissedRounds = Number.isFinite(missedRounds) ? Math.max(0, Math.floor(missedRounds)) : 0
   const timeRemaining = Math.max(0, roundEndTime - currentTime)
   const timeRatio = Math.min(1, Math.max(0, timeRemaining / ROUND_DURATION_MS))
   const baseScore = Math.round(CORRECT_GUESS_BASE_SCORE * (1 + timeRatio * 0.5))
-  const catchUpBonus = Math.min(missedRounds * CATCH_UP_BONUS_PER_ROUND, MAX_CATCH_UP_BONUS)
+  const catchUpBonus = Math.min(safeMissedRounds * CATCH_UP_BONUS_PER_ROUND, MAX_CATCH_UP_BONUS)
   return { score: baseScore + catchUpBonus, catchUpBonus }
 }
 
@@ -577,7 +578,7 @@ export function handlePlayerLeaveInActiveGame(
         roundStartTime: gameState.roundStartTime,
         roundEndTime: gameState.roundEndTime,
         endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
-        revealedPositions: gameState.revealedPositions,
+        revealedPositions: [...gameState.revealedPositions],
         ...baseClone,
       }
     } else {
@@ -591,7 +592,7 @@ export function handlePlayerLeaveInActiveGame(
         roundStartTime: gameState.roundStartTime,
         roundEndTime: gameState.roundEndTime,
         endGameAfterCurrentRound: shouldEndAfterRound || gameState.endGameAfterCurrentRound,
-        revealedPositions: gameState.revealedPositions,
+        revealedPositions: [...gameState.revealedPositions],
         ...baseClone,
       }
     }
