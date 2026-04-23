@@ -19,7 +19,8 @@ export type GameEventHandler = {
     fills: FillOperation[],
     chatHistory: ChatMessage[],
     isHost: boolean,
-    gameState: GameStateWire
+    gameState: GameStateWire,
+    reconnectToken: string
   ) => void
   onHostChange?: (newHostId: string) => void
   onPlayerJoined?: (player: Player) => void
@@ -86,15 +87,23 @@ export class GameWebSocket {
   private maxReconnectAttempts = 5
   private intentionalDisconnect = false
   private storedPlayerId: string | null = null
+  private storedReconnectToken: string | null = null
   private roomId: string
   private playerName: string
   private apiUrl: string
 
-  constructor(apiUrl: string, roomId: string, playerName: string, playerId?: string) {
+  constructor(
+    apiUrl: string,
+    roomId: string,
+    playerName: string,
+    playerId?: string,
+    reconnectToken?: string
+  ) {
     this.apiUrl = apiUrl
     this.roomId = roomId
     this.playerName = playerName
     this.storedPlayerId = playerId ?? null
+    this.storedReconnectToken = reconnectToken ?? null
   }
 
   connect() {
@@ -118,7 +127,12 @@ export class GameWebSocket {
       }
       this.handlers.onConnectionChange?.(true)
       const joinMsg: ClientMessage = this.storedPlayerId
-        ? { type: 'join', name: this.playerName, playerId: this.storedPlayerId }
+        ? {
+            type: 'join',
+            name: this.playerName,
+            playerId: this.storedPlayerId,
+            reconnectToken: this.storedReconnectToken ?? undefined,
+          }
         : { type: 'join', name: this.playerName }
       this.send(joinMsg)
     }
@@ -152,6 +166,7 @@ export class GameWebSocket {
     switch (data.type) {
       case 'init':
         this.storedPlayerId = data.playerId
+        this.storedReconnectToken = data.reconnectToken
         this.handlers.onInit?.(
           data.playerId,
           data.player,
@@ -160,7 +175,8 @@ export class GameWebSocket {
           data.fills,
           data.chatHistory,
           data.isHost,
-          data.gameState
+          data.gameState,
+          data.reconnectToken
         )
         break
       case 'player-joined':

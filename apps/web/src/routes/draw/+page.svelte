@@ -213,11 +213,14 @@
 
   function connectToRoom() {
     if (ws) ws.disconnect()
-    // Read persisted playerId for this room (for reconnection)
+    // Read persisted playerId + reconnectToken for this room (for reconnection)
     const storedPlayerId = browser
       ? sessionStorage.getItem(`taurus-player-${roomId}`) || undefined
       : undefined
-    ws = new GameWebSocket(API_URL, roomId, playerName, storedPlayerId)
+    const storedReconnectToken = browser
+      ? sessionStorage.getItem(`taurus-token-${roomId}`) || undefined
+      : undefined
+    ws = new GameWebSocket(API_URL, roomId, playerName, storedPlayerId, storedReconnectToken)
 
     ws.on({
       onConnectionChange: (connected) => {
@@ -283,12 +286,14 @@
         fillList,
         chatHistory,
         hostFlag,
-        initialGameState
+        initialGameState,
+        token
       ) => {
         playerId = id
-        // Persist playerId for reconnection (scoped to room)
+        // Persist playerId + reconnectToken for reconnection (scoped to room)
         if (browser && roomId) {
           sessionStorage.setItem(`taurus-player-${roomId}`, id)
+          sessionStorage.setItem(`taurus-token-${roomId}`, token)
         }
         players = playerList
         isHost = hostFlag
@@ -815,10 +820,8 @@
 
   onDestroy(() => {
     ws?.disconnect()
-    // Clean up stored playerId on page destroy
-    if (browser && roomId) {
-      sessionStorage.removeItem(`taurus-player-${roomId}`)
-    }
+    // Intentionally NOT removing sessionStorage playerId here.
+    // Keeping it allows reconnection after page refresh or navigation back.
     if (correctGuessTimeoutId) {
       clearTimeout(correctGuessTimeoutId)
     }

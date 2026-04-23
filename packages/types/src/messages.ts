@@ -108,7 +108,7 @@ export type GameStateWire =
 
 // Client-to-Server Messages
 export type ClientMessage =
-  | { type: 'join'; name: string; playerId?: string }
+  | { type: 'join'; name: string; playerId?: string; reconnectToken?: string }
   | { type: 'chat'; content: string }
   | { type: 'stroke'; stroke: ClientStrokePayload }
   | { type: 'stroke-update'; strokeId: string; point: Point }
@@ -142,6 +142,8 @@ export type ServerMessage =
       chatHistory: ChatMessage[]
       isHost: boolean
       gameState: GameStateWire
+      /** Server-issued secret for reconnection — proves ownership of this playerId */
+      reconnectToken: string
     }
   | { type: 'player-joined'; player: Player }
   | { type: 'host-change'; newHostId: string }

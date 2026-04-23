@@ -3591,6 +3591,8 @@ describe('DrawingRoom - Player Reconnect', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).hostPlayerId = 'p1'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'secret-token-p1']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'lobby',
       currentRound: 0,
@@ -3606,7 +3608,12 @@ describe('DrawingRoom - Player Reconnect', () => {
 
     await room.webSocketMessage(
       newWs as unknown as WebSocket,
-      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1' })
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'secret-token-p1',
+      })
     )
     await flushPromises()
 
@@ -3617,6 +3624,8 @@ describe('DrawingRoom - Player Reconnect', () => {
     expect(initMsg.player.id).toBe('p1')
     expect(initMsg.player.name).toBe('Alice')
     expect(initMsg.isHost).toBe(true)
+    expect(initMsg.reconnectToken).toBeDefined()
+    expect(typeof initMsg.reconnectToken).toBe('string')
 
     // Old socket should have been superseded (attachment nulled)
     const oldAttachment = oldWs.deserializeAttachment()
@@ -3634,6 +3643,8 @@ describe('DrawingRoom - Player Reconnect', () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'token-p1']])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'word-choice',
@@ -3666,7 +3677,7 @@ describe('DrawingRoom - Player Reconnect', () => {
 
     await room.webSocketMessage(
       newWs as unknown as WebSocket,
-      JSON.stringify({ type: 'join', name: 'Drawer', playerId: 'p1' })
+      JSON.stringify({ type: 'join', name: 'Drawer', playerId: 'p1', reconnectToken: 'token-p1' })
     )
     await flushPromises()
 
@@ -3688,6 +3699,8 @@ describe('DrawingRoom - Player Reconnect', () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'token-p1']])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'playing',
@@ -3717,7 +3730,7 @@ describe('DrawingRoom - Player Reconnect', () => {
 
     await room.webSocketMessage(
       newWs as unknown as WebSocket,
-      JSON.stringify({ type: 'join', name: 'Drawer', playerId: 'p1' })
+      JSON.stringify({ type: 'join', name: 'Drawer', playerId: 'p1', reconnectToken: 'token-p1' })
     )
     await flushPromises()
 
@@ -3779,6 +3792,8 @@ describe('DrawingRoom - Player Reconnect', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).hostPlayerId = 'p1'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'token-p1']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'lobby',
       currentRound: 0,
@@ -3797,7 +3812,7 @@ describe('DrawingRoom - Player Reconnect', () => {
 
     await room.webSocketMessage(
       newWs as unknown as WebSocket,
-      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1' })
+      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1', reconnectToken: 'token-p1' })
     )
     await flushPromises()
 
@@ -3813,5 +3828,161 @@ describe('DrawingRoom - Player Reconnect', () => {
     // Other player should NOT have received player-left for p1
     const otherMsgs = getSentMessages(otherWs)
     expect(otherMsgs.some((m) => m?.type === 'player-left' && m?.playerId === 'p1')).toBe(false)
+  })
+
+  test('Reconnect with wrong token is rejected — player treated as new', async () => {
+    const oldWs = createMockWs('p1', 'Alice')
+    const newWs = createMockWs('', '')
+
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'correct-token']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([['p1', { score: 42, name: 'Alice' }]]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([oldWs, newWs])
+
+    // Send wrong token — should fall through to new-player path
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1', reconnectToken: 'wrong-token' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg).toBeDefined()
+    // Should be a NEW playerId, not p1
+    expect(initMsg.playerId).not.toBe('p1')
+    // Old socket should NOT have been superseded
+    const oldAttachment = oldWs.deserializeAttachment()
+    expect(oldAttachment).not.toBeNull()
+  })
+
+  test('Reconnect without token is rejected — player treated as new', async () => {
+    const oldWs = createMockWs('p1', 'Alice')
+    const newWs = createMockWs('', '')
+
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'secret-token']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([['p1', { score: 42, name: 'Alice' }]]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([oldWs, newWs])
+
+    // Send playerId without any token — should fall through to new-player path
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg).toBeDefined()
+    // Should be a NEW playerId, not p1
+    expect(initMsg.playerId).not.toBe('p1')
+  })
+
+  test('Reconnecting player gets a fresh token in init response', async () => {
+    const oldWs = createMockWs('p1', 'Alice')
+    const newWs = createMockWs('', '')
+
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'old-token']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([['p1', { score: 42, name: 'Alice' }]]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([oldWs, newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1', reconnectToken: 'old-token' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg).toBeDefined()
+    // Token should be different from the original
+    expect(initMsg.reconnectToken).toBeDefined()
+    expect(initMsg.reconnectToken).not.toBe('old-token')
+    // Internal token map should be updated
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).playerTokens.get('p1')).toBe(initMsg.reconnectToken)
+  })
+
+  test('Reconnecting player preserves color from ScoreEntry', async () => {
+    const newWs = createMockWs('', '')
+
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'token-p1']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([['p1', { score: 42, name: 'Alice', color: '#4ECDC4' }]]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    // Old socket is already gone (no websockets for p1)
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1', reconnectToken: 'token-p1' })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg).toBeDefined()
+    expect(initMsg.player.color).toBe('#4ECDC4')
   })
 })
