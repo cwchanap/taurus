@@ -104,6 +104,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   // Track players being cleaned up to prevent duplicate leave broadcasts
   private cleanedPlayers = new Set<string>()
 
+  // Server-issued reconnect tokens (playerId → token) — proves ownership on reconnect
+  private playerTokens: Map<string, string> = new Map()
+
   // Chat history manager
   private chatHistory = new ChatHistory()
 
@@ -168,6 +171,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       // Restore hostPlayerId (may be null if no host assigned yet)
       this.hostPlayerId = (await this.ctx.storage.get<string>('hostPlayerId')) || null
+
+      // Restore reconnect tokens (playerId → token)
+      const storedTokens = (await this.ctx.storage.get<[string, string][]>('playerTokens')) || []
+      this.playerTokens = new Map(storedTokens)
 
       // Restore gameState if it was persisted
       const storedGameState = await this.ctx.storage.get<StoredGameState>('gameState')
@@ -355,6 +362,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       await this.storagePutWithRetry('hostPlayerId', this.hostPlayerId)
     } else {
       await this.storageDeleteWithRetry('hostPlayerId')
+    }
+  }
+
+  private async persistPlayerTokens(): Promise<void> {
+    if (this.playerTokens.size > 0) {
+      await this.storagePutWithRetry('playerTokens', Array.from(this.playerTokens.entries()))
+    } else {
+      await this.storageDeleteWithRetry('playerTokens')
     }
   }
 
@@ -740,6 +755,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   }
 
   private findPlayerColor(playerId: string): PaletteColor {
+    // Prefer the color persisted in scores (survives socket teardown / DO hibernation)
+    const scoreEntry = this.gameState.scores.get(playerId)
+    if (scoreEntry?.color && isPaletteColor(scoreEntry.color)) {
+      return scoreEntry.color
+    }
+
+    // Fall back to live WebSocket attachments (still-valid in some reconnect windows)
     for (const ws of this.ctx.getWebSockets()) {
       const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
       if (attachment?.playerId === playerId && attachment.player?.color) {
@@ -795,58 +817,89 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     const reconnectId =
       typeof data.playerId === 'string' && data.playerId.length > 0 ? data.playerId : null
 
+    const reconnectToken =
+      typeof data.reconnectToken === 'string' && data.reconnectToken.length > 0
+        ? data.reconnectToken
+        : null
+
     if (reconnectId && this.gameState.scores.has(reconnectId)) {
-      const existingScore = this.gameState.scores.get(reconnectId)!
-      const player: Player = {
-        id: reconnectId,
-        name: existingScore.name,
-        color: this.findPlayerColor(reconnectId),
-      }
-
-      this.supersedeOldSocket(reconnectId)
-
-      const attachment: WebSocketAttachment = { playerId: reconnectId, player }
-      ws.serializeAttachment(attachment)
-      this.cleanedPlayers.delete(reconnectId)
-
-      await this.ensureInitialized()
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'init',
-            playerId: reconnectId,
-            player,
-            players: this.getPlayers(),
-            strokes: this.strokes,
-            fills: this.fills,
-            chatHistory: this.chatHistory.getMessages(),
-            isHost: reconnectId === this.hostPlayerId,
-            gameState: gameStateToWire(
-              this.gameState,
-              reconnectId === this.gameState.currentDrawerId
-            ),
-          })
-        )
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'InvalidStateError') {
-          console.warn(
-            `Failed to send init to reconnecting player ${reconnectId}: socket already closed`
-          )
-          this.handleLeave(ws)
-          return
+      // Validate reconnect token — prevents impersonation via public playerId
+      const expectedToken = this.playerTokens.get(reconnectId)
+      if (!reconnectToken || reconnectToken !== expectedToken) {
+        // Invalid or missing token — reject reconnect, treat as new player
+        // Fall through to new-player path below
+      } else {
+        const existingScore = this.gameState.scores.get(reconnectId)!
+        const player: Player = {
+          id: reconnectId,
+          name: existingScore.name,
+          color: this.findPlayerColor(reconnectId),
         }
-        console.error('Unexpected error sending init message:', e)
-        throw e
-      }
 
-      this.sendReconnectRoleState(ws, reconnectId)
-      return
+        this.supersedeOldSocket(reconnectId)
+
+        // Issue a fresh token for subsequent reconnects
+        const freshToken = crypto.randomUUID()
+        this.playerTokens.set(reconnectId, freshToken)
+        this.ctx.waitUntil(
+          this.persistPlayerTokens().catch((e) =>
+            console.error('Failed to persist reconnect token:', e)
+          )
+        )
+
+        const attachment: WebSocketAttachment = { playerId: reconnectId, player }
+        ws.serializeAttachment(attachment)
+        this.cleanedPlayers.delete(reconnectId)
+
+        await this.ensureInitialized()
+        try {
+          ws.send(
+            JSON.stringify({
+              type: 'init',
+              playerId: reconnectId,
+              player,
+              players: this.getPlayers(),
+              strokes: this.strokes,
+              fills: this.fills,
+              chatHistory: this.chatHistory.getMessages(),
+              isHost: reconnectId === this.hostPlayerId,
+              gameState: gameStateToWire(
+                this.gameState,
+                reconnectId === this.gameState.currentDrawerId
+              ),
+              reconnectToken: freshToken,
+            })
+          )
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'InvalidStateError') {
+            console.warn(
+              `Failed to send init to reconnecting player ${reconnectId}: socket already closed`
+            )
+            this.handleLeave(ws)
+            return
+          }
+          console.error('Unexpected error sending init message:', e)
+          throw e
+        }
+
+        this.sendReconnectRoleState(ws, reconnectId)
+        return
+      }
     }
 
     // --- New player path ---
     const playerId = crypto.randomUUID()
     const existingPlayers = this.getPlayers()
     const color = PALETTE_COLORS[existingPlayers.length % PALETTE_COLORS.length]
+
+    // Issue a reconnect token for this new player
+    const newToken = crypto.randomUUID()
+    this.playerTokens.set(playerId, newToken)
+    this.ctx.waitUntil(
+      this.persistPlayerTokens().catch((e) =>
+        console.error('Failed to persist new player token:', e)
+      )
+    )
 
     const player: Player = {
       id: playerId,
@@ -873,7 +926,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       this.gameState.status
     )
     if (isActiveGame && !this.gameState.scores.has(playerId)) {
-      this.gameState.scores.set(playerId, { score: 0, name: player.name })
+      this.gameState.scores.set(playerId, { score: 0, name: player.name, color: player.color })
 
       // Persist score entry for non-playing active states so it survives DO hibernation.
       // The 'playing' branch below also persists (along with roundGuessers).
@@ -911,6 +964,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           chatHistory: this.chatHistory.getMessages(),
           isHost: playerId === this.hostPlayerId,
           gameState: gameStateToWire(this.gameState, playerId === this.gameState.currentDrawerId),
+          reconnectToken: newToken,
         })
       )
     } catch (e) {
@@ -1611,7 +1665,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       roundStartTime: null,
       roundEndTime: null,
       drawerOrder: shuffledOrder,
-      scores: new Map(playerIds.map((id) => [id, { score: 0, name: this.getPlayerName(id) }])),
+      scores: new Map(
+        playerIds.map((id) => [
+          id,
+          { score: 0, name: this.getPlayerName(id), color: this.getPlayerColor(id) },
+        ])
+      ),
       correctGuessers: new Set(),
       roundGuessers: new Set(),
       roundStartGuesserIds: new Set(),
@@ -2071,6 +2130,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         this.gameState.scores.set(drawerId, {
           score: drawerScore,
           name: this.getPlayerName(drawerId),
+          color: this.getPlayerColor(drawerId),
         })
       }
     }
@@ -2311,7 +2371,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     if (scoreInfo) {
       scoreInfo.score += score
     } else {
-      this.gameState.scores.set(playerId, { score, name: playerName })
+      this.gameState.scores.set(playerId, {
+        score,
+        name: playerName,
+        color: this.getPlayerColor(playerId),
+      })
     }
     this.gameState.roundGuesserScores.set(playerId, score)
 
@@ -2360,5 +2424,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Fallback to scores map (stores name at time of score entry)
     return this.gameState.scores.get(playerId)?.name || 'Unknown'
+  }
+
+  private getPlayerColor(playerId: string): PaletteColor | undefined {
+    // Check connected players first
+    const players = this.getPlayers()
+    const player = players.find((p) => p.id === playerId)
+    if (player?.color) return player.color
+
+    // Fallback to scores map (stores color at time of score entry)
+    return this.gameState.scores.get(playerId)?.color
   }
 }

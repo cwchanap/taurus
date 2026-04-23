@@ -9,6 +9,8 @@ export type GameStatus =
 export interface ScoreEntry {
   score: number
   name: string
+  /** Player color persisted so it survives reconnection after socket closes */
+  color?: PaletteColor
 }
 
 export interface RoundResult {
