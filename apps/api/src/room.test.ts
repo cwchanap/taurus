@@ -338,6 +338,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
       usedWords: new Set(['cat']),
       consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
+      revealedPositions: [],
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -663,6 +664,7 @@ describe('DrawingRoom - Player Leave During Game', () => {
       usedWords: new Set(),
       consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
+      revealedPositions: [],
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1356,6 +1358,7 @@ describe('DrawingRoom - Fill and Undo Handler Authorization', () => {
       usedWords: new Set(),
       consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
+      revealedPositions: [],
     }
   }
 
@@ -2212,6 +2215,7 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
       usedWords: new Set(['banana']),
       consecutiveMissedRounds: new Map(),
       endGameAfterCurrentRound: false,
+      revealedPositions: [],
     }
   }
 
@@ -3061,9 +3065,12 @@ describe('DrawingRoom - storage error catch blocks', () => {
       scores: new Map([[drawerId, { score: 0, name: 'Drawer' }]]),
       correctGuessers: new Set<string>(),
       roundGuessers: new Set<string>(),
+      roundStartGuesserIds: new Set<string>(),
       roundGuesserScores: new Map<string, number>(),
       usedWords: new Set<string>(),
+      consecutiveMissedRounds: new Map<string, number>(),
       endGameAfterCurrentRound: false,
+      revealedPositions: [],
     }
   }
 
@@ -3227,6 +3234,7 @@ describe('DrawingRoom - storage error catch blocks', () => {
         usedWords: new Set(),
         consecutiveMissedRounds: new Map(),
         endGameAfterCurrentRound: false,
+        revealedPositions: [],
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
