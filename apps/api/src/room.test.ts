@@ -3572,6 +3572,187 @@ describe('DrawingRoom - game state persistence ordering', () => {
           },
         })
       })
+
+      describe('DrawingRoom - catch-up scoring', () => {
+        let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+        let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
+        let mockState: Partial<DurableObjectState>
+        let mockGetWebSockets: ReturnType<typeof mock>
+        let mockWaitUntil: ReturnType<typeof mock>
+        let mockEnv: unknown
+
+        beforeEach(async () => {
+          ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+          mockGetWebSockets = mock(() => [])
+          mockWaitUntil = mock(() => {})
+
+          mockState = {
+            storage: {
+              get: mock(() => Promise.resolve(undefined)),
+              put: mock(() => Promise.resolve()),
+              delete: mock(() => Promise.resolve()),
+              list: mock(() => Promise.resolve(new Map())),
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any,
+            id: {
+              toString: () => 'test-room-id',
+              equals: () => false,
+              name: 'test-room',
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any,
+            waitUntil: mockWaitUntil,
+            blockConcurrencyWhile: mock(async (fn) => await fn()),
+            getWebSockets: mockGetWebSockets,
+          }
+
+          mockEnv = {}
+          void mockEnv
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          room = new DrawingRoomClass(mockState as any, mockEnv as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(room as any).initialized = true
+        })
+
+        afterEach(() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(room as any).clearTimers()
+        })
+
+        function setPlayingStateWithMissedRounds(
+          drawerId: string,
+          guessers: string[],
+          missedRounds: Map<string, number>,
+          word = 'banana'
+        ) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(room as any).gameState = {
+            status: 'playing',
+            currentRound: 1,
+            totalRounds: 3,
+            currentDrawerId: drawerId,
+            currentWord: word,
+            wordLength: word.length,
+            roundStartTime: Date.now(),
+            roundEndTime: Date.now() + 60_000,
+            drawerOrder: [drawerId, ...guessers],
+            scores: new Map([
+              [drawerId, { score: 0, name: 'Drawer' }],
+              ...guessers.map(
+                (g) =>
+                  [g, { score: 0, name: `Player ${g}` }] as [
+                    string,
+                    { score: number; name: string },
+                  ]
+              ),
+            ]),
+            correctGuessers: new Set<string>(),
+            roundGuessers: new Set(guessers),
+            roundStartGuesserIds: new Set(guessers),
+            roundGuesserScores: new Map(),
+            usedWords: new Set([word]),
+            consecutiveMissedRounds: missedRounds,
+            endGameAfterCurrentRound: false,
+            revealedPositions: [],
+          }
+        }
+
+        test('correct-guess includes catchUpBonus when player has missed rounds', async () => {
+          const drawerWs = createMockWs('p1', 'Drawer')
+          const guesserWs = createMockWs('p2', 'Guesser')
+          mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+          setPlayingStateWithMissedRounds('p1', ['p2'], new Map([['p2', 3]]), 'banana')
+
+          await room.webSocketMessage(
+            guesserWs,
+            JSON.stringify({ type: 'chat', content: 'banana' })
+          )
+          await flushPromises()
+
+          const msgs = getSentMessages(guesserWs)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const correctGuessMsg = msgs.find((m: any) => m?.type === 'correct-guess')
+          expect(correctGuessMsg).toBeDefined()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          expect((correctGuessMsg as any).catchUpBonus).toBe(30)
+        })
+
+        test('correct-guess has no catchUpBonus when player has not missed rounds', async () => {
+          const drawerWs = createMockWs('p1', 'Drawer')
+          const guesserWs = createMockWs('p2', 'Guesser')
+          mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+          setPlayingStateWithMissedRounds('p1', ['p2'], new Map([['p2', 0]]), 'banana')
+
+          await room.webSocketMessage(
+            guesserWs,
+            JSON.stringify({ type: 'chat', content: 'banana' })
+          )
+          await flushPromises()
+
+          const msgs = getSentMessages(guesserWs)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const correctGuessMsg = msgs.find((m: any) => m?.type === 'correct-guess')
+          expect(correctGuessMsg).toBeDefined()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          expect((correctGuessMsg as any).catchUpBonus).toBeUndefined()
+        })
+
+        test('catchUpBonus is capped at MAX_CATCH_UP_BONUS (50)', async () => {
+          const drawerWs = createMockWs('p1', 'Drawer')
+          const guesserWs = createMockWs('p2', 'Guesser')
+          mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+          setPlayingStateWithMissedRounds('p1', ['p2'], new Map([['p2', 10]]), 'banana')
+
+          await room.webSocketMessage(
+            guesserWs,
+            JSON.stringify({ type: 'chat', content: 'banana' })
+          )
+          await flushPromises()
+
+          const msgs = getSentMessages(guesserWs)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const correctGuessMsg = msgs.find((m: any) => m?.type === 'correct-guess')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          expect((correctGuessMsg as any).catchUpBonus).toBe(50)
+        })
+
+        test('consecutiveMissedRounds resets to 0 after correct guess', async () => {
+          const drawerWs = createMockWs('p1', 'Drawer')
+          const guesserWs = createMockWs('p2', 'Guesser')
+          mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+          setPlayingStateWithMissedRounds('p1', ['p2'], new Map([['p2', 2]]), 'banana')
+
+          await room.webSocketMessage(
+            guesserWs,
+            JSON.stringify({ type: 'chat', content: 'banana' })
+          )
+          await flushPromises()
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const missedRounds = (room as any).gameState.consecutiveMissedRounds
+          expect(missedRounds.get('p2')).toBe(0)
+        })
+
+        test('endRound increments consecutiveMissedRounds for players who did not guess', () => {
+          const drawerWs = createMockWs('p1', 'Drawer')
+          const guesserWs = createMockWs('p2', 'Guesser')
+          mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+          setPlayingStateWithMissedRounds('p1', ['p2'], new Map([['p2', 1]]), 'banana')
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(room as any).endRound(false)
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const missedRounds = (room as any).gameState.consecutiveMissedRounds
+          expect(missedRounds.get('p2')).toBe(2)
+        })
+      })
     })
 
     mockState = {
