@@ -1326,4 +1326,41 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
       screen.queryByText(/Choosing word/i) || screen.queryByText(/Choose a word/i)
     ).toBeTruthy()
   })
+
+  it('preserves undo stack when round-start fires for the same round during reconnection', async () => {
+    await simulateJoinAsDrawer('Alice')
+    const handlers = getWsHandlers()
+    const MockWS = vi.mocked(GameWebSocket)
+    const wsInstance = MockWS.mock.instances[MockWS.mock.instances.length - 1] as unknown as {
+      sendUndoStroke: ReturnType<typeof vi.fn>
+    }
+
+    // Verify undo stack is populated from the init stroke
+    await waitFor(() => {
+      const undoBtn = screen.getByRole('button', { name: /undo/i }) as HTMLButtonElement
+      expect(undoBtn.disabled).toBe(false)
+    })
+
+    // Simulate reconnect: server sends round-start-for-drawer for the same round
+    handlers.onRoundStart?.(
+      1, // same roundNumber
+      2, // same totalRounds
+      'player-123',
+      'Alice',
+      'elephant',
+      8,
+      Date.now() + 60000
+    )
+
+    await waitFor(() => {
+      // Undo button should STILL be enabled — stack was preserved, not wiped
+      const undoBtn = screen.getByRole('button', { name: /undo/i }) as HTMLButtonElement
+      expect(undoBtn.disabled).toBe(false)
+    })
+
+    // And Ctrl+Z should still work (undoStack has the original stroke)
+    const callsBefore = wsInstance.sendUndoStroke.mock.calls.length
+    await fireEvent.keyDown(window, { key: 'z', ctrlKey: true, shiftKey: false })
+    expect(wsInstance.sendUndoStroke.mock.calls.length).toBeGreaterThan(callsBefore)
+  })
 })

@@ -662,6 +662,13 @@
           clearInterval(wordChoiceTimerId)
           wordChoiceTimerId = null
         }
+        // Preserve undo/redo stacks when rejoining the same round (e.g. reconnecting
+        // drawer receives round-start-for-drawer — the init handler already rebuilt
+        // the undo stack from persisted strokes/fills, and resetting it here would
+        // destroy that work).
+        const isSameRound = round === roundNumber && gameStatus === 'playing'
+        const preservedUndoStack = isSameRound ? undoStack : undefined
+        const preservedRedoStack = isSameRound ? redoStack : undefined
         const next = buildRoundStartState(
           round,
           rounds,
@@ -680,8 +687,8 @@
         timeRemaining = next.timeRemaining
         gameStatus = next.gameStatus
         lastRoundResult = next.lastRoundResult
-        undoStack = next.undoStack
-        redoStack = next.redoStack
+        undoStack = preservedUndoStack ?? next.undoStack
+        redoStack = preservedRedoStack ?? next.redoStack
         clearRedoLock()
         pendingRedoStrokes = new Map()
         pendingRedoFills = new Map()

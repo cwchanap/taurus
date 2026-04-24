@@ -740,6 +740,100 @@ describe('DrawingRoom - Player Leave During Game', () => {
     }
   })
 
+  test('resumeGameFlowFromState with expired word-choice starts drawing when no sockets exist (cold start)', () => {
+    // Simulate cold DO restart: word-choice deadline expired, but getWebSockets() is empty
+    // because no WebSocket has been accepted yet. The drawer should NOT be pruned.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      offeredWords: ['apple', 'banana', 'cherry'] as [string, string, string],
+      choiceDeadline: Date.now() - 1000,
+      endGameAfterCurrentRound: false,
+    }
+    // No sockets — simulates cold DO start before any WebSocket is accepted
+    mockGetWebSockets.mockReturnValue([])
+
+    const beginDrawingSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginDrawing = beginDrawingSpy
+
+    const pruneSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pruneDrawerFromOrder = pruneSpy
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).resumeGameFlowFromState()
+
+    // With no sockets, we optimistically start drawing (drawer may reconnect)
+    expect(beginDrawingSpy).toHaveBeenCalledWith('apple')
+    expect(pruneSpy).not.toHaveBeenCalled()
+  })
+
+  test('resumeGameFlowFromState with expired word-choice prunes drawer when other sockets exist but drawer absent', () => {
+    // Other players are connected but the drawer is not — drawer should be pruned
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      offeredWords: ['apple', 'banana', 'cherry'] as [string, string, string],
+      choiceDeadline: Date.now() - 1000,
+      endGameAfterCurrentRound: false,
+    }
+    // p2 is connected but p1 (drawer) is not
+    const otherWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([otherWs])
+
+    const beginWordChoiceSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginWordChoice = beginWordChoiceSpy
+
+    const pruneSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pruneDrawerFromOrder = pruneSpy
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).resumeGameFlowFromState()
+
+    // Drawer absent among connected sockets → prune and restart word choice
+    expect(pruneSpy).toHaveBeenCalledWith('p1')
+    expect(beginWordChoiceSpy).toHaveBeenCalled()
+  })
+
   test('non-drawer leaving during word-choice ends game when room drops below min players', async () => {
     const ws1 = {
       deserializeAttachment: () => ({
@@ -1011,8 +1105,16 @@ describe('DrawingRoom - Broadcast and Message Handling', () => {
   })
 
   test('broadcast sends JSON to all connected sockets', () => {
-    const ws1 = { send: mock(() => {}), close: mock(() => {}) }
-    const ws2 = { send: mock(() => {}), close: mock(() => {}) }
+    const ws1 = {
+      send: mock(() => {}),
+      close: mock(() => {}),
+      deserializeAttachment: () => ({ playerId: 'p1' }),
+    }
+    const ws2 = {
+      send: mock(() => {}),
+      close: mock(() => {}),
+      deserializeAttachment: () => ({ playerId: 'p2' }),
+    }
     mockGetWebSockets.mockReturnValue([ws1, ws2])
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1023,8 +1125,16 @@ describe('DrawingRoom - Broadcast and Message Handling', () => {
   })
 
   test('broadcast excludes the specified socket', () => {
-    const ws1 = { send: mock(() => {}), close: mock(() => {}) }
-    const ws2 = { send: mock(() => {}), close: mock(() => {}) }
+    const ws1 = {
+      send: mock(() => {}),
+      close: mock(() => {}),
+      deserializeAttachment: () => ({ playerId: 'p1' }),
+    }
+    const ws2 = {
+      send: mock(() => {}),
+      close: mock(() => {}),
+      deserializeAttachment: () => ({ playerId: 'p2' }),
+    }
     mockGetWebSockets.mockReturnValue([ws1, ws2])
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1032,6 +1142,23 @@ describe('DrawingRoom - Broadcast and Message Handling', () => {
 
     expect(ws1.send).not.toHaveBeenCalled()
     expect(ws2.send).toHaveBeenCalledTimes(1)
+  })
+
+  test('broadcast skips superseded sockets with null attachment', () => {
+    const activeWs = createMockWs('p1', 'Alice')
+    const supersededWs = createMockWs('p2', 'Bob')
+    // Simulate supersedeOldSocket: null out the attachment
+    supersededWs.serializeAttachment(null)
+    supersededWs.deserializeAttachment = () => null
+
+    mockGetWebSockets.mockReturnValue([activeWs, supersededWs])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).broadcast({ type: 'test', value: 1 })
+
+    expect(activeWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'test', value: 1 }))
+    // Superseded socket should NOT receive the broadcast
+    expect(supersededWs.send).not.toHaveBeenCalled()
   })
 
   test('handleChat broadcasts message to all players in lobby', async () => {
@@ -3984,5 +4111,90 @@ describe('DrawingRoom - Player Reconnect', () => {
     const initMsg = msgs.find((m) => m?.type === 'init')
     expect(initMsg).toBeDefined()
     expect(initMsg.player.color).toBe('#4ECDC4')
+  })
+
+  test('Lobby reconnect via playerTokens when scores is empty', async () => {
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'lobby-token']])
+    // Lobby state — scores is empty, but player was previously registered via token
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'lobby-token',
+      })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    // Should reconnect as the same player, not create a new one
+    expect(initMsg).toBeDefined()
+    expect(initMsg.playerId).toBe('p1')
+    expect(initMsg.player.name).toBe('Alice')
+    expect(initMsg.isHost).toBe(true)
+    // No player-joined broadcast for reconnects
+    expect(msgs.some((m) => m?.type === 'player-joined')).toBe(false)
+  })
+
+  test('Lobby reconnect with wrong token still falls through to new player', async () => {
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'correct-token']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'wrong-token',
+      })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    // Should fall through to new-player path with a different playerId
+    expect(initMsg).toBeDefined()
+    expect(initMsg.playerId).not.toBe('p1')
   })
 })
