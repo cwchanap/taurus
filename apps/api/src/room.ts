@@ -242,7 +242,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       if (remainingMs <= 0) {
         // Validate that the persisted drawer is still connected before auto-starting.
         // The drawer may have disconnected while the DO was hibernating.
-        const drawerConnected = this.isPlayerConnected(this.gameState.currentDrawerId)
+        //
+        // Cold-start edge case: after DO hibernation the first request may arrive
+        // before any WebSocket has been accepted, so getWebSockets() is empty.
+        // If no sockets exist at all we optimistically start drawing — the drawer
+        // will reconnect into an active round.  If sockets *do* exist but the
+        // drawer is absent, they genuinely disconnected and should be pruned.
+        const allSockets = this.ctx.getWebSockets()
+        const drawerConnected =
+          allSockets.length === 0 || this.isPlayerConnected(this.gameState.currentDrawerId)
         if (drawerConnected) {
           this.beginDrawing(this.pendingWordOptions[0])
         } else {
@@ -822,59 +830,65 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ? data.reconnectToken
         : null
 
-    if (reconnectId && this.gameState.scores.has(reconnectId)) {
+    // Check if this is a valid reconnect — player must be known to the room.
+    // scores covers active/in-progress games; playerTokens covers lobby phase
+    // where scores is empty but the player was previously registered.
+    const reconnectViaScores = reconnectId && this.gameState.scores.has(reconnectId)
+    const reconnectViaTokens =
+      reconnectId && !reconnectViaScores && this.playerTokens.has(reconnectId)
+
+    if (reconnectViaScores || reconnectViaTokens) {
       // Validate reconnect token — prevents impersonation via public playerId
-      const expectedToken = this.playerTokens.get(reconnectId)
+      const expectedToken = this.playerTokens.get(reconnectId!)
       if (!reconnectToken || reconnectToken !== expectedToken) {
         // Invalid or missing token — reject reconnect, treat as new player
         // Fall through to new-player path below
       } else {
-        const existingScore = this.gameState.scores.get(reconnectId)!
+        // At this point reconnectId is guaranteed non-null (checked by the outer condition).
+        const rid = reconnectId!
+        // Resolve player info: prefer persisted scores entry (has canonical name/color),
+        // fall back to the name provided in the join message for lobby-phase reconnects.
+        const existingScore = this.gameState.scores.get(rid)
         const player: Player = {
-          id: reconnectId,
-          name: existingScore.name,
-          color: this.findPlayerColor(reconnectId),
+          id: rid,
+          name: existingScore?.name ?? name,
+          color: this.findPlayerColor(rid),
         }
 
-        this.supersedeOldSocket(reconnectId)
+        this.supersedeOldSocket(rid)
 
         // Issue a fresh token for subsequent reconnects
         const freshToken = crypto.randomUUID()
-        this.playerTokens.set(reconnectId, freshToken)
+        this.playerTokens.set(rid, freshToken)
         this.ctx.waitUntil(
           this.persistPlayerTokens().catch((e) =>
             console.error('Failed to persist reconnect token:', e)
           )
         )
 
-        const attachment: WebSocketAttachment = { playerId: reconnectId, player }
+        const attachment: WebSocketAttachment = { playerId: rid, player }
         ws.serializeAttachment(attachment)
-        this.cleanedPlayers.delete(reconnectId)
+        this.cleanedPlayers.delete(rid)
 
         await this.ensureInitialized()
         try {
           ws.send(
             JSON.stringify({
               type: 'init',
-              playerId: reconnectId,
+              playerId: rid,
               player,
               players: this.getPlayers(),
               strokes: this.strokes,
               fills: this.fills,
               chatHistory: this.chatHistory.getMessages(),
-              isHost: reconnectId === this.hostPlayerId,
-              gameState: gameStateToWire(
-                this.gameState,
-                reconnectId === this.gameState.currentDrawerId
-              ),
+              isHost: rid === this.hostPlayerId,
+              gameState: gameStateToWire(this.gameState, rid === this.gameState.currentDrawerId),
               reconnectToken: freshToken,
             })
           )
         } catch (e) {
           if (e instanceof DOMException && e.name === 'InvalidStateError') {
-            console.warn(
-              `Failed to send init to reconnecting player ${reconnectId}: socket already closed`
-            )
+            console.warn(`Failed to send init to reconnecting player ${rid}: socket already closed`)
             this.handleLeave(ws)
             return
           }
@@ -882,7 +896,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           throw e
         }
 
-        this.sendReconnectRoleState(ws, reconnectId)
+        this.sendReconnectRoleState(ws, rid)
         return
       }
     }
@@ -1594,6 +1608,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     for (const ws of this.ctx.getWebSockets()) {
       if (ws !== exclude) {
+        // Skip superseded sockets — their attachment was nulled by supersedeOldSocket().
+        // Without this check, stale connections continue receiving events.
+        const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
+        if (!attachment) continue
         try {
           ws.send(data)
         } catch (error) {
