@@ -100,7 +100,11 @@ test.describe('Draw Page State Transitions', () => {
 
       const round1Continues = await completeRoundByCorrectGuess(hostPage, playerPage)
       if (round1Continues) {
-        await hostPage.waitForTimeout(4000)
+        await handleWordChoice(hostPage)
+        await handleWordChoice(playerPage)
+
+        await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
+        await expect(playerPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
         await completeRoundByCorrectGuess(hostPage, playerPage)
       }
 

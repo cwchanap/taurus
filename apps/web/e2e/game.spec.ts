@@ -442,8 +442,11 @@ test.describe('Drawing Game Feature', () => {
 
         // Complete round 2 only if the game hasn't ended
         if (round1Continues) {
-          // Wait for round transition (round-end phase)
-          await hostPage.waitForTimeout(4000)
+          await handleWordChoice(hostPage)
+          await handleWordChoice(playerPage)
+
+          await expect(hostPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
+          await expect(playerPage.locator('.game-header')).toBeVisible({ timeout: 5000 })
 
           await completeRoundByCorrectGuess(hostPage, playerPage)
         }
