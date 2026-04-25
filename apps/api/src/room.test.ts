@@ -4386,4 +4386,335 @@ describe('DrawingRoom - Player Reconnect', () => {
     expect(initMsg).toBeDefined()
     expect(initMsg.playerId).not.toBe('p1')
   })
+
+  test('Reconnecting guesser during playing state is restored to roundGuessers', async () => {
+    // Simulate: p1 draws, p2 and p3 are guessers. p2 disconnects and reconnects.
+    // After reconnect, p2 should be back in roundGuessers so the "all guessed" check is correct.
+    const oldWs = createMockWs('p2', 'Bob')
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p2', 'p3'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+        ['p3', { score: 0, name: 'Charlie', color: '#45B7D1' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p3']), // p2 was removed by handleLeave
+      roundStartGuesserIds: new Set(['p3']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['cat']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+
+    mockGetWebSockets.mockReturnValue([oldWs, newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // p2 should be restored to roundGuessers
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gs = (room as any).gameState
+    expect(gs.roundGuessers.has('p2')).toBe(true)
+    expect(gs.roundGuessers.has('p3')).toBe(true)
+  })
+
+  test('Reconnecting drawer during playing state is NOT added to roundGuessers', async () => {
+    const oldWs = createMockWs('p1', 'Drawer')
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'token-p1']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Guesser', color: '#4ECDC4' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundStartGuesserIds: new Set(['p2']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['cat']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+
+    mockGetWebSockets.mockReturnValue([oldWs, newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Drawer', playerId: 'p1', reconnectToken: 'token-p1' })
+    )
+    await flushPromises()
+
+    // Drawer should NOT be in roundGuessers
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gs = (room as any).gameState
+    expect(gs.roundGuessers.has('p1')).toBe(false)
+    expect(gs.roundGuessers.has('p2')).toBe(true)
+  })
+
+  test('Reconnecting host reclaims host ownership', async () => {
+    // Host p1 disconnects → host transfers to p2 → p1 reconnects → host restored
+    const oldWs = createMockWs('p1', 'Alice')
+    const p2Ws = createMockWs('p2', 'Bob')
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'token-p1']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([
+      ['p1', { name: 'Alice', color: '#FF6B6B' }],
+      ['p2', { name: 'Bob', color: '#4ECDC4' }],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([
+        ['p1', { score: 10, name: 'Alice' }],
+        ['p2', { score: 0, name: 'Bob' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    // Simulate: p1 was host, disconnected, host transferred to p2
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p2'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedHostId = 'p1'
+
+    mockGetWebSockets.mockReturnValue([oldWs, p2Ws, newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1', reconnectToken: 'token-p1' })
+    )
+    await flushPromises()
+
+    // Host should be restored to p1
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hostPlayerId).toBe('p1')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedHostId).toBeNull()
+
+    // host-change broadcast should have been sent
+    const p2Msgs = getSentMessages(p2Ws)
+    const hostChangeMsg = p2Msgs.find((m) => m?.type === 'host-change')
+    expect(hostChangeMsg).toBeDefined()
+    expect(hostChangeMsg.newHostId).toBe('p1')
+
+    // Init should report isHost: true
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg.isHost).toBe(true)
+  })
+
+  test('Non-host reconnect does not claim host', async () => {
+    const oldWs = createMockWs('p2', 'Bob')
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedHostId = null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice' }],
+        ['p2', { score: 0, name: 'Bob' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([oldWs, newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // Host should remain p1
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hostPlayerId).toBe('p1')
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg.isHost).toBe(false)
+  })
+
+  test('Lobby reconnect preserves player color via playerInfo', async () => {
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'lobby-token']])
+    // Player info has the original color
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([['p1', { name: 'Alice', color: '#FF6B6B' }]])
+    // Lobby state — no scores entry for this player
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    // Old socket is already gone (no websockets for p1)
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'lobby-token',
+      })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg).toBeDefined()
+    // Color should be preserved from playerInfo, not the fallback
+    expect(initMsg.player.color).toBe('#FF6B6B')
+  })
+
+  test('Lobby reconnect without playerInfo falls back to default color', async () => {
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'lobby-token']])
+    // No playerInfo (simulating data from before the fix)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map()
+    // Lobby state — no scores entry
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'lobby-token',
+      })
+    )
+    await flushPromises()
+
+    const msgs = getSentMessages(newWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg).toBeDefined()
+    // Should get the fallback color (last palette color)
+
+    const paletteColors = await import('@repo/types').then((m) => m.PALETTE_COLORS)
+    expect(initMsg.player.color).toBe(paletteColors[paletteColors.length - 1])
+  })
+
+  test('Host leave sets disconnectedHostId for reconnect reclaim', async () => {
+    const hostWs = createMockWs('p1', 'Alice')
+    const otherWs = createMockWs('p2', 'Bob')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([
+        ['p1', { score: 10, name: 'Alice' }],
+        ['p2', { score: 0, name: 'Bob' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([hostWs, otherWs])
+
+    // Host disconnects
+    await room.webSocketClose(hostWs as unknown as WebSocket)
+    await flushPromises()
+
+    // disconnectedHostId should be set
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedHostId).toBe('p1')
+    // Host should transfer to p2
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hostPlayerId).toBe('p2')
+  })
 })
