@@ -1,6 +1,5 @@
 import { expect, type Page } from '@playwright/test'
 import { getNonEmptyText } from './text'
-import { handleWordChoice } from './word-choice'
 
 export async function completeRoundByCorrectGuess(
   hostPage: Page,
@@ -29,9 +28,6 @@ export async function completeRoundByCorrectGuess(
   }
 
   if (isGameOverVisible) return false
-
-  await handleWordChoice(hostPage)
-  await handleWordChoice(playerPage)
 
   const hostWordLabel = await getNonEmptyText(hostPage.locator('.word-label'))
   const isHostDrawer = hostWordLabel === 'Draw:'
