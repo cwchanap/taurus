@@ -107,6 +107,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   // Server-issued reconnect tokens (playerId → token) — proves ownership on reconnect
   private playerTokens: Map<string, string> = new Map()
 
+  // Persisted player metadata (playerId → {name, color}) — survives socket teardown and DO hibernation
+  private playerInfo: Map<string, { name: string; color: string }> = new Map()
+
+  // Tracks a host who disconnected so they can reclaim host on reconnect
+  private disconnectedHostId: string | null = null
+
   // Chat history manager
   private chatHistory = new ChatHistory()
 
@@ -175,6 +181,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // Restore reconnect tokens (playerId → token)
       const storedTokens = (await this.ctx.storage.get<[string, string][]>('playerTokens')) || []
       this.playerTokens = new Map(storedTokens)
+
+      // Restore persisted player metadata (name, color)
+      const storedPlayerInfo =
+        (await this.ctx.storage.get<[string, { name: string; color: string }][]>('playerInfo')) ||
+        []
+      this.playerInfo = new Map(storedPlayerInfo)
+
+      // Restore disconnected host tracking for reconnect reclaim
+      this.disconnectedHostId = (await this.ctx.storage.get<string>('disconnectedHostId')) || null
 
       // Restore gameState if it was persisted
       const storedGameState = await this.ctx.storage.get<StoredGameState>('gameState')
@@ -378,6 +393,22 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       await this.storagePutWithRetry('playerTokens', Array.from(this.playerTokens.entries()))
     } else {
       await this.storageDeleteWithRetry('playerTokens')
+    }
+  }
+
+  private async persistPlayerInfo(): Promise<void> {
+    if (this.playerInfo.size > 0) {
+      await this.storagePutWithRetry('playerInfo', Array.from(this.playerInfo.entries()))
+    } else {
+      await this.storageDeleteWithRetry('playerInfo')
+    }
+  }
+
+  private async persistDisconnectedHost(): Promise<void> {
+    if (this.disconnectedHostId) {
+      await this.storagePutWithRetry('disconnectedHostId', this.disconnectedHostId)
+    } else {
+      await this.storageDeleteWithRetry('disconnectedHostId')
     }
   }
 
@@ -769,6 +800,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       return scoreEntry.color
     }
 
+    // Check persisted player metadata (covers lobby players without scores entries)
+    const info = this.playerInfo.get(playerId)
+    if (info?.color && isPaletteColor(info.color)) {
+      return info.color
+    }
+
     // Fall back to live WebSocket attachments (still-valid in some reconnect windows)
     for (const ws of this.ctx.getWebSockets()) {
       const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
@@ -870,6 +907,37 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.serializeAttachment(attachment)
         this.cleanedPlayers.delete(rid)
 
+        // --- Fix: Restore host ownership if this player was the disconnected host ---
+        if (this.disconnectedHostId === rid) {
+          this.hostPlayerId = rid
+          this.disconnectedHostId = null
+          this.broadcast({ type: 'host-change', newHostId: rid })
+          this.ctx.waitUntil(
+            Promise.all([this.persistHost(), this.persistDisconnectedHost()]).catch((e) =>
+              console.error('Failed to persist host restore:', e)
+            )
+          )
+        }
+
+        // --- Fix: Restore player to round guesser sets if game is in progress ---
+        if (this.gameState.status === 'playing' && rid !== this.gameState.currentDrawerId) {
+          this.gameState.roundGuessers.add(rid)
+          // Persist the updated round guessers
+          this.ctx.waitUntil(
+            this.persistGameState().catch((e) =>
+              console.error('Failed to persist game state after reconnect:', e)
+            )
+          )
+        }
+
+        // --- Fix: Persist player info (name, color) for future reconnects ---
+        this.playerInfo.set(rid, { name: player.name, color: player.color })
+        this.ctx.waitUntil(
+          this.persistPlayerInfo().catch((e) =>
+            console.error('Failed to persist player info on reconnect:', e)
+          )
+        )
+
         await this.ensureInitialized()
         try {
           ws.send(
@@ -927,6 +995,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Clean up any leftover cleanup flag (reconnection scenario)
     this.cleanedPlayers.delete(playerId)
+
+    // Persist player info (name, color) for future reconnects
+    this.playerInfo.set(playerId, { name: player.name, color: player.color })
+    this.ctx.waitUntil(
+      this.persistPlayerInfo().catch((e) => console.error('Failed to persist player info:', e))
+    )
 
     // First player becomes the host
     if (this.hostPlayerId === null) {
@@ -1013,6 +1087,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Transfer host ownership if the host leaves
     if (playerId === this.hostPlayerId) {
+      // Track disconnected host so they can reclaim on reconnect
+      this.disconnectedHostId = this.hostPlayerId
+      this.ctx.waitUntil(
+        this.persistDisconnectedHost().catch((e) =>
+          console.error('Failed to persist disconnected host:', e)
+        )
+      )
+
       const players = this.getPlayers().filter((p) => p.id !== playerId)
       // Assign host to the next player if available
       this.hostPlayerId = players.length > 0 ? players[0].id : null
@@ -1026,6 +1108,21 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // Persist host change to storage (fire and forget via waitUntil)
       this.ctx.waitUntil(
         this.persistHost().catch((e) => console.error('Failed to persist host:', e))
+      )
+    }
+
+    // Invalidate disconnectedHostId if the new host (who received the transfer) also leaves.
+    // Only clear when a DIFFERENT player from the original disconnecting host leaves while being host.
+    if (
+      this.disconnectedHostId &&
+      playerId !== this.disconnectedHostId &&
+      playerId === this.hostPlayerId
+    ) {
+      this.disconnectedHostId = null
+      this.ctx.waitUntil(
+        this.persistDisconnectedHost().catch((e) =>
+          console.error('Failed to clear disconnected host:', e)
+        )
       )
     }
 
