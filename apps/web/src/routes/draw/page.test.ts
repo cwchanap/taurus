@@ -37,6 +37,7 @@ import { GameWebSocket } from '$lib/websocket'
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  sessionStorage.clear()
   vi.unstubAllGlobals()
 })
 
@@ -51,6 +52,7 @@ function getWsHandlers(): Record<string, (...args: unknown[]) => void> {
 
 type DrawingState = { strokes: unknown[]; fills: unknown[] }
 type DrawPageComponent = { getDrawingState: () => DrawingState }
+const TEST_RECONNECT_TOKEN = 'reconnect-token-123'
 
 /** Helper to simulate a player creating and joining a game room */
 async function simulateJoinGame(playerName = 'Alice') {
@@ -76,7 +78,13 @@ async function simulateJoinGame(playerName = 'Alice') {
   await waitFor(() => {
     expect(vi.mocked(GameWebSocket).mock.instances.length).toBeGreaterThan(0)
   })
-  expect(vi.mocked(GameWebSocket)).toHaveBeenCalledWith(expect.any(String), 'TEST-ROOM', playerName)
+  expect(vi.mocked(GameWebSocket)).toHaveBeenCalledWith(
+    expect.any(String),
+    'TEST-ROOM',
+    playerName,
+    undefined,
+    undefined
+  )
 
   const handlers = getWsHandlers()
   expect(handlers.onInit).toBeDefined()
@@ -98,7 +106,8 @@ async function simulateJoinGame(playerName = 'Alice') {
       roundEndTime: null,
       scores: {},
       currentWord: undefined,
-    }
+    },
+    TEST_RECONNECT_TOKEN
   )
 
   await waitFor(() => {
@@ -201,7 +210,13 @@ describe('Draw page - room creation', () => {
     await waitFor(() => {
       expect(vi.mocked(GameWebSocket).mock.instances.length).toBeGreaterThan(0)
     })
-    expect(vi.mocked(GameWebSocket)).toHaveBeenCalledWith(expect.any(String), 'ABC123', 'Alice')
+    expect(vi.mocked(GameWebSocket)).toHaveBeenCalledWith(
+      expect.any(String),
+      'ABC123',
+      'Alice',
+      undefined,
+      undefined
+    )
   })
 })
 
@@ -576,7 +591,8 @@ describe('Draw page - keyboard shortcuts', () => {
         scores: { 'player-123': { name: 'Alice', score: 0 } },
         currentWord: 'elephant',
         wordLength: 8,
-      }
+      },
+      TEST_RECONNECT_TOKEN
     )
     return stroke
   }
@@ -779,7 +795,8 @@ describe('Draw page - game UI branches', () => {
         roundEndTime: null,
         scores: {},
         currentWord: undefined,
-      }
+      },
+      TEST_RECONNECT_TOKEN
     )
 
     await waitFor(() => {
@@ -833,7 +850,8 @@ describe('Draw page - game UI branches', () => {
         roundEndTime: null,
         scores: {},
         currentWord: undefined,
-      }
+      },
+      TEST_RECONNECT_TOKEN
     )
 
     await waitFor(() => {
@@ -1129,7 +1147,8 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
         scores: { 'player-123': { name: playerName, score: 0 } },
         currentWord: 'elephant',
         wordLength: 8,
-      }
+      },
+      TEST_RECONNECT_TOKEN
     )
 
     await waitFor(() => {
@@ -1256,7 +1275,8 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
         },
         wordLength: 5,
         revealedHint: 'a _ _ l e',
-      }
+      },
+      TEST_RECONNECT_TOKEN
     )
 
     await waitFor(() => {
@@ -1312,7 +1332,8 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
           'player-123': { name: 'Alice', score: 0 },
           'player-456': { name: 'Bob', score: 0 },
         },
-      }
+      },
+      TEST_RECONNECT_TOKEN
     )
 
     await waitFor(() => {
