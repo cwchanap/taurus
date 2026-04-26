@@ -89,6 +89,37 @@ describe('handlePlayerLeaveInActiveGame', () => {
     })
   })
 
+  describe('roundStartGuesserIds preservation on disconnect', () => {
+    test('should keep player in roundStartGuesserIds when they leave mid-round', () => {
+      const state = createPlayingGameState(['p1', 'p2', 'p3'], 0)
+      // p2 and p3 are round-start guessers (all non-drawers)
+      expect(state.roundStartGuesserIds.has('p2')).toBe(true)
+      expect(state.roundStartGuesserIds.has('p3')).toBe(true)
+
+      const remainingPlayers = ['p1', 'p3'] // p2 disconnects
+      const result = handlePlayerLeaveInActiveGame('p2', state, remainingPlayers)
+
+      // p2 should be removed from active guesser sets but NOT from roundStartGuesserIds
+      // so that endRound() can still track consecutiveMissedRounds if they reconnect
+      expect(result.updatedGameState.roundGuessers.has('p2')).toBe(false)
+      expect(result.updatedGameState.roundStartGuesserIds.has('p2')).toBe(true)
+      // p3 should still be in both sets
+      expect(result.updatedGameState.roundGuessers.has('p3')).toBe(true)
+      expect(result.updatedGameState.roundStartGuesserIds.has('p3')).toBe(true)
+    })
+
+    test('should preserve roundStartGuesserIds for drawer leaving (endRound path)', () => {
+      const state = createPlayingGameState(['p1', 'p2', 'p3'], 0) // p1 is drawer
+      const remainingPlayers = ['p2', 'p3'] // p1 (drawer) leaves
+
+      const result = handlePlayerLeaveInActiveGame('p1', state, remainingPlayers)
+
+      // Non-drawers p2, p3 should remain in roundStartGuesserIds
+      expect(result.updatedGameState.roundStartGuesserIds.has('p2')).toBe(true)
+      expect(result.updatedGameState.roundStartGuesserIds.has('p3')).toBe(true)
+    })
+  })
+
   describe('when non-drawer participant leaves', () => {
     test('should end game if remaining players < MIN_PLAYERS_TO_START', () => {
       const state = createPlayingGameState(['p1', 'p2'], 0)

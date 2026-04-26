@@ -520,10 +520,15 @@ export function handlePlayerLeaveInActiveGame(
     consecutiveMissedRounds: new Map(gameState.consecutiveMissedRounds),
   }
 
-  // Remove from correct guessers, round guessers, and round guesser scores
+  // Remove from correct guessers, round guessers, and round guesser scores.
+  // NOTE: We intentionally do NOT remove from roundStartGuesserIds — whether a
+  // player was present at round start is a historical fact that should survive
+  // a temporary disconnect/reconnect cycle.  If the player reconnects before the
+  // round ends, endRound() will still correctly track their consecutive missed
+  // rounds.  If they never reconnect, the stale entry is harmless because the
+  // next beginDrawing() call resets the set entirely.
   baseClone.correctGuessers.delete(leavingPlayerId)
   baseClone.roundGuessers.delete(leavingPlayerId)
-  baseClone.roundStartGuesserIds.delete(leavingPlayerId)
   baseClone.roundGuesserScores.delete(leavingPlayerId)
 
   // Find the player's index in drawer order

@@ -255,14 +255,25 @@ export function gameStateToStorage(state: GameState): StoredGameState {
  * Restore GameState from storage format
  */
 export function gameStateFromStorage(stored: StoredGameState): GameState {
+  // Backfill roundStartGuesserIds for snapshots written before the field
+  // existed.  Before this distinction was introduced, every round guesser was
+  // implicitly present at round start, so falling back to roundGuessers
+  // preserves the original scoring behaviour for active rounds.  Lobby /
+  // starting states have empty guesser sets, so the fallback is harmless.
+  const restoredRoundGuessers = new Set(stored.roundGuessers)
+  const roundStartGuesserIds =
+    stored.roundStartGuesserIds != null
+      ? new Set(stored.roundStartGuesserIds)
+      : restoredRoundGuessers
+
   const baseState = {
     currentRound: stored.currentRound,
     totalRounds: stored.totalRounds,
     drawerOrder: stored.drawerOrder,
     scores: new Map(stored.scores),
     correctGuessers: new Set(stored.correctGuessers),
-    roundGuessers: new Set(stored.roundGuessers),
-    roundStartGuesserIds: new Set(stored.roundStartGuesserIds ?? []),
+    roundGuessers: restoredRoundGuessers,
+    roundStartGuesserIds,
     roundGuesserScores: new Map(stored.roundGuesserScores),
     usedWords: new Set(stored.usedWords),
     consecutiveMissedRounds: new Map(stored.consecutiveMissedRounds ?? []),
