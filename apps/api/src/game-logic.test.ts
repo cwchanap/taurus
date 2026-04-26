@@ -274,6 +274,71 @@ describe('handlePlayerLeaveInActiveGame', () => {
     })
   })
 
+  describe('correct guesser preservation on disconnect', () => {
+    test('should preserve correctGuessers and roundGuesserScores when correct guesser disconnects', () => {
+      const state = createPlayingGameState(['p1', 'p2', 'p3'], 0) // p1 is drawer
+      // p2 guesses correctly
+      state.correctGuessers.add('p2')
+      state.roundGuesserScores.set('p2', 150)
+      const remainingPlayers = ['p1', 'p3'] // p2 disconnects
+
+      const result = handlePlayerLeaveInActiveGame('p2', state, remainingPlayers)
+
+      // correctGuessers and roundGuesserScores should be preserved
+      expect(result.updatedGameState.correctGuessers.has('p2')).toBe(true)
+      expect(result.updatedGameState.roundGuesserScores.get('p2')).toBe(150)
+      // roundGuessers should be removed (no longer actively guessing)
+      expect(result.updatedGameState.roundGuessers.has('p2')).toBe(false)
+      // roundStartGuesserIds preserved (historical fact)
+      expect(result.updatedGameState.roundStartGuesserIds.has('p2')).toBe(true)
+    })
+
+    test('should remove from correctGuessers when non-guesser disconnects', () => {
+      const state = createPlayingGameState(['p1', 'p2', 'p3'], 0) // p1 is drawer
+      // p3 has NOT guessed correctly
+      const remainingPlayers = ['p1', 'p2'] // p3 disconnects
+
+      const result = handlePlayerLeaveInActiveGame('p3', state, remainingPlayers)
+
+      // p3 was not a correct guesser, so correctGuessers should not contain p3
+      expect(result.updatedGameState.correctGuessers.has('p3')).toBe(false)
+      expect(result.updatedGameState.roundGuesserScores.has('p3')).toBe(false)
+      expect(result.updatedGameState.roundGuessers.has('p3')).toBe(false)
+      expect(result.updatedGameState.roundStartGuesserIds.has('p3')).toBe(true)
+    })
+
+    test('should preserve one correct guesser while removing another who had not guessed', () => {
+      const state = createPlayingGameState(['p1', 'p2', 'p3', 'p4'], 0) // p1 is drawer
+      state.correctGuessers.add('p2')
+      state.roundGuesserScores.set('p2', 120)
+      // p3 has NOT guessed, p4 has NOT guessed
+      const remainingPlayers = ['p1', 'p2', 'p4'] // p3 disconnects
+
+      const result = handlePlayerLeaveInActiveGame('p3', state, remainingPlayers)
+
+      // p2's correct guess preserved
+      expect(result.updatedGameState.correctGuessers.has('p2')).toBe(true)
+      expect(result.updatedGameState.roundGuesserScores.get('p2')).toBe(120)
+      // p3 removed (was not a correct guesser)
+      expect(result.updatedGameState.correctGuessers.has('p3')).toBe(false)
+      expect(result.updatedGameState.roundGuesserScores.has('p3')).toBe(false)
+    })
+
+    test('should remove correct guesser from roundGuessers so all-guessed check works', () => {
+      const state = createPlayingGameState(['p1', 'p2', 'p3'], 0) // p1 is drawer
+      state.correctGuessers.add('p2')
+      state.roundGuesserScores.set('p2', 100)
+      const remainingPlayers = ['p1', 'p3'] // p2 disconnects
+
+      const result = handlePlayerLeaveInActiveGame('p2', state, remainingPlayers)
+
+      // roundGuessers no longer includes p2
+      expect(result.updatedGameState.roundGuessers.has('p2')).toBe(false)
+      // remaining guesser p3 is still there
+      expect(result.updatedGameState.roundGuessers.has('p3')).toBe(true)
+    })
+  })
+
   describe('revealedPositions immutability', () => {
     test('should not alias revealedPositions from original state', () => {
       const state = createPlayingGameState(['p1', 'p2', 'p3'], 0)

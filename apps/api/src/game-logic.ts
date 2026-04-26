@@ -520,16 +520,25 @@ export function handlePlayerLeaveInActiveGame(
     consecutiveMissedRounds: new Map(gameState.consecutiveMissedRounds),
   }
 
-  // Remove from correct guessers, round guessers, and round guesser scores.
+  // Remove from round guessers — the leaving player is no longer actively guessing.
   // NOTE: We intentionally do NOT remove from roundStartGuesserIds — whether a
   // player was present at round start is a historical fact that should survive
   // a temporary disconnect/reconnect cycle.  If the player reconnects before the
   // round ends, endRound() will still correctly track their consecutive missed
   // rounds.  If they never reconnect, the stale entry is harmless because the
   // next beginDrawing() call resets the set entirely.
-  baseClone.correctGuessers.delete(leavingPlayerId)
   baseClone.roundGuessers.delete(leavingPlayerId)
-  baseClone.roundGuesserScores.delete(leavingPlayerId)
+
+  // Preserve correct guessers and their scores — if a player already guessed
+  // correctly before disconnecting, endRound() must still count them so that:
+  // 1. The drawer receives the correct bonus
+  // 2. The round result includes their score
+  // 3. Their consecutiveMissedRounds is NOT incremented
+  // Only remove players who had NOT yet guessed correctly.
+  if (!baseClone.correctGuessers.has(leavingPlayerId)) {
+    baseClone.correctGuessers.delete(leavingPlayerId)
+    baseClone.roundGuesserScores.delete(leavingPlayerId)
+  }
 
   // Find the player's index in drawer order
   const removedIndex = baseClone.drawerOrder.indexOf(leavingPlayerId)

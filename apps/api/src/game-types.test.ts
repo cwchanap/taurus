@@ -468,6 +468,37 @@ describe('gameStateToWire', () => {
       expect(wire.revealedHint).toBeUndefined()
     }
   })
+
+  it('playing state omits revealedHint for the drawer', () => {
+    const now = Date.now()
+    const state: PlayingState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: now,
+      roundEndTime: now + 60000,
+      drawerOrder: ['drawer', 'p2', 'p3'],
+      scores: new Map([['drawer', { score: 0, name: 'Drawer' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2', 'p3']),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      revealedPositions: [0, 2],
+    }
+    const wire = gameStateToWire(state, true)
+    expect(wire.status).toBe('playing')
+    if (wire.status === 'playing') {
+      // Drawer should see the word but NOT the revealedHint
+      expect(wire.currentWord).toBe('cat')
+      expect(wire.revealedHint).toBeUndefined()
+    }
+  })
 })
 
 describe('type guards', () => {

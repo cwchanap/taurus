@@ -894,14 +894,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
         this.supersedeOldSocket(rid)
 
-        // Issue a fresh token for subsequent reconnects
+        // Generate a fresh token for subsequent reconnects, but do NOT persist it
+        // until the init message is successfully delivered.  If the socket closes
+        // between token rotation and ws.send(), the client never learns the new
+        // token and the old one has already been invalidated — stranding the player.
         const freshToken = crypto.randomUUID()
-        this.playerTokens.set(rid, freshToken)
-        this.ctx.waitUntil(
-          this.persistPlayerTokens().catch((e) =>
-            console.error('Failed to persist reconnect token:', e)
-          )
-        )
 
         const attachment: WebSocketAttachment = { playerId: rid, player }
         ws.serializeAttachment(attachment)
@@ -957,12 +954,23 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         } catch (e) {
           if (e instanceof DOMException && e.name === 'InvalidStateError') {
             console.warn(`Failed to send init to reconnecting player ${rid}: socket already closed`)
+            // Do NOT rotate the token — the client never received freshToken, so
+            // the old token must remain valid for the next reconnect attempt.
             this.handleLeave(ws)
             return
           }
           console.error('Unexpected error sending init message:', e)
           throw e
         }
+
+        // Token rotation happens only after successful delivery — the client now
+        // knows freshToken, so we can safely invalidate the old one.
+        this.playerTokens.set(rid, freshToken)
+        this.ctx.waitUntil(
+          this.persistPlayerTokens().catch((e) =>
+            console.error('Failed to persist reconnect token:', e)
+          )
+        )
 
         this.sendReconnectRoleState(ws, rid)
         return
