@@ -1095,17 +1095,28 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Transfer host ownership if the host leaves
     if (playerId === this.hostPlayerId) {
-      // Track disconnected host so they can reclaim on reconnect
-      this.disconnectedHostId = this.hostPlayerId
+      const previousHostId = this.hostPlayerId
+
+      if (this.disconnectedHostId && this.disconnectedHostId !== playerId) {
+        // The current leaving host is a *successor* (not the original host).
+        // The original host's reclaim marker is still pending but can no longer
+        // be fulfilled — the successor is leaving too.  Clear the marker so
+        // neither the original host nor the successor gets a stale reclaim.
+        this.disconnectedHostId = null
+      } else {
+        // Track disconnected host so they can reclaim on reconnect
+        this.disconnectedHostId = previousHostId
+      }
+
+      const players = this.getPlayers().filter((p) => p.id !== playerId)
+      // Assign host to the next player if available
+      this.hostPlayerId = players.length > 0 ? players[0].id : null
+
       this.ctx.waitUntil(
         this.persistDisconnectedHost().catch((e) =>
           console.error('Failed to persist disconnected host:', e)
         )
       )
-
-      const players = this.getPlayers().filter((p) => p.id !== playerId)
-      // Assign host to the next player if available
-      this.hostPlayerId = players.length > 0 ? players[0].id : null
 
       if (this.hostPlayerId) {
         this.broadcast({
@@ -1116,21 +1127,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       // Persist host change to storage (fire and forget via waitUntil)
       this.ctx.waitUntil(
         this.persistHost().catch((e) => console.error('Failed to persist host:', e))
-      )
-    }
-
-    // Invalidate disconnectedHostId if the new host (who received the transfer) also leaves.
-    // Only clear when a DIFFERENT player from the original disconnecting host leaves while being host.
-    if (
-      this.disconnectedHostId &&
-      playerId !== this.disconnectedHostId &&
-      playerId === this.hostPlayerId
-    ) {
-      this.disconnectedHostId = null
-      this.ctx.waitUntil(
-        this.persistDisconnectedHost().catch((e) =>
-          console.error('Failed to clear disconnected host:', e)
-        )
       )
     }
 
