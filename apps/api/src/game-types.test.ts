@@ -691,4 +691,62 @@ describe('PlayingState with revealedPositions', () => {
     expect(restored.revealedPositions).toEqual([])
     expect(restored.consecutiveMissedRounds.size).toBe(0)
   })
+
+  it('backfills roundStartGuesserIds from roundGuessers when absent in old storage', () => {
+    const stored: StoredGameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: 1000,
+      roundEndTime: 61000,
+      endGameAfterCurrentRound: false,
+      drawerOrder: ['drawer1', 'p2', 'p3'],
+      scores: [
+        ['drawer1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'P2' }],
+        ['p3', { score: 0, name: 'P3' }],
+      ],
+      correctGuessers: [],
+      roundGuessers: ['p2', 'p3'],
+      // roundStartGuesserIds is intentionally omitted (pre-schema storage)
+      roundGuesserScores: [],
+      usedWords: ['cat'],
+    }
+    const restored = gameStateFromStorage(stored) as PlayingState
+
+    // Should fall back to roundGuessers so that endRound() correctly tracks
+    // consecutiveMissedRounds for players who were present at round start.
+    expect(restored.roundStartGuesserIds.has('p2')).toBe(true)
+    expect(restored.roundStartGuesserIds.has('p3')).toBe(true)
+    expect(restored.roundStartGuesserIds.size).toBe(2)
+  })
+
+  it('uses explicit roundStartGuesserIds when present in storage', () => {
+    const stored: StoredGameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: 1000,
+      roundEndTime: 61000,
+      endGameAfterCurrentRound: false,
+      drawerOrder: ['drawer1', 'p2', 'p3'],
+      scores: [],
+      correctGuessers: [],
+      roundGuessers: ['p2', 'p3'],
+      roundStartGuesserIds: ['p2'], // Only p2 was present at round start (p3 joined late)
+      roundGuesserScores: [],
+      usedWords: ['cat'],
+    }
+    const restored = gameStateFromStorage(stored) as PlayingState
+
+    expect(restored.roundStartGuesserIds.has('p2')).toBe(true)
+    expect(restored.roundStartGuesserIds.has('p3')).toBe(false) // p3 was a late joiner
+    expect(restored.roundStartGuesserIds.size).toBe(1)
+  })
 })
