@@ -348,6 +348,11 @@
           currentWord = undefined
           hintString = ''
           wordChoiceEndTime = initialGameState.deadlineTime
+          // Compute immediately so the overlay shows the correct value on the first frame
+          wordChoiceTimeRemaining = Math.max(
+            0,
+            Math.ceil(((initialGameState.deadlineTime ?? 0) - Date.now()) / 1000)
+          )
           if (wordChoiceTimerId) {
             clearInterval(wordChoiceTimerId)
             wordChoiceTimerId = null
@@ -613,6 +618,8 @@
         wordLength = 0
         timeRemaining = 0
         wordChoiceEndTime = endTime
+        // Compute immediately so the overlay shows the correct value on the first frame
+        wordChoiceTimeRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
         if (wordChoiceTimerId) {
           clearInterval(wordChoiceTimerId)
           wordChoiceTimerId = null
@@ -637,6 +644,8 @@
         hintString = ''
         wordChoiceOptions = words
         wordChoiceEndTime = endTime
+        // Compute immediately so the overlay shows the correct value on the first frame
+        wordChoiceTimeRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
         if (wordChoiceTimerId) {
           clearInterval(wordChoiceTimerId)
           wordChoiceTimerId = null
