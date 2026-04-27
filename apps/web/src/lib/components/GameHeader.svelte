@@ -28,6 +28,11 @@
   // Generate masked word (underscores with spaces) - always mask, never reveal
   const maskedWord = $derived(wordLength > 0 ? Array(wordLength).fill('_').join(' ') : '')
 
+  // Count actual letters (excluding spaces and hyphens) from hintString when available
+  const letterCount = $derived(
+    hintString ? hintString.split(' ').filter((c) => c !== '' && c !== '-').length : wordLength
+  )
+
   // Format time as MM:SS
   const formattedTime = $derived.by(() => {
     const totalSeconds = Math.floor(Math.max(timeRemaining, 0))
@@ -54,7 +59,7 @@
         <span class="word-label">Guess:</span>
         {#if wordLength > 0}
           <span class="word masked">{hintString || maskedWord}</span>
-          <span class="word-hint">({wordLength} letters)</span>
+          <span class="word-hint">({letterCount} letters)</span>
         {/if}
       {/if}
     </div>

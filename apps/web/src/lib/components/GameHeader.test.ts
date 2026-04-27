@@ -252,4 +252,59 @@ describe('GameHeader', () => {
     // Masked word should NOT appear when hintString is set
     expect(screen.queryByText('_ _ _ _ _')).toBeNull()
   })
+
+  it('shows correct letter count when hintString contains spaces (multi-word target)', () => {
+    const { container } = render(GameHeader, {
+      status: 'playing',
+      currentWord: undefined,
+      wordLength: 7, // "hot dog" is 7 chars including space
+      timeRemaining: 30,
+      currentDrawerName: 'Bob',
+      isCurrentDrawer: false,
+      roundNumber: 1,
+      totalRounds: 3,
+      hintString: '_ _ _   _ _ _', // space preserved in hint
+    })
+
+    // Use textContent since innerText collapses consecutive spaces
+    const maskedEl = container.querySelector('.word.masked')
+    expect(maskedEl).toBeTruthy()
+    expect(maskedEl?.textContent).toBe('_ _ _   _ _ _')
+    // Letter count should exclude the space: 6 letters, not 7
+    expect(screen.getByText('(6 letters)')).toBeTruthy()
+  })
+
+  it('shows correct letter count when hintString contains hyphens', () => {
+    render(GameHeader, {
+      status: 'playing',
+      currentWord: undefined,
+      wordLength: 9, // "ice-cream" is 9 chars including hyphen
+      timeRemaining: 30,
+      currentDrawerName: 'Bob',
+      isCurrentDrawer: false,
+      roundNumber: 1,
+      totalRounds: 3,
+      hintString: '_ _ _ - _ _ _ _ _',
+    })
+
+    expect(screen.getByText('_ _ _ - _ _ _ _ _')).toBeTruthy()
+    // Letter count should exclude hyphen: 8 letters, not 9
+    expect(screen.getByText('(8 letters)')).toBeTruthy()
+  })
+
+  it('falls back to wordLength for letter count when no hintString', () => {
+    render(GameHeader, {
+      status: 'playing',
+      currentWord: undefined,
+      wordLength: 5,
+      timeRemaining: 30,
+      currentDrawerName: 'Bob',
+      isCurrentDrawer: false,
+      roundNumber: 1,
+      totalRounds: 3,
+    })
+
+    // No hintString → falls back to wordLength
+    expect(screen.getByText('(5 letters)')).toBeTruthy()
+  })
 })

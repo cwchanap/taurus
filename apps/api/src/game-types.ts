@@ -439,7 +439,7 @@ export function gameStateToWire(state: GameState, isDrawer: boolean): GameStateW
       deadlineTime: state.roundEndTime,
       wordLength: state.wordLength,
       ...(isDrawer ? { currentWord: state.currentWord } : {}),
-      ...(!isDrawer && state.revealedPositions.length > 0
+      ...(!isDrawer
         ? { revealedHint: buildHintString(state.currentWord, state.revealedPositions) }
         : {}),
     }
