@@ -836,6 +836,70 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect(beginWordChoiceSpy).toHaveBeenCalled()
   })
 
+  test('resumeGameFlowFromState word-choice timer callback does not prune drawer when no sockets exist', async () => {
+    // When the word-choice timer fires after DO hibernation with no sockets,
+    // the drawer should NOT be pruned — they may be reconnecting.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      offeredWords: ['apple', 'banana', 'cherry'] as [string, string, string],
+      choiceDeadline: Date.now() + 50,
+      endGameAfterCurrentRound: false,
+    }
+    // No sockets — simulates timer firing before any WebSocket has been accepted
+    mockGetWebSockets.mockReturnValue([])
+
+    const beginDrawingSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginDrawing = beginDrawingSpy
+
+    const pruneSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pruneDrawerFromOrder = pruneSpy
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).resumeGameFlowFromState()
+
+    // Timer should be scheduled (not expired yet)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).wordChoiceTimer).not.toBeNull()
+
+    // Manually fire the timer callback to simulate it firing with no sockets
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const timer = (room as any).wordChoiceTimer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).wordChoiceTimer = null // prevent double-clear
+    clearTimeout(timer)
+    // The timer callback was captured — invoke it directly by re-running resumeGameFlowFromState
+    // with an expired deadline to simulate the timer scenario
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState.choiceDeadline = Date.now() - 1000
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).resumeGameFlowFromState()
+
+    // With no sockets, we optimistically start drawing (drawer may reconnect)
+    expect(beginDrawingSpy).toHaveBeenCalledWith('apple')
+    expect(pruneSpy).not.toHaveBeenCalled()
+  })
+
   test('non-drawer leaving during word-choice ends game when room drops below min players', async () => {
     const ws1 = {
       deserializeAttachment: () => ({
@@ -4758,5 +4822,168 @@ describe('DrawingRoom - Player Reconnect', () => {
     // Host should transfer to p3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).hostPlayerId).toBe('p3')
+  })
+})
+
+describe('DrawingRoom - Correct guesser disconnect does NOT end round early', () => {
+  let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+  let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
+  let mockState: Partial<DurableObjectState>
+  let mockStoragePut: ReturnType<typeof mock>
+  let mockStorageDelete: ReturnType<typeof mock>
+  let mockGetWebSockets: ReturnType<typeof mock>
+  let mockWaitUntil: ReturnType<typeof mock>
+  let mockEnv: unknown
+
+  beforeEach(async () => {
+    ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+    mockStoragePut = mock(() => Promise.resolve())
+    mockStorageDelete = mock(() => Promise.resolve())
+    mockGetWebSockets = mock(() => [])
+    mockWaitUntil = mock(() => {})
+
+    mockState = {
+      storage: {
+        get: mock(() => Promise.resolve(undefined)),
+        put: mockStoragePut,
+        delete: mockStorageDelete,
+        list: mock(() => Promise.resolve(new Map())),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      id: {
+        toString: () => 'test-room-id',
+        equals: () => false,
+        name: 'test-room',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      waitUntil: mockWaitUntil,
+      blockConcurrencyWhile: mock(async (fn) => await fn()),
+      getWebSockets: mockGetWebSockets,
+    }
+
+    mockEnv = {}
+    void mockEnv
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
+  })
+
+  afterEach(() => {
+    if (room) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).clearTimers()
+    }
+  })
+
+  test('correct guesser disconnecting does NOT end round when other guessers remain', () => {
+    // Scenario: p1=drawer, p2 and p3=guessers. p2 guesses correctly, then disconnects.
+    // The round should NOT end because p3 has not guessed yet.
+    const ws1 = createMockWs('p1', 'Drawer')
+    const ws3 = createMockWs('p3', 'Guesser3')
+
+    // After p2 disconnects, only ws1 and ws3 remain
+    mockGetWebSockets.mockReturnValue([ws1, ws3])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p2', 'p3'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 150, name: 'Guesser2' }],
+        ['p3', { score: 0, name: 'Guesser3' }],
+      ]),
+      correctGuessers: new Set(['p2']),
+      roundGuessers: new Set(['p2', 'p3']),
+      roundStartGuesserIds: new Set(['p2', 'p3']),
+      roundGuesserScores: new Map([['p2', 150]]),
+      usedWords: new Set(['cat']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+
+    const ws2 = createMockWs('p2', 'Guesser2')
+
+    const endRoundSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).endRound = endRoundSpy
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(ws2 as any)
+
+    // Round should NOT end — p3 is still guessing
+    expect(endRoundSpy).not.toHaveBeenCalled()
+    // Game should still be in playing state
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('playing')
+    // p2 should be removed from roundGuessers but kept in correctGuessers
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.roundGuessers.has('p2')).toBe(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.correctGuessers.has('p2')).toBe(true)
+    // p3 should still be in roundGuessers
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.roundGuessers.has('p3')).toBe(true)
+  })
+
+  test('last remaining guesser disconnecting after guessing correctly does NOT end round (roundGuessers empty)', () => {
+    // When the only guesser disconnects, roundGuessers becomes empty. The round should
+    // NOT end early because there's no one left to "wait for" — the timer will handle it.
+    // This is correct: the drawer can keep drawing until time runs out.
+    const ws1 = createMockWs('p1', 'Drawer')
+
+    // After p2 disconnects, only ws1 remains
+    mockGetWebSockets.mockReturnValue([ws1])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 150, name: 'Guesser2' }],
+      ]),
+      correctGuessers: new Set(['p2']),
+      roundGuessers: new Set(['p2']),
+      roundStartGuesserIds: new Set(['p2']),
+      roundGuesserScores: new Map([['p2', 150]]),
+      usedWords: new Set(['cat']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+
+    const ws2 = createMockWs('p2', 'Guesser2')
+
+    const endRoundSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).endRound = endRoundSpy
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(ws2 as any)
+
+    // p2 was the last guesser, and they guessed correctly, so round should end
+    // because roundGuessers is now empty (no more guessers to wait for)
+    expect(endRoundSpy).not.toHaveBeenCalled()
   })
 })

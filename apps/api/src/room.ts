@@ -279,8 +279,12 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       this.wordChoiceTimer = setTimeout(() => {
         if (this.pendingWordOptions && this.pendingWordOptions.length > 0) {
-          // Re-check drawer connectivity when the timer fires
-          const drawerConnected = this.isPlayerConnected(this.gameState.currentDrawerId)
+          // Re-check drawer connectivity when the timer fires.
+          // Use the same "no sockets = assume connected" fallback as the immediate-expiry
+          // path to avoid pruning a reconnecting drawer whose join hasn't been processed yet.
+          const allSockets = this.ctx.getWebSockets()
+          const drawerConnected =
+            allSockets.length === 0 || this.isPlayerConnected(this.gameState.currentDrawerId)
           if (drawerConnected) {
             this.beginDrawing(this.pendingWordOptions[0])
           } else {
@@ -1222,9 +1226,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         this.persistGameState().catch((e) => console.error('Failed to persist game state:', e))
       )
 
-      // Check if all remaining guessers have guessed correctly (early round end)
+      // Check if all remaining guessers have guessed correctly (early round end).
+      // Must check that every player in roundGuessers is in correctGuessers, not just
+      // compare set sizes — correctGuessers can include disconnected players whose
+      // scores are preserved for endRound() scoring, but roundGuessers excludes them.
       if (!result.shouldEndRound && isPlayingState(this.gameState)) {
-        if (this.gameState.correctGuessers.size >= this.gameState.roundGuessers.size) {
+        const allGuessersGuessed =
+          this.gameState.roundGuessers.size > 0 &&
+          [...this.gameState.roundGuessers].every((id) => this.gameState.correctGuessers.has(id))
+        if (allGuessersGuessed) {
           this.endRound(false)
         }
       }
