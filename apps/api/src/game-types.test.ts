@@ -440,7 +440,7 @@ describe('gameStateToWire', () => {
     }
   })
 
-  it('playing state omits revealedHint when revealedPositions is empty', () => {
+  it('playing state includes revealedHint with all-masked shape when revealedPositions is empty', () => {
     const now = Date.now()
     const state: PlayingState = {
       status: 'playing',
@@ -465,7 +465,7 @@ describe('gameStateToWire', () => {
     const wire = gameStateToWire(state, false)
     expect(wire.status).toBe('playing')
     if (wire.status === 'playing') {
-      expect(wire.revealedHint).toBeUndefined()
+      expect(wire.revealedHint).toBe('_ _ _')
     }
   })
 
@@ -497,6 +497,36 @@ describe('gameStateToWire', () => {
       // Drawer should see the word but NOT the revealedHint
       expect(wire.currentWord).toBe('cat')
       expect(wire.revealedHint).toBeUndefined()
+    }
+  })
+
+  it('playing state preserves spaces and hyphens in revealedHint for multi-word targets', () => {
+    const now = Date.now()
+    const state: PlayingState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer',
+      currentWord: 'hot dog',
+      wordLength: 7,
+      roundStartTime: now,
+      roundEndTime: now + 60000,
+      drawerOrder: ['drawer', 'p2', 'p3'],
+      scores: new Map([['drawer', { score: 0, name: 'Drawer' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2', 'p3']),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      revealedPositions: [],
+    }
+    const wire = gameStateToWire(state, false)
+    expect(wire.status).toBe('playing')
+    if (wire.status === 'playing') {
+      // Space is preserved, creating a visible gap between word parts
+      expect(wire.revealedHint).toBe('_ _ _   _ _ _')
     }
   })
 })

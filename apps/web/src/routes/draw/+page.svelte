@@ -724,6 +724,13 @@
         wordLength = next.wordLength ?? 0
       },
       onGameOver: (finalScores, winners) => {
+        if (wordChoiceTimerId) {
+          clearInterval(wordChoiceTimerId)
+          wordChoiceTimerId = null
+        }
+        wordChoiceOptions = []
+        wordChoiceEndTime = null
+        wordChoiceTimeRemaining = 0
         const next = buildGameOverState(finalScores, winners)
         scores = next.scores
         gameWinners = next.gameWinners
