@@ -2,42 +2,9 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import type { DurableObjectState } from '@cloudflare/workers-types'
 import { clearTimers, type TimerContainer } from './game-logic'
 import { VOCABULARY } from './vocabulary'
+import { setupCloudflareMock, createMockWs, getSentMessages } from './test-helpers'
 
-mock.module('cloudflare:workers', () => ({
-  DurableObject: class {
-    constructor(state: unknown, env: unknown) {
-      // @ts-expect-error - Mocking DurableObject constructor
-      this.ctx = state
-      // @ts-expect-error - Mocking DurableObject constructor
-      this.env = env
-    }
-  },
-}))
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createMockWs(playerId: string, playerName = 'TestPlayer'): any {
-  return {
-    deserializeAttachment: () => ({
-      playerId,
-      player: { id: playerId, name: playerName, color: '#FF6B6B' },
-    }),
-    serializeAttachment: mock(() => {}),
-    send: mock(() => {}),
-    close: mock(() => {}),
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getSentMessages(ws: ReturnType<typeof createMockWs>): any[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (ws.send as ReturnType<typeof mock>).mock.calls.map((call: any[]) => {
-    try {
-      return JSON.parse(call[0] as string)
-    } catch {
-      return null
-    }
-  })
-}
+setupCloudflareMock()
 
 describe('Timer Cleanup', () => {
   let timers: {
