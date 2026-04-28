@@ -48,7 +48,8 @@ export type GameEventHandler = {
     drawerName: string,
     word: string | undefined,
     wordLength: number,
-    endTime: number
+    endTime: number,
+    hintString?: string
   ) => void
   onRoundEnd?: (word: string, result: RoundResult, scores: Record<string, ScoreEntry>) => void
   onGameOver?: (finalScores: Record<string, ScoreEntry>, winners: Winner[]) => void
@@ -248,7 +249,8 @@ export class GameWebSocket {
           data.drawerName,
           undefined,
           data.wordLength ?? 0,
-          data.endTime
+          data.endTime,
+          data.revealedHint
         )
         break
       case 'round-end':
