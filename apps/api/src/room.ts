@@ -801,6 +801,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         // Null out the attachment so subsequent handleLeave on this old socket
         // becomes a no-op (getPlayerIdForSocket returns null → early return).
         ws.serializeAttachment(null)
+        // Close the superseded socket to remove it from ctx.getWebSockets()
+        // immediately, preventing accumulation of orphaned connections across
+        // repeated reconnects.
+        try {
+          ws.close()
+        } catch {
+          // Socket may already be closing — safe to ignore.
+        }
       }
     }
   }
