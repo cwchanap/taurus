@@ -742,9 +742,10 @@ describe('DrawingRoom - Player Leave During Game', () => {
     }
   })
 
-  test('resumeGameFlowFromState with expired word-choice starts drawing when no sockets exist (cold start)', () => {
+  test('resumeGameFlowFromState with expired word-choice defers when no sockets exist (cold start)', () => {
     // Simulate cold DO restart: word-choice deadline expired, but getWebSockets() is empty
-    // because no WebSocket has been accepted yet. The drawer should NOT be pruned.
+    // because no WebSocket has been accepted yet. We should NOT start drawing immediately
+    // — instead defer with a short timer so the reconnecting player's socket can be accepted.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'word-choice',
@@ -784,9 +785,11 @@ describe('DrawingRoom - Player Leave During Game', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).resumeGameFlowFromState()
 
-    // With no sockets, we optimistically start drawing (drawer may reconnect)
-    expect(beginDrawingSpy).toHaveBeenCalledWith('apple')
+    // With no sockets, we should NOT start drawing immediately — we defer
+    expect(beginDrawingSpy).not.toHaveBeenCalled()
     expect(pruneSpy).not.toHaveBeenCalled()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).wordChoiceTimer).not.toBeNull()
   })
 
   test('resumeGameFlowFromState with expired word-choice prunes drawer when other sockets exist but drawer absent', () => {
@@ -836,9 +839,9 @@ describe('DrawingRoom - Player Leave During Game', () => {
     expect(beginWordChoiceSpy).toHaveBeenCalled()
   })
 
-  test('resumeGameFlowFromState word-choice timer callback does not prune drawer when no sockets exist', async () => {
-    // When the word-choice timer fires after DO hibernation with no sockets,
-    // the drawer should NOT be pruned — they may be reconnecting.
+  test('resolveExpiredWordChoice prunes drawer when deferred timer reveals guesser but no drawer', () => {
+    // After the 2 s defer, sockets now contain a guesser but the drawer is absent.
+    // The deferred callback should prune the drawer and restart word choice.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'word-choice',
@@ -861,11 +864,65 @@ describe('DrawingRoom - Player Leave During Game', () => {
       usedWords: new Set(),
       consecutiveMissedRounds: new Map(),
       offeredWords: ['apple', 'banana', 'cherry'] as [string, string, string],
-      choiceDeadline: Date.now() + 50,
+      choiceDeadline: Date.now() - 1000,
       endGameAfterCurrentRound: false,
     }
-    // No sockets — simulates timer firing before any WebSocket has been accepted
+    // After defer: p2 (guesser) is connected but p1 (drawer) is not
+    const otherWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([otherWs])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['apple', 'banana', 'cherry']
+
+    const beginWordChoiceSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginWordChoice = beginWordChoiceSpy
+
+    const pruneSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pruneDrawerFromOrder = pruneSpy
+
+    // Call the resolver directly — simulates the deferred timer firing
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).resolveExpiredWordChoice()
+
+    expect(pruneSpy).toHaveBeenCalledWith('p1')
+    expect(beginWordChoiceSpy).toHaveBeenCalled()
+  })
+
+  test('resolveExpiredWordChoice optimistically starts drawing when no sockets exist after defer', () => {
+    // If after the 2 s defer there are STILL no sockets, we optimistically
+    // start drawing — the drawer may reconnect into an active round.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      offeredWords: ['apple', 'banana', 'cherry'] as [string, string, string],
+      choiceDeadline: Date.now() - 1000,
+      endGameAfterCurrentRound: false,
+    }
+    // Still no sockets after defer — nobody reconnected at all
     mockGetWebSockets.mockReturnValue([])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['apple', 'banana', 'cherry']
 
     const beginDrawingSpy = mock(() => {})
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -875,27 +932,11 @@ describe('DrawingRoom - Player Leave During Game', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).pruneDrawerFromOrder = pruneSpy
 
+    // Call the resolver directly — simulates the deferred timer firing with still no sockets
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).resumeGameFlowFromState()
+    ;(room as any).resolveExpiredWordChoice()
 
-    // Timer should be scheduled (not expired yet)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).wordChoiceTimer).not.toBeNull()
-
-    // Manually fire the timer callback to simulate it firing with no sockets
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const timer = (room as any).wordChoiceTimer
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).wordChoiceTimer = null // prevent double-clear
-    clearTimeout(timer)
-    // The timer callback was captured — invoke it directly by re-running resumeGameFlowFromState
-    // with an expired deadline to simulate the timer scenario
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).gameState.choiceDeadline = Date.now() - 1000
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).resumeGameFlowFromState()
-
-    // With no sockets, we optimistically start drawing (drawer may reconnect)
+    // With no sockets after defer, optimistically start drawing
     expect(beginDrawingSpy).toHaveBeenCalledWith('apple')
     expect(pruneSpy).not.toHaveBeenCalled()
   })
