@@ -914,6 +914,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
         const attachment: WebSocketAttachment = { playerId: rid, player }
         ws.serializeAttachment(attachment)
+        // Track whether this player was publicly removed (player-left broadcast sent)
+        // so we can re-announce them to other clients after successful reconnect.
+        const wasPubliclyRemoved = this.cleanedPlayers.has(rid)
         this.cleanedPlayers.delete(rid)
 
         // --- Fix: Restore host ownership if this player was the disconnected host ---
@@ -985,6 +988,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         )
 
         this.sendReconnectRoleState(ws, rid)
+
+        // If the player was publicly removed (player-left was broadcast to others),
+        // re-announce them so other clients' rosters stay in sync.
+        if (wasPubliclyRemoved) {
+          this.broadcast({ type: 'player-joined', player }, ws)
+        }
+
         return
       }
     }
@@ -2115,6 +2125,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
             })
           )
         } else {
+          const initialHint = buildHintString(word, [])
           ws.send(
             JSON.stringify({
               type: 'round-start-for-guesser',
@@ -2124,6 +2135,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
               drawerName,
               wordLength: word.length,
               endTime: this.gameState.roundEndTime,
+              revealedHint: initialHint,
             })
           )
         }

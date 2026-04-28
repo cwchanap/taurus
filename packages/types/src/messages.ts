@@ -179,6 +179,7 @@ export type ServerMessage =
       drawerName: string
       wordLength?: number
       endTime: number
+      revealedHint?: string
     }
   | {
       type: 'round-end'

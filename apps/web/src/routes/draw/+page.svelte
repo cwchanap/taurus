@@ -662,11 +662,20 @@
       onHint: (revealed) => {
         hintString = revealed
       },
-      onRoundStart: (round, rounds, drawerId, drawerNameVal, word, wordLen, endTime) => {
+      onRoundStart: (
+        round,
+        rounds,
+        drawerId,
+        drawerNameVal,
+        word,
+        wordLen,
+        endTime,
+        initialHint
+      ) => {
         wordChoiceOptions = []
         wordChoiceEndTime = null
         wordChoiceTimeRemaining = 0
-        hintString = ''
+        hintString = initialHint ?? ''
         if (wordChoiceTimerId) {
           clearInterval(wordChoiceTimerId)
           wordChoiceTimerId = null

@@ -485,16 +485,17 @@ describe('handleMessage dispatch', () => {
       endTime: Date.now() + 60000,
     })
     expect(onRoundStart).toHaveBeenCalledTimes(1)
-    const [rn, tr, did, dn, word, wl] = onRoundStart.mock.calls[0]
+    const [rn, tr, did, dn, word, wl, , hintStr] = onRoundStart.mock.calls[0]
     expect(rn).toBe(1)
     expect(tr).toBe(3)
     expect(did).toBe('p1')
     expect(dn).toBe('Alice')
     expect(word).toBe('elephant')
     expect(wl).toBe(8)
+    expect(hintStr).toBeUndefined()
   })
 
-  it('dispatches round-start-for-guesser to onRoundStart with word undefined', () => {
+  it('dispatches round-start-for-guesser to onRoundStart with word undefined and revealedHint', () => {
     const onRoundStart = vi.fn()
     createConnectedWs({ onRoundStart })
     receive({
@@ -505,15 +506,17 @@ describe('handleMessage dispatch', () => {
       drawerName: 'Alice',
       wordLength: 8,
       endTime: Date.now() + 60000,
+      revealedHint: '_ _ _   _ _ _',
     })
     expect(onRoundStart).toHaveBeenCalledTimes(1)
-    const [rn, tr, did, dn, word, wl] = onRoundStart.mock.calls[0]
+    const [rn, tr, did, dn, word, wl, , hintStr] = onRoundStart.mock.calls[0]
     expect(rn).toBe(1)
     expect(tr).toBe(3)
     expect(did).toBe('p1')
     expect(dn).toBe('Alice')
     expect(word).toBeUndefined()
     expect(wl).toBe(8)
+    expect(hintStr).toBe('_ _ _   _ _ _')
   })
 
   it('dispatches word-options to onWordOptions', () => {

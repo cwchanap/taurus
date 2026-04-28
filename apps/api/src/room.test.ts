@@ -2470,6 +2470,95 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     expect((room as any).tickTimer).not.toBeNull()
   })
 
+  test('beginDrawing includes revealedHint in round-start-for-guesser for multi-word answers', async () => {
+    const ws1 = createMockWs('p1', 'Player1')
+    const ws2 = createMockWs('p2', 'Player2')
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Player1' }],
+        ['p2', { score: 0, name: 'Player2' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginDrawing('hot dog')
+    await flushPromises()
+
+    // Guesser should receive round-start-for-guesser with correct revealedHint
+    const p2Msgs = getSentMessages(ws2)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const guesserMsg = p2Msgs.find((m: any) => m?.type === 'round-start-for-guesser')
+    expect(guesserMsg).toBeDefined()
+    expect(guesserMsg.revealedHint).toBe('_ _ _   _ _ _')
+    expect(guesserMsg.wordLength).toBe(7)
+
+    // Drawer should NOT receive revealedHint
+    const p1Msgs = getSentMessages(ws1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const drawerMsg = p1Msgs.find((m: any) => m?.type === 'round-start-for-drawer')
+    expect(drawerMsg).toBeDefined()
+    expect(drawerMsg.word).toBe('hot dog')
+  })
+
+  test('beginDrawing includes revealedHint with hyphens for hyphenated answers', async () => {
+    const ws1 = createMockWs('p1', 'Player1')
+    const ws2 = createMockWs('p2', 'Player2')
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Player1' }],
+        ['p2', { score: 0, name: 'Player2' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p2']),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).beginDrawing('t-rex')
+    await flushPromises()
+
+    const p2Msgs = getSentMessages(ws2)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const guesserMsg = p2Msgs.find((m: any) => m?.type === 'round-start-for-guesser')
+    expect(guesserMsg).toBeDefined()
+    expect(guesserMsg.revealedHint).toBe('_ - _ _ _')
+  })
+
   test('startRound calls endGame when no valid drawers are connected', async () => {
     mockGetWebSockets.mockReturnValue([])
 
@@ -4863,6 +4952,107 @@ describe('DrawingRoom - Player Reconnect', () => {
     // Host should transfer to p3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).hostPlayerId).toBe('p3')
+  })
+
+  test('Reconnecting player after public leave broadcasts player-joined to others', async () => {
+    // Scenario: p2 disconnects → player-left broadcast → p2 reconnects with token.
+    // Other clients should receive player-joined so their rosters stay in sync.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2OldWs = createMockWs('p2', 'Bob')
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    // p2 disconnects → handleLeave broadcasts player-left and adds to cleanedPlayers
+    mockGetWebSockets.mockReturnValue([p1Ws, p2OldWs])
+    await room.webSocketClose(p2OldWs as unknown as WebSocket)
+    await flushPromises()
+
+    // Verify player-left was broadcast
+    const p1MsgsAfterLeave = getSentMessages(p1Ws)
+    expect(p1MsgsAfterLeave.some((m) => m?.type === 'player-left' && m?.playerId === 'p2')).toBe(
+      true
+    )
+
+    // Now p2 reconnects — only p1 and the new socket are live
+    mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // p2 should get init
+    const p2Msgs = getSentMessages(p2NewWs)
+    const initMsg = p2Msgs.find((m) => m?.type === 'init')
+    expect(initMsg).toBeDefined()
+    expect(initMsg.playerId).toBe('p2')
+
+    // p1 should receive player-joined for the reconnected player
+    const p1MsgsAfterReconnect = getSentMessages(p1Ws)
+    const playerJoinedMsg = p1MsgsAfterReconnect.find((m) => m?.type === 'player-joined')
+    expect(playerJoinedMsg).toBeDefined()
+    expect(playerJoinedMsg.player.id).toBe('p2')
+  })
+
+  test('Reconnecting player while old socket alive does NOT broadcast player-joined', async () => {
+    // When old socket is still alive (not publicly removed), reconnect should NOT
+    // broadcast player-joined because other clients still have the player in roster.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2OldWs = createMockWs('p2', 'Bob')
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    // Old socket is still alive — cleanedPlayers does NOT contain p2
+    mockGetWebSockets.mockReturnValue([p1Ws, p2OldWs, p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // p1 should NOT receive player-joined (player was never publicly removed)
+    const p1Msgs = getSentMessages(p1Ws)
+    expect(p1Msgs.some((m) => m?.type === 'player-joined')).toBe(false)
   })
 })
 
