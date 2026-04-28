@@ -4125,6 +4125,9 @@ describe('DrawingRoom - Player Reconnect', () => {
     const oldAttachment = oldWs.deserializeAttachment()
     expect(oldAttachment).toBeNull()
 
+    // Old socket should be closed to prevent orphaned connections
+    expect(oldWs.close).toHaveBeenCalled()
+
     // No player-joined broadcast for reconnects
     expect(msgs.some((m) => m?.type === 'player-joined')).toBe(false)
   })
