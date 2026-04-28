@@ -258,41 +258,27 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         // Validate that the persisted drawer is still connected before auto-starting.
         // The drawer may have disconnected while the DO was hibernating.
         //
-        // Cold-start edge case: after DO hibernation the first request may arrive
-        // before any WebSocket has been accepted, so getWebSockets() is empty.
-        // If no sockets exist at all we optimistically start drawing — the drawer
-        // will reconnect into an active round.  If sockets *do* exist but the
-        // drawer is absent, they genuinely disconnected and should be pruned.
+        // Cold-start edge case: after DO hibernation the first request arrives via
+        // fetch() which calls ensureInitialized() BEFORE acceptWebSocket(), so
+        // getWebSockets() is empty even though a player is mid-handshake.
+        //
+        // If no sockets exist we defer the decision by 2 s — enough for the
+        // reconnecting player's socket to be accepted and their join processed —
+        // then re-evaluate with accurate socket data.
         const allSockets = this.ctx.getWebSockets()
-        const drawerConnected =
-          allSockets.length === 0 || this.isPlayerConnected(this.gameState.currentDrawerId)
-        if (drawerConnected) {
-          this.beginDrawing(this.pendingWordOptions[0])
+        if (allSockets.length === 0) {
+          this.wordChoiceTimer = setTimeout(() => {
+            this.resolveExpiredWordChoice()
+          }, 2000)
         } else {
-          // Drawer gone — prune from drawerOrder and rebase round counters
-          // before picking a new one, consistent with handleLeave().
-          this.pruneDrawerFromOrder(this.gameState.currentDrawerId)
-          this.beginWordChoice()
+          this.resolveExpiredWordChoice()
         }
         return
       }
 
       this.wordChoiceTimer = setTimeout(() => {
         if (this.pendingWordOptions && this.pendingWordOptions.length > 0) {
-          // Re-check drawer connectivity when the timer fires.
-          // Use the same "no sockets = assume connected" fallback as the immediate-expiry
-          // path to avoid pruning a reconnecting drawer whose join hasn't been processed yet.
-          const allSockets = this.ctx.getWebSockets()
-          const drawerConnected =
-            allSockets.length === 0 || this.isPlayerConnected(this.gameState.currentDrawerId)
-          if (drawerConnected) {
-            this.beginDrawing(this.pendingWordOptions[0])
-          } else {
-            // Drawer gone — prune from drawerOrder and rebase round counters
-            // before picking a new one, consistent with handleLeave().
-            this.pruneDrawerFromOrder(this.gameState.currentDrawerId)
-            this.beginWordChoice()
-          }
+          this.resolveExpiredWordChoice()
         }
       }, remainingMs)
       return
@@ -351,6 +337,28 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           }
         }, remainingDelay)
       }
+    }
+  }
+
+  /**
+   * Resolve an expired word-choice phase by checking drawer connectivity.
+   * Called either immediately (sockets available) or after a short defer
+   * (cold-start where no sockets existed yet).
+   */
+  private resolveExpiredWordChoice() {
+    if (!this.pendingWordOptions || this.pendingWordOptions.length === 0) return
+    if (this.gameState.status !== 'word-choice') return
+
+    const allSockets = this.ctx.getWebSockets()
+    const drawerConnected =
+      allSockets.length === 0 || this.isPlayerConnected(this.gameState.currentDrawerId)
+    if (drawerConnected) {
+      this.beginDrawing(this.pendingWordOptions[0])
+    } else {
+      // Drawer gone — prune from drawerOrder and rebase round counters
+      // before picking a new one, consistent with handleLeave().
+      this.pruneDrawerFromOrder(this.gameState.currentDrawerId)
+      this.beginWordChoice()
     }
   }
 
