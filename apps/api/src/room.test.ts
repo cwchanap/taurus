@@ -2770,6 +2770,108 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     expect(secondScore).toBe(firstScore)
   })
 
+  test('handleCorrectGuess does not end round early when disconnected correct guesser inflates correctGuessers.size', async () => {
+    // Scenario: p2 guessed correctly then disconnected. correctGuessers preserves p2,
+    // but roundGuessers removes p2. When p3 guesses, correctGuessers.size (2) would
+    // equal roundGuessers.size (2) using the old size comparison, incorrectly ending
+    // the round before p4 has a chance to guess.
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const p3Ws = createMockWs('p3', 'Player3')
+    const p4Ws = createMockWs('p4', 'Player4')
+    mockGetWebSockets.mockReturnValue([drawerWs, p3Ws, p4Ws])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: 'banana',
+      wordLength: 6,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p2', 'p3', 'p4'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 80, name: 'Player2' }],
+        ['p3', { score: 0, name: 'Player3' }],
+        ['p4', { score: 0, name: 'Player4' }],
+      ]),
+      // p2 guessed correctly before disconnecting — preserved in correctGuessers
+      correctGuessers: new Set(['p2']),
+      // p2 removed from roundGuessers because they disconnected
+      roundGuessers: new Set(['p3', 'p4']),
+      roundStartGuesserIds: new Set(['p2', 'p3', 'p4']),
+      roundGuesserScores: new Map([['p2', 80]]),
+      usedWords: new Set(['banana']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+
+    const endRoundSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).endRound = endRoundSpy
+
+    // p3 guesses correctly — should NOT end round because p4 hasn't guessed yet
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleCorrectGuess('p3', 'Player3')
+
+    // Round should NOT end — p4 is still in roundGuessers and hasn't guessed
+    expect(endRoundSpy).not.toHaveBeenCalled()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.correctGuessers.has('p3')).toBe(true)
+  })
+
+  test('handleCorrectGuess ends round early when all remaining roundGuessers have guessed (even with disconnected correct guessers)', async () => {
+    // Same scenario as above, but p4 also guesses — now all roundGuessers have guessed
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const p3Ws = createMockWs('p3', 'Player3')
+    mockGetWebSockets.mockReturnValue([drawerWs, p3Ws])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: 'banana',
+      wordLength: 6,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p2', 'p3'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 80, name: 'Player2' }],
+        ['p3', { score: 0, name: 'Player3' }],
+      ]),
+      // p2 guessed correctly before disconnecting — preserved in correctGuessers
+      correctGuessers: new Set(['p2']),
+      // p2 removed from roundGuessers because they disconnected
+      roundGuessers: new Set(['p3']),
+      roundStartGuesserIds: new Set(['p2', 'p3']),
+      roundGuesserScores: new Map([['p2', 80]]),
+      usedWords: new Set(['banana']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+
+    const endRoundSpy = mock(() => {})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).endRound = endRoundSpy
+
+    // p3 guesses correctly — p3 is the only remaining roundGuesser, so round should end
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleCorrectGuess('p3', 'Player3')
+
+    expect(endRoundSpy).toHaveBeenCalledWith(false)
+  })
+
   test('webSocketClose calls handleLeave and broadcasts player-left', async () => {
     const ws1 = createMockWs('p1', 'Player1')
     const ws2 = createMockWs('p2', 'Player2')

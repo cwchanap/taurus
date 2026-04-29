@@ -261,10 +261,14 @@ export function gameStateFromStorage(stored: StoredGameState): GameState {
   // preserves the original scoring behaviour for active rounds.  Lobby /
   // starting states have empty guesser sets, so the fallback is harmless.
   const restoredRoundGuessers = new Set(stored.roundGuessers)
+  // Always create a separate Set for roundStartGuesserIds to avoid aliasing.
+  // When both fields reference the same Set, mutations to roundGuessers
+  // (reconnects, late joiners) would corrupt roundStartGuesserIds, causing
+  // incorrect consecutiveMissedRounds tracking and catch-up bonus eligibility.
   const roundStartGuesserIds =
     stored.roundStartGuesserIds != null
       ? new Set(stored.roundStartGuesserIds)
-      : restoredRoundGuessers
+      : new Set(stored.roundGuessers)
 
   const baseState = {
     currentRound: stored.currentRound,
