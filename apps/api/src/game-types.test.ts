@@ -785,6 +785,39 @@ describe('PlayingState with revealedPositions', () => {
     expect(restored.roundStartGuesserIds.size).toBe(2)
   })
 
+  it('backfilled roundStartGuesserIds is an independent Set (not aliased to roundGuessers)', () => {
+    // When roundStartGuesserIds is absent from storage, it falls back to roundGuessers.
+    // Both must be independent Set objects so mutations to roundGuessers don't corrupt
+    // roundStartGuesserIds (used for consecutiveMissedRounds tracking in endRound).
+    const stored: StoredGameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 3,
+      currentDrawerId: 'drawer1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: 1000,
+      roundEndTime: 61000,
+      endGameAfterCurrentRound: false,
+      drawerOrder: ['drawer1', 'p2', 'p3'],
+      scores: [],
+      correctGuessers: [],
+      roundGuessers: ['p2', 'p3'],
+      // roundStartGuesserIds is intentionally omitted (pre-schema storage)
+      roundGuesserScores: [],
+      usedWords: ['cat'],
+    }
+    const restored = gameStateFromStorage(stored) as PlayingState
+
+    // Mutate roundGuessers (simulating reconnect or late join)
+    restored.roundGuessers.add('lateJoiner')
+
+    // roundStartGuesserIds should NOT be affected by the mutation
+    expect(restored.roundStartGuesserIds.has('lateJoiner')).toBe(false)
+    expect(restored.roundStartGuesserIds.size).toBe(2)
+    expect(restored.roundGuessers.size).toBe(3)
+  })
+
   it('uses explicit roundStartGuesserIds when present in storage', () => {
     const stored: StoredGameState = {
       status: 'playing',

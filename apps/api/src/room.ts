@@ -2556,10 +2556,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       ...(catchUpBonus > 0 ? { catchUpBonus } : {}),
     })
 
-    // Check if all non-drawer players have guessed
-    if (this.gameState.correctGuessers.size >= this.gameState.roundGuessers.size) {
-      // Everyone guessed, end round early
-      this.endRound(false)
+    // Check if all non-drawer players have guessed.
+    // Must check that every player in roundGuessers is in correctGuessers, not just
+    // compare set sizes — correctGuessers can include disconnected players whose
+    // scores are preserved for endRound() scoring, but roundGuessers excludes them.
+    if (this.gameState.roundGuessers.size > 0) {
+      const allGuessersGuessed = [...this.gameState.roundGuessers].every((id) =>
+        this.gameState.correctGuessers.has(id)
+      )
+      if (allGuessersGuessed) {
+        this.endRound(false)
+      }
     }
   }
 
