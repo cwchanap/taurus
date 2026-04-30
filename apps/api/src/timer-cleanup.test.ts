@@ -768,7 +768,7 @@ describe('DrawingRoom - hint timers', () => {
     expect(msgs.some((m: any) => m?.type === 'hint')).toBe(false)
   })
 
-  test('sendHint skips players who have already guessed correctly', async () => {
+  test('sendHint sends hint to correct guessers too (they see updated hints for UI consistency)', async () => {
     const drawerWs = createMockWs('p1', 'Drawer')
     const correctGuesserWs = createMockWs('p2', 'AlreadyGuessed')
     const pendingGuesserWs = createMockWs('p3', 'StillGuessing')
@@ -784,8 +784,9 @@ describe('DrawingRoom - hint timers', () => {
     const correctGuesserMsgs = getSentMessages(correctGuesserWs)
     const pendingGuesserMsgs = getSentMessages(pendingGuesserWs)
 
+    // Correct guessers should still receive hint updates so their UI stays consistent
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(correctGuesserMsgs.some((m: any) => m?.type === 'hint')).toBe(false)
+    expect(correctGuesserMsgs.some((m: any) => m?.type === 'hint')).toBe(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(pendingGuesserMsgs.some((m: any) => m?.type === 'hint')).toBe(true)
   })

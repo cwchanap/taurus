@@ -5159,6 +5159,123 @@ describe('DrawingRoom - Player Reconnect', () => {
     const p1Msgs = getSentMessages(p1Ws)
     expect(p1Msgs.some((m) => m?.type === 'player-joined')).toBe(false)
   })
+
+  test('Reconnecting player who had not drawn yet is restored to drawerOrder', async () => {
+    // Scenario: p1 draws round 1. p2 disconnects during p1's round.
+    // drawerOrder is pruned from [p1,p2,p3] to [p1,p3], totalRounds=2.
+    // p2 reconnects — should be appended to drawerOrder so they still get a drawing turn.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p3'], // p2 was pruned on disconnect
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+        ['p3', { score: 0, name: 'Charlie', color: '#45B7D1' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p3']), // p2 was removed by handleLeave
+      roundStartGuesserIds: new Set(['p3']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['cat']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+    // Simulate the disconnect tracker recording p2 hadn't drawn yet
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedDrawerStatus = new Map([['p2', false]])
+
+    mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gs = (room as any).gameState
+    // p2 should be restored to drawerOrder
+    expect(gs.drawerOrder).toContain('p2')
+    expect(gs.totalRounds).toBe(3) // [p1, p3, p2]
+    // disconnectedDrawerStatus should be cleaned up
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedDrawerStatus.has('p2')).toBe(false)
+  })
+
+  test('Reconnecting player who already drew is NOT restored to drawerOrder', async () => {
+    // Scenario: p1 drew round 1, p2 drew round 2. p2 disconnects.
+    // p2 reconnects — should NOT be re-added since they already drew.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'round-end',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: Date.now() - 60_000,
+      roundEndTime: Date.now(),
+      drawerOrder: ['p1', 'p3'], // p2 was pruned (they were at index 1, hadDrawn=true)
+      scores: new Map([
+        ['p1', { score: 10, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 5, name: 'Bob', color: '#4ECDC4' }],
+        ['p3', { score: 0, name: 'Charlie', color: '#45B7D1' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p3']),
+      roundStartGuesserIds: new Set(['p3']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['cat', 'dog']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      nextTransitionAt: 0,
+    }
+    // p2 had already drawn when they disconnected
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedDrawerStatus = new Map([['p2', true]])
+
+    mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gs = (room as any).gameState
+    // p2 should NOT be added back to drawerOrder (they already drew)
+    expect(gs.drawerOrder).not.toContain('p2')
+    expect(gs.totalRounds).toBe(2)
+    // disconnectedDrawerStatus should still be cleaned up
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedDrawerStatus.has('p2')).toBe(false)
+  })
 })
 
 describe('DrawingRoom - Correct guesser disconnect does NOT end round early', () => {

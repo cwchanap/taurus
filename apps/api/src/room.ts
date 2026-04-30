@@ -113,6 +113,10 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   // Tracks a host who disconnected so they can reclaim host on reconnect
   private disconnectedHostId: string | null = null
 
+  // Tracks players who disconnected during an active game and whether they had
+  // already drawn, so their drawerOrder slot can be restored on reconnect.
+  private disconnectedDrawerStatus: Map<string, boolean> = new Map()
+
   // Chat history manager
   private chatHistory = new ChatHistory()
 
@@ -190,6 +194,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
       // Restore disconnected host tracking for reconnect reclaim
       this.disconnectedHostId = (await this.ctx.storage.get<string>('disconnectedHostId')) || null
+
+      // Restore disconnected drawer status for reconnect drawerOrder restoration
+      const storedDrawerStatus =
+        (await this.ctx.storage.get<[string, boolean][]>('disconnectedDrawerStatus')) || []
+      this.disconnectedDrawerStatus = new Map(storedDrawerStatus)
 
       // Restore gameState if it was persisted
       const storedGameState = await this.ctx.storage.get<StoredGameState>('gameState')
@@ -421,6 +430,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       await this.storagePutWithRetry('disconnectedHostId', this.disconnectedHostId)
     } else {
       await this.storageDeleteWithRetry('disconnectedHostId')
+    }
+  }
+
+  private async persistDisconnectedDrawerStatus(): Promise<void> {
+    if (this.disconnectedDrawerStatus.size > 0) {
+      await this.storagePutWithRetry(
+        'disconnectedDrawerStatus',
+        Array.from(this.disconnectedDrawerStatus.entries())
+      )
+    } else {
+      await this.storageDeleteWithRetry('disconnectedDrawerStatus')
     }
   }
 
@@ -950,6 +970,37 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           )
         }
 
+        // --- Fix: Restore player to drawerOrder if they hadn't drawn yet ---
+        // When a player disconnects mid-game, handlePlayerLeaveInActiveGame removes
+        // them from drawerOrder. If they reconnect before the game ends and they
+        // hadn't completed their drawing turn, re-insert them so they get a fair turn.
+        const drawerStatus = this.disconnectedDrawerStatus.get(rid)
+        if (
+          drawerStatus !== undefined &&
+          !drawerStatus && // hadDrawn === false → player hadn't drawn yet
+          !this.gameState.drawerOrder.includes(rid) &&
+          (this.gameState.status === 'playing' ||
+            this.gameState.status === 'word-choice' ||
+            this.gameState.status === 'round-end')
+        ) {
+          this.gameState.drawerOrder.push(rid)
+          this.gameState.totalRounds = this.gameState.drawerOrder.length
+          this.ctx.waitUntil(
+            this.persistGameState().catch((e) =>
+              console.error('Failed to persist game state after drawerOrder restore:', e)
+            )
+          )
+        }
+        // Clean up the tracked status regardless of whether we restored
+        if (this.disconnectedDrawerStatus.has(rid)) {
+          this.disconnectedDrawerStatus.delete(rid)
+          this.ctx.waitUntil(
+            this.persistDisconnectedDrawerStatus().catch((e) =>
+              console.error('Failed to persist disconnected drawer status cleanup:', e)
+            )
+          )
+        }
+
         // --- Fix: Persist player info (name, color) for future reconnects ---
         this.playerInfo.set(rid, { name: player.name, color: player.color })
         this.ctx.waitUntil(
@@ -1204,6 +1255,18 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
       setTimeout(() => this.cleanedPlayers.delete(playerId), 1000)
 
+      // Track whether the leaving player had already drawn before pruning
+      const leaveIndex = this.gameState.drawerOrder.indexOf(playerId)
+      if (leaveIndex !== -1) {
+        const hadDrawn = leaveIndex < this.gameState.currentRound
+        this.disconnectedDrawerStatus.set(playerId, hadDrawn)
+        this.ctx.waitUntil(
+          this.persistDisconnectedDrawerStatus().catch((e) =>
+            console.error('Failed to persist disconnected drawer status:', e)
+          )
+        )
+      }
+
       // Remove leaving player from drawerOrder and rebase round counters
       this.pruneDrawerFromOrder(playerId)
 
@@ -1226,6 +1289,19 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     if (this.gameState.status === 'playing' || this.gameState.status === 'round-end') {
       const remainingPlayers = this.getPlayers().filter((p) => p.id !== playerId)
       const remainingPlayerIds = remainingPlayers.map((p) => p.id)
+
+      // Track whether the leaving player had already drawn, so their drawerOrder
+      // slot can be restored if they reconnect before the game ends.
+      const leaveIndex = this.gameState.drawerOrder.indexOf(playerId)
+      if (leaveIndex !== -1) {
+        const hadDrawn = leaveIndex < this.gameState.currentRound
+        this.disconnectedDrawerStatus.set(playerId, hadDrawn)
+        this.ctx.waitUntil(
+          this.persistDisconnectedDrawerStatus().catch((e) =>
+            console.error('Failed to persist disconnected drawer status:', e)
+          )
+        )
+      }
 
       const result = handlePlayerLeaveInActiveGame(playerId, this.gameState, remainingPlayerIds)
 
@@ -2207,7 +2283,6 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       const attachment = ws.deserializeAttachment() as WebSocketAttachment | null
       if (!attachment?.playerId) continue
       if (attachment.playerId === drawerId) continue
-      if (this.gameState.correctGuessers.has(attachment.playerId)) continue
       try {
         ws.send(JSON.stringify({ type: 'hint', revealed: hintString }))
       } catch {
@@ -2491,6 +2566,16 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       roundStartTime: null,
       roundEndTime: null,
     } as GameOverState
+
+    // Clean up disconnected drawer status — no longer relevant after game ends
+    if (this.disconnectedDrawerStatus.size > 0) {
+      this.disconnectedDrawerStatus.clear()
+      this.ctx.waitUntil(
+        this.persistDisconnectedDrawerStatus().catch((e) =>
+          console.error('Failed to clear disconnected drawer status on game end:', e)
+        )
+      )
+    }
 
     // Persist game-over state to storage
     this.ctx.waitUntil(
