@@ -104,6 +104,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
   // Track players being cleaned up to prevent duplicate leave broadcasts
   private cleanedPlayers = new Set<string>()
 
+  // Track players who had player-left broadcast, so we re-announce on reconnect.
+  // Unlike cleanedPlayers (which auto-deletes after 1s for dedup), this persists
+  // until the player reconnects or the room is torn down.
+  private publiclyRemovedPlayers = new Set<string>()
+
   // Server-issued reconnect tokens (playerId → token) — proves ownership on reconnect
   private playerTokens: Map<string, string> = new Map()
 
@@ -762,6 +767,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         if (!playerId) break
         if (!isWordChoiceState(this.gameState)) break
         if (playerId !== this.gameState.currentDrawerId) break
+        // Reject choices that arrive after the choice window closed. Without this
+        // check a late message (especially after DO wake-up with a 2s defer) can
+        // race the auto-select timeout and start the round with the user's pick
+        // instead of the first offered word.
+        if (this.gameState.choiceDeadline != null && Date.now() > this.gameState.choiceDeadline) {
+          break
+        }
         const word = typeof data.word === 'string' ? (data.word as string).trim() : ''
         if (!this.pendingWordOptions || !this.pendingWordOptions.includes(word)) {
           try {
@@ -944,8 +956,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         ws.serializeAttachment(attachment)
         // Track whether this player was publicly removed (player-left broadcast sent)
         // so we can re-announce them to other clients after successful reconnect.
-        const wasPubliclyRemoved = this.cleanedPlayers.has(rid)
+        const wasPubliclyRemoved = this.publiclyRemovedPlayers.has(rid)
         this.cleanedPlayers.delete(rid)
+        this.publiclyRemovedPlayers.delete(rid)
 
         // --- Fix: Restore host ownership if this player was the disconnected host ---
         if (this.disconnectedHostId === rid) {
@@ -1084,6 +1097,7 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Clean up any leftover cleanup flag (reconnection scenario)
     this.cleanedPlayers.delete(playerId)
+    this.publiclyRemovedPlayers.delete(playerId)
 
     // Persist player info (name, color) for future reconnects
     this.playerInfo.set(playerId, { name: player.name, color: player.color })
@@ -1215,6 +1229,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       type: 'player-left',
       playerId,
     })
+
+    // Mark this player as publicly removed so that a future reconnect re-announces them
+    this.publiclyRemovedPlayers.add(playerId)
 
     // Clean up rate limiting data
     this.playerMessageTimestamps.delete(playerId)
