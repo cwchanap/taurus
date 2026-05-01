@@ -2704,6 +2704,54 @@ describe('DrawingRoom - startRound, handleCorrectGuess, webSocketClose, webSocke
     expect((room as any).gameState.status).toBe('word-choice')
   })
 
+  test('choose-word: late choice after choiceDeadline is silently rejected', async () => {
+    // Regression: a choose-word arriving after the 10s window (e.g. during DO wake-up
+    // 2s defer) must not race the auto-select timeout.
+    const drawerWs = createMockWs('p1', 'Drawer')
+    const guesserWs = createMockWs('p2', 'Guesser')
+    mockGetWebSockets.mockReturnValue([drawerWs, guesserWs])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p1', 'p2'],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Drawer' }],
+        ['p2', { score: 0, name: 'Guesser' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      endGameAfterCurrentRound: false,
+      consecutiveMissedRounds: new Map(),
+      // Deadline is in the past — choice window has expired
+      choiceDeadline: Date.now() - 2000,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['cat', 'dog', 'fish']
+
+    // Drawer sends choose-word with a valid word, but deadline has passed
+    await room.webSocketMessage(drawerWs, JSON.stringify({ type: 'choose-word', word: 'dog' }))
+    await flushPromises()
+
+    // Game should remain in word-choice state — the late choice is rejected
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.status).toBe('word-choice')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.currentWord).toBeNull()
+  })
+
   test('handleCorrectGuess updates score and broadcasts correct-guess', async () => {
     const drawerWs = createMockWs('p1', 'Drawer')
     const guesserWs = createMockWs('p2', 'Guesser')
@@ -5275,6 +5323,65 @@ describe('DrawingRoom - Player Reconnect', () => {
     // disconnectedDrawerStatus should still be cleaned up
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).disconnectedDrawerStatus.has('p2')).toBe(false)
+  })
+
+  test('Reconnecting player after cleanedPlayers 1s expiry still broadcasts player-joined', async () => {
+    // Regression: cleanedPlayers auto-deletes after 1s for dedup, but we must still
+    // re-announce the player on reconnect regardless of how much time has passed.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2OldWs = createMockWs('p2', 'Bob')
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    // p2 disconnects → handleLeave broadcasts player-left
+    mockGetWebSockets.mockReturnValue([p1Ws, p2OldWs])
+    await room.webSocketClose(p2OldWs as unknown as WebSocket)
+    await flushPromises()
+
+    // Verify player-left was broadcast
+    const p1MsgsAfterLeave = getSentMessages(p1Ws)
+    expect(p1MsgsAfterLeave.some((m) => m?.type === 'player-left' && m?.playerId === 'p2')).toBe(
+      true
+    )
+
+    // Simulate the 1s cleanup: cleanedPlayers entry expires, but publiclyRemovedPlayers persists
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).cleanedPlayers.delete('p2')
+    // publiclyRemovedPlayers should still have p2
+
+    // Now p2 reconnects after the 1s window
+    mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // p1 should STILL receive player-joined even though cleanedPlayers expired
+    const p1MsgsAfterReconnect = getSentMessages(p1Ws)
+    const playerJoinedMsg = p1MsgsAfterReconnect.find((m) => m?.type === 'player-joined')
+    expect(playerJoinedMsg).toBeDefined()
+    expect(playerJoinedMsg.player.id).toBe('p2')
   })
 })
 
