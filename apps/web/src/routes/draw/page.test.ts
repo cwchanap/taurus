@@ -1086,6 +1086,22 @@ describe('Draw page - WebSocket drawing event handlers', () => {
       expect(badge?.textContent).toContain('Max retries exceeded')
     })
   })
+
+  it('onConnectionFailed clears stale sessionStorage credentials', async () => {
+    await simulateJoinGame('Alice')
+
+    // Verify credentials were stored during init
+    expect(sessionStorage.getItem('taurus-player-TEST-ROOM')).toBe('player-123')
+    expect(sessionStorage.getItem('taurus-token-TEST-ROOM')).toBe(TEST_RECONNECT_TOKEN)
+
+    const handlers = getWsHandlers()
+    handlers.onConnectionFailed?.('Failed to reconnect after 5 attempts')
+    await waitFor(() => {
+      // Credentials should be cleared after permanent connection failure
+      expect(sessionStorage.getItem('taurus-player-TEST-ROOM')).toBeNull()
+      expect(sessionStorage.getItem('taurus-token-TEST-ROOM')).toBeNull()
+    })
+  })
 })
 
 describe('Draw page - handleUndo and handleClear interactions', () => {

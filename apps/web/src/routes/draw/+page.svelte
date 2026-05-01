@@ -234,6 +234,12 @@
         errorMessage = reason
         // Clear redo lock on permanent connection failure to allow user action
         clearRedoLock()
+        // Clear stale credentials so the next join attempt starts fresh
+        // instead of trying to reconnect to a dead session
+        if (browser && roomId) {
+          sessionStorage.removeItem(`taurus-player-${roomId}`)
+          sessionStorage.removeItem(`taurus-token-${roomId}`)
+        }
       },
       onServerError: (message, action, nonce) => {
         errorMessage = message
