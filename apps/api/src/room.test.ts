@@ -5547,3 +5547,340 @@ describe('DrawingRoom - Correct guesser disconnect does NOT end round early', ()
     expect(endRoundSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('DrawingRoom - Drawer disconnect during word-choice preserves turn on reconnect', () => {
+  let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+  let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
+  let mockState: Partial<DurableObjectState>
+  let mockStoragePut: ReturnType<typeof mock>
+  let mockStorageDelete: ReturnType<typeof mock>
+  let mockGetWebSockets: ReturnType<typeof mock>
+  let mockWaitUntil: ReturnType<typeof mock>
+  let mockEnv: unknown
+
+  beforeEach(async () => {
+    ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+    mockStoragePut = mock(() => Promise.resolve())
+    mockStorageDelete = mock(() => Promise.resolve())
+    mockGetWebSockets = mock(() => [])
+    mockWaitUntil = mock(() => {})
+
+    mockState = {
+      storage: {
+        get: mock(() => Promise.resolve(undefined)),
+        put: mockStoragePut,
+        delete: mockStorageDelete,
+        list: mock(() => Promise.resolve(new Map())),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      id: {
+        toString: () => 'test-room-id',
+        equals: () => false,
+        name: 'test-room',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      waitUntil: mockWaitUntil,
+      blockConcurrencyWhile: mock(async (fn) => await fn()),
+      getWebSockets: mockGetWebSockets,
+    }
+
+    mockEnv = {}
+    void mockEnv
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+  })
+
+  afterEach(() => {
+    if (room) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).clearTimers()
+    }
+  })
+
+  test('drawer disconnecting during word-choice records disconnectedDrawerStatus', () => {
+    const wsDrawer = createMockWs('drawer-1', 'Drawer')
+    const wsG1 = createMockWs('guesser-1', 'Guesser1')
+    const wsG2 = createMockWs('guesser-2', 'Guesser2')
+
+    // After drawer leaves, guesser-1 and guesser-2 remain (3-player game → 2 remain)
+    mockGetWebSockets.mockReturnValue([wsG1, wsG2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'guesser-1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 0,
+      totalRounds: 3,
+      currentDrawerId: 'drawer-1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['drawer-1', 'guesser-1', 'guesser-2'],
+      scores: new Map([
+        ['drawer-1', { score: 0, name: 'Drawer' }],
+        ['guesser-1', { score: 0, name: 'Guesser1' }],
+        ['guesser-2', { score: 0, name: 'Guesser2' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).pendingWordOptions = ['apple', 'cat', 'dog']
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).wordChoiceStartTime = Date.now()
+
+    // Drawer leaves during word-choice
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(wsDrawer as any)
+
+    // disconnectedDrawerStatus should record that drawer-1 hadn't drawn yet
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedDrawerStatus.has('drawer-1')).toBe(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedDrawerStatus.get('drawer-1')).toBe(false)
+  })
+
+  test('drawer reconnecting after word-choice disconnect is restored to drawerOrder', async () => {
+    const wsG1 = createMockWs('guesser-1', 'Guesser1')
+    const wsG2 = createMockWs('guesser-2', 'Guesser2')
+    const wsDrawerReconnect = createMockWs('', '')
+    wsDrawerReconnect.deserializeAttachment = () => null
+
+    mockGetWebSockets.mockReturnValue([wsG1, wsG2])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'guesser-1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([
+      ['drawer-1', 'token-drawer'],
+      ['guesser-1', 'token-g1'],
+      ['guesser-2', 'token-g2'],
+    ])
+    // Simulate that the drawer left during word-choice and their status was recorded
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedDrawerStatus = new Map([['drawer-1', false]])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 0,
+      totalRounds: 2,
+      currentDrawerId: 'guesser-1',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['guesser-1', 'guesser-2'],
+      scores: new Map([
+        ['drawer-1', { score: 0, name: 'Drawer' }],
+        ['guesser-1', { score: 0, name: 'Guesser1' }],
+        ['guesser-2', { score: 0, name: 'Guesser2' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([['drawer-1', { name: 'Drawer', color: '#FF6B6B' }]])
+
+    // Drawer reconnects
+    await room.webSocketMessage(
+      wsDrawerReconnect as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Drawer',
+        playerId: 'drawer-1',
+        reconnectToken: 'token-drawer',
+      })
+    )
+    await flushPromises()
+
+    // Drawer should be restored to drawerOrder
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.drawerOrder).toContain('drawer-1')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameState.totalRounds).toBe(3)
+    // disconnectedDrawerStatus should be cleaned up
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedDrawerStatus.has('drawer-1')).toBe(false)
+  })
+})
+
+describe('DrawingRoom - publiclyRemovedPlayers persists across hibernation', () => {
+  let DrawingRoomClass: (typeof import('./room'))['DrawingRoom']
+  let room: InstanceType<(typeof import('./room'))['DrawingRoom']>
+  let mockState: Partial<DurableObjectState>
+  let mockStoragePut: ReturnType<typeof mock>
+  let mockStorageDelete: ReturnType<typeof mock>
+  let mockGetWebSockets: ReturnType<typeof mock>
+  let mockWaitUntil: ReturnType<typeof mock>
+  let mockStorageGet: ReturnType<typeof mock>
+  let mockEnv: unknown
+
+  beforeEach(async () => {
+    ;({ DrawingRoom: DrawingRoomClass } = await import('./room'))
+
+    mockStorageGet = mock(() => Promise.resolve(undefined))
+    mockStoragePut = mock(() => Promise.resolve())
+    mockStorageDelete = mock(() => Promise.resolve())
+    mockGetWebSockets = mock(() => [])
+    mockWaitUntil = mock(() => {})
+
+    mockState = {
+      storage: {
+        get: mockStorageGet,
+        put: mockStoragePut,
+        delete: mockStorageDelete,
+        list: mock(() => Promise.resolve(new Map())),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      id: {
+        toString: () => 'test-room-id',
+        equals: () => false,
+        name: 'test-room',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      waitUntil: mockWaitUntil,
+      blockConcurrencyWhile: mock(async (fn) => await fn()),
+      getWebSockets: mockGetWebSockets,
+    }
+
+    mockEnv = {}
+    void mockEnv
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
+  })
+
+  afterEach(() => {
+    if (room) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(room as any).clearTimers()
+    }
+  })
+
+  test('publiclyRemovedPlayers is persisted when player leaves', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    const ws1 = createMockWs('p1', 'Alice')
+    const ws2 = createMockWs('p2', 'Bob')
+    mockGetWebSockets.mockReturnValue([ws1, ws2])
+
+    // p2 leaves
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).handleLeave(ws2 as any)
+
+    // publiclyRemovedPlayers should have p2
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).publiclyRemovedPlayers.has('p2')).toBe(true)
+
+    // Should have been persisted via waitUntil
+    await flushPromises()
+    const putCalls = (mockStoragePut as ReturnType<typeof mock>).mock.calls as unknown[][]
+    const publiclyRemovedPut = putCalls.find((call) => call[0] === 'publiclyRemovedPlayers')
+    expect(publiclyRemovedPut).toBeDefined()
+    expect(publiclyRemovedPut![1]).toEqual(['p2'])
+  })
+
+  test('publiclyRemovedPlayers is restored from storage after hibernation', async () => {
+    // Simulate storage having publiclyRemovedPlayers = ['p2'] from before hibernation
+    mockStorageGet.mockImplementation((key: string) => {
+      if (key === 'publiclyRemovedPlayers') return Promise.resolve(['p2'])
+      return Promise.resolve(undefined)
+    })
+
+    // Force re-initialization by creating a new room instance
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room = new DrawingRoomClass(mockState as any, mockEnv as any)
+
+    // Trigger ensureInitialized by accessing the room
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (room as any).ensureInitialized()
+
+    // publiclyRemovedPlayers should be restored
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).publiclyRemovedPlayers.has('p2')).toBe(true)
+  })
+
+  test('publiclyRemovedPlayers is cleaned up when player reconnects', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).publiclyRemovedPlayers = new Set(['p2'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([
+      ['p1', 'token-p1'],
+      ['p2', 'token-p2'],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([['p2', { name: 'Bob', color: '#4ECDC4' }]])
+
+    const ws1 = createMockWs('p1', 'Alice')
+    const ws2New = createMockWs('', '')
+    ws2New.deserializeAttachment = () => null
+
+    mockGetWebSockets.mockReturnValue([ws1, ws2New])
+
+    await room.webSocketMessage(
+      ws2New as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // publiclyRemovedPlayers should be cleaned up
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).publiclyRemovedPlayers.has('p2')).toBe(false)
+
+    // Persistence should have been triggered to delete the empty set
+    const deleteCalls = (mockStorageDelete as ReturnType<typeof mock>).mock.calls as unknown[][]
+    const publiclyRemovedDelete = deleteCalls.find((call) => call[0] === 'publiclyRemovedPlayers')
+    expect(publiclyRemovedDelete).toBeDefined()
+  })
+})

@@ -205,6 +205,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         (await this.ctx.storage.get<[string, boolean][]>('disconnectedDrawerStatus')) || []
       this.disconnectedDrawerStatus = new Map(storedDrawerStatus)
 
+      // Restore publicly removed players so reconnect re-announce works after hibernation
+      const storedPubliclyRemoved =
+        (await this.ctx.storage.get<string[]>('publiclyRemovedPlayers')) || []
+      this.publiclyRemovedPlayers = new Set(storedPubliclyRemoved)
+
       // Restore gameState if it was persisted
       const storedGameState = await this.ctx.storage.get<StoredGameState>('gameState')
       if (storedGameState) {
@@ -446,6 +451,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
       )
     } else {
       await this.storageDeleteWithRetry('disconnectedDrawerStatus')
+    }
+  }
+
+  private async persistPubliclyRemovedPlayers(): Promise<void> {
+    if (this.publiclyRemovedPlayers.size > 0) {
+      await this.storagePutWithRetry(
+        'publiclyRemovedPlayers',
+        Array.from(this.publiclyRemovedPlayers)
+      )
+    } else {
+      await this.storageDeleteWithRetry('publiclyRemovedPlayers')
     }
   }
 
@@ -959,6 +975,13 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
         const wasPubliclyRemoved = this.publiclyRemovedPlayers.has(rid)
         this.cleanedPlayers.delete(rid)
         this.publiclyRemovedPlayers.delete(rid)
+        if (wasPubliclyRemoved) {
+          this.ctx.waitUntil(
+            this.persistPubliclyRemovedPlayers().catch((e) =>
+              console.error('Failed to persist publicly removed players after reconnect:', e)
+            )
+          )
+        }
 
         // --- Fix: Restore host ownership if this player was the disconnected host ---
         if (this.disconnectedHostId === rid) {
@@ -1097,7 +1120,14 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Clean up any leftover cleanup flag (reconnection scenario)
     this.cleanedPlayers.delete(playerId)
-    this.publiclyRemovedPlayers.delete(playerId)
+    if (this.publiclyRemovedPlayers.has(playerId)) {
+      this.publiclyRemovedPlayers.delete(playerId)
+      this.ctx.waitUntil(
+        this.persistPubliclyRemovedPlayers().catch((e) =>
+          console.error('Failed to persist publicly removed players after new join:', e)
+        )
+      )
+    }
 
     // Persist player info (name, color) for future reconnects
     this.playerInfo.set(playerId, { name: player.name, color: player.color })
@@ -1232,6 +1262,11 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
 
     // Mark this player as publicly removed so that a future reconnect re-announces them
     this.publiclyRemovedPlayers.add(playerId)
+    this.ctx.waitUntil(
+      this.persistPubliclyRemovedPlayers().catch((e) =>
+        console.error('Failed to persist publicly removed players:', e)
+      )
+    )
 
     // Clean up rate limiting data
     this.playerMessageTimestamps.delete(playerId)
@@ -1239,6 +1274,15 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     this.playerStrokeUpdateTimestamps.delete(playerId)
 
     if (this.gameState.status === 'word-choice' && playerId === this.gameState.currentDrawerId) {
+      // Record that this drawer disconnected before drawing so their turn can be
+      // restored on reconnect.  Word-choice means they haven't drawn yet (hadDrawn = false).
+      this.disconnectedDrawerStatus.set(playerId, false)
+      this.ctx.waitUntil(
+        this.persistDisconnectedDrawerStatus().catch((e) =>
+          console.error('Failed to persist disconnected drawer status (word-choice drawer):', e)
+        )
+      )
+
       this.pruneDrawerFromOrder(playerId)
 
       this.clearTimers()
