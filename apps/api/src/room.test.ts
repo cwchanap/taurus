@@ -5247,7 +5247,9 @@ describe('DrawingRoom - Player Reconnect', () => {
     }
     // Simulate the disconnect tracker recording p2 hadn't drawn yet
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).disconnectedDrawerStatus = new Map([['p2', false]])
+    ;(room as any).disconnectedDrawerStatus = new Map([
+      ['p2', { hadDrawn: false, originalIndex: 1 }],
+    ])
 
     mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
 
@@ -5259,9 +5261,9 @@ describe('DrawingRoom - Player Reconnect', () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const gs = (room as any).gameState
-    // p2 should be restored to drawerOrder
-    expect(gs.drawerOrder).toContain('p2')
-    expect(gs.totalRounds).toBe(3) // [p1, p3, p2]
+    // p2 should be restored to drawerOrder at original index 1 → [p1, p2, p3]
+    expect(gs.drawerOrder).toEqual(['p1', 'p2', 'p3'])
+    expect(gs.totalRounds).toBe(3)
     // disconnectedDrawerStatus should be cleaned up
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).disconnectedDrawerStatus.has('p2')).toBe(false)
@@ -5305,7 +5307,9 @@ describe('DrawingRoom - Player Reconnect', () => {
     }
     // p2 had already drawn when they disconnected
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).disconnectedDrawerStatus = new Map([['p2', true]])
+    ;(room as any).disconnectedDrawerStatus = new Map([
+      ['p2', { hadDrawn: true, originalIndex: 1 }],
+    ])
 
     mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
 
@@ -5648,7 +5652,10 @@ describe('DrawingRoom - Drawer disconnect during word-choice preserves turn on r
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).disconnectedDrawerStatus.has('drawer-1')).toBe(true)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).disconnectedDrawerStatus.get('drawer-1')).toBe(false)
+    expect((room as any).disconnectedDrawerStatus.get('drawer-1')).toEqual({
+      hadDrawn: false,
+      originalIndex: 0,
+    })
   })
 
   test('drawer reconnecting after word-choice disconnect is restored to drawerOrder', async () => {
@@ -5669,7 +5676,9 @@ describe('DrawingRoom - Drawer disconnect during word-choice preserves turn on r
     ])
     // Simulate that the drawer left during word-choice and their status was recorded
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(room as any).disconnectedDrawerStatus = new Map([['drawer-1', false]])
+    ;(room as any).disconnectedDrawerStatus = new Map([
+      ['drawer-1', { hadDrawn: false, originalIndex: 0 }],
+    ])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(room as any).gameState = {
       status: 'word-choice',
@@ -5709,9 +5718,9 @@ describe('DrawingRoom - Drawer disconnect during word-choice preserves turn on r
     )
     await flushPromises()
 
-    // Drawer should be restored to drawerOrder
+    // Drawer should be restored to drawerOrder at original index 0 → [drawer-1, guesser-1, guesser-2]
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((room as any).gameState.drawerOrder).toContain('drawer-1')
+    expect((room as any).gameState.drawerOrder).toEqual(['drawer-1', 'guesser-1', 'guesser-2'])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((room as any).gameState.totalRounds).toBe(3)
     // disconnectedDrawerStatus should be cleaned up

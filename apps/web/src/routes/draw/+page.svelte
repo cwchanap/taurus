@@ -234,12 +234,11 @@
         errorMessage = reason
         // Clear redo lock on permanent connection failure to allow user action
         clearRedoLock()
-        // Clear stale credentials so the next join attempt starts fresh
-        // instead of trying to reconnect to a dead session
-        if (browser && roomId) {
-          sessionStorage.removeItem(`taurus-player-${roomId}`)
-          sessionStorage.removeItem(`taurus-token-${roomId}`)
-        }
+        // Keep reconnect credentials in sessionStorage so a manual page refresh
+        // can still restore the player's session. The server retains
+        // playerTokens and disconnectedDrawerStatus indefinitely — clearing
+        // them here would force a fresh join and lose the player's
+        // score/host/drawer state.
       },
       onServerError: (message, action, nonce) => {
         errorMessage = message
