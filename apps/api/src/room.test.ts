@@ -6102,4 +6102,138 @@ describe('DrawingRoom - publiclyRemovedPlayers persists across hibernation', () 
     const publiclyRemovedDelete = deleteCalls.find((call) => call[0] === 'publiclyRemovedPlayers')
     expect(publiclyRemovedDelete).toBeDefined()
   })
+
+  test('Reconnecting into empty room assigns host when hostPlayerId is null', async () => {
+    // Bug: Host A leaves → host transfers to B. B leaves → disconnectedHostId is cleared
+    // (successor path) and hostPlayerId becomes null (no players). B reconnects — the
+    // disconnectedHostId check fails (it's null), so B gets isHost: false and the room
+    // has no host. Fix: fallback assigns host when hostPlayerId is null on reconnect.
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedHostId = null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([['p2', { name: 'Bob', color: '#4ECDC4' }]])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).cleanedPlayers = new Set()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).publiclyRemovedPlayers = new Set()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map([['p2', { score: 0, name: 'Bob' }]]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // p2 should be assigned as host since the room had no host
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hostPlayerId).toBe('p2')
+
+    // Init should report isHost: true
+    const msgs = getSentMessages(p2NewWs)
+    const initMsg = msgs.find((m) => m?.type === 'init')
+    expect(initMsg.isHost).toBe(true)
+  })
+
+  test('Reconnecting future drawer during playing state clears endGameAfterCurrentRound flag', async () => {
+    // Bug: Future drawer disconnects during another player's active round.
+    // handlePlayerLeaveInActiveGame sets endGameAfterCurrentRound=true because
+    // removing them made currentRound >= totalRounds. They reconnect while still
+    // in 'playing' state (round hasn't ended yet). The old guard required
+    // gameEndTimer to exist, but no timer exists during 'playing'. So the flag
+    // stayed true and the game ended prematurely when the round finished.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).initialized = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([
+      ['p1', { name: 'Alice', color: '#FF6B6B' }],
+      ['p2', { name: 'Bob', color: '#4ECDC4' }],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).cleanedPlayers = new Set()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).publiclyRemovedPlayers = new Set()
+
+    // Game is in 'playing' state — round 1 of 2, but p2 was pruned making totalRounds=1
+    // so currentRound(1) >= totalRounds(1) → endGameAfterCurrentRound was set.
+    // drawerOrder only has p1 now (p2 removed).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 1, // p2's removal reduced this
+      currentDrawerId: 'p1',
+      currentWord: 'cat',
+      wordLength: 3,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1'], // p2 was pruned
+      scores: new Map([
+        ['p1', { score: 0, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['cat']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: true, // set by handlePlayerLeaveInActiveGame
+      revealedPositions: [],
+    }
+
+    // No gameEndTimer — it's only scheduled during 'round-end', not 'playing'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameEndTimer = null
+
+    // p2 hadn't drawn yet (originalIndex=1, was after p1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedDrawerStatus = new Map([
+      ['p2', { hadDrawn: false, originalIndex: 1 }],
+    ])
+
+    mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gs = (room as any).gameState
+    // p2 reinserted → drawerOrder: ['p1', 'p2'], totalRounds: 2
+    expect(gs.drawerOrder).toEqual(['p1', 'p2'])
+    expect(gs.totalRounds).toBe(2)
+    // Flag must be cleared even though no gameEndTimer existed
+    expect(gs.endGameAfterCurrentRound).toBe(false)
+  })
 })

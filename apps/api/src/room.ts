@@ -1014,6 +1014,17 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
               console.error('Failed to persist host restore:', e)
             )
           )
+        } else if (this.hostPlayerId === null) {
+          // Fallback: room has no host (e.g. host and successor both left, then one
+          // reconnects). The disconnectedHostId won't match because the successor path
+          // clears it when the successor leaves. Assign host to this reconnecting player.
+          this.hostPlayerId = rid
+          this.broadcast({ type: 'host-change', newHostId: rid })
+          this.ctx.waitUntil(
+            this.persistHost().catch((e) =>
+              console.error('Failed to persist host assign on reconnect:', e)
+            )
+          )
         }
 
         // --- Fix: Restore player to round guesser sets if game is in progress ---
@@ -1053,13 +1064,19 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           this.gameState.drawerOrder.splice(insertAt, 0, rid)
           this.gameState.totalRounds = this.gameState.drawerOrder.length
 
-          // If a game-end timer was scheduled because the restored player's absence
+          // If endGameAfterCurrentRound was set because the restored player's absence
           // made currentRound >= totalRounds, the reinsertion means the game should
-          // continue. Cancel the pending game-end and clear the flag so the restored
-          // player gets their turn.
-          if (this.gameEndTimer && this.gameState.currentRound < this.gameState.totalRounds) {
-            clearTimeout(this.gameEndTimer)
-            this.gameEndTimer = null
+          // continue. Clear the flag and cancel any pending game-end timer so the
+          // restored player gets their turn.
+          // NOTE: endGameAfterCurrentRound can be set during 'playing' state (by
+          // handlePlayerLeaveInActiveGame) without a gameEndTimer — the timer is only
+          // scheduled once the round ends and state transitions to 'round-end'. So we
+          // must clear the flag regardless of whether the timer exists.
+          if (this.gameState.currentRound < this.gameState.totalRounds) {
+            if (this.gameEndTimer) {
+              clearTimeout(this.gameEndTimer)
+              this.gameEndTimer = null
+            }
             this.gameState.endGameAfterCurrentRound = false
             // If we're in round-end state, schedule the next round transition
             if (this.gameState.status === 'round-end') {
