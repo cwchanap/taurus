@@ -5107,6 +5107,84 @@ describe('DrawingRoom - Player Reconnect', () => {
     expect((room as any).hostPlayerId).toBe('p3')
   })
 
+  test('Reset-game clears stale disconnectedHostId to prevent host steal on reconnect', async () => {
+    // Regression: p1 (host) disconnects → host transfers to p2 → p2 resets game.
+    // If disconnectedHostId is not cleared, p1 reconnecting after reset would
+    // steal host from p2 even though the room has been fully reset.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2Ws = createMockWs('p2', 'Bob')
+    const p3Ws = createMockWs('p3', 'Carol')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([
+      ['p1', { name: 'Alice', color: '#FF6B6B' }],
+      ['p2', { name: 'Bob', color: '#4ECDC4' }],
+      ['p3', { name: 'Carol', color: '#45B7D1' }],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'game-over',
+      currentRound: 3,
+      totalRounds: 3,
+      currentDrawerId: null,
+      drawerOrder: ['p1', 'p2', 'p3'],
+      scores: new Map([
+        ['p1', { score: 10, name: 'Alice' }],
+        ['p2', { score: 5, name: 'Bob' }],
+        ['p3', { score: 0, name: 'Carol' }],
+      ]),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([p1Ws, p2Ws, p3Ws])
+
+    // Step 1: p1 (host) disconnects → host transfers to p2
+    await room.webSocketClose(p1Ws as unknown as WebSocket)
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedHostId).toBe('p1')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hostPlayerId).toBe('p2')
+
+    // Update mock to reflect p1 is gone
+    mockGetWebSockets.mockReturnValue([p2Ws, p3Ws])
+
+    // Step 2: p2 (successor host) resets the game
+    await room.webSocketMessage(
+      p2Ws as unknown as WebSocket,
+      JSON.stringify({ type: 'reset-game' })
+    )
+    await flushPromises()
+
+    // disconnectedHostId must be cleared after reset
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).disconnectedHostId).toBeNull()
+    // p2 should still be host
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hostPlayerId).toBe('p2')
+
+    // Step 3: p1 reconnects — must NOT reclaim host
+    const p1NewWs = createMockWs('', '')
+    p1NewWs.deserializeAttachment = () => null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'token-p1']])
+    mockGetWebSockets.mockReturnValue([p2Ws, p3Ws, p1NewWs])
+
+    await room.webSocketMessage(
+      p1NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Alice', playerId: 'p1', reconnectToken: 'token-p1' })
+    )
+    await flushPromises()
+
+    // p2 must remain host — p1 should NOT steal it
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).hostPlayerId).toBe('p2')
+  })
+
   test('Reconnecting player after public leave broadcasts player-joined to others', async () => {
     // Scenario: p2 disconnects → player-left broadcast → p2 reconnects with token.
     // Other clients should receive player-joined so their rosters stay in sync.
