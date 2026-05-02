@@ -1041,12 +1041,45 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
             this.gameState.status === 'word-choice' ||
             this.gameState.status === 'round-end')
         ) {
-          // Reinsert at the original position (clamped to current length in case
-          // other players were also removed). This preserves the intended turn
-          // order rather than appending to the end.
-          const insertAt = Math.min(drawerStatus.originalIndex, this.gameState.drawerOrder.length)
+          // Reinsert preserving turn order. If the player's original position is at
+          // or before the current drawer, inserting there would shift the current
+          // drawer and make currentRound point to the wrong player. Instead, insert
+          // after the current drawer so they get the next available turn.
+          const currentDrawerIdx = this.gameState.currentRound - 1
+          const insertAt =
+            drawerStatus.originalIndex <= currentDrawerIdx
+              ? Math.min(currentDrawerIdx + 1, this.gameState.drawerOrder.length)
+              : Math.min(drawerStatus.originalIndex, this.gameState.drawerOrder.length)
           this.gameState.drawerOrder.splice(insertAt, 0, rid)
           this.gameState.totalRounds = this.gameState.drawerOrder.length
+
+          // If a game-end timer was scheduled because the restored player's absence
+          // made currentRound >= totalRounds, the reinsertion means the game should
+          // continue. Cancel the pending game-end and clear the flag so the restored
+          // player gets their turn.
+          if (this.gameEndTimer && this.gameState.currentRound < this.gameState.totalRounds) {
+            clearTimeout(this.gameEndTimer)
+            this.gameEndTimer = null
+            this.gameState.endGameAfterCurrentRound = false
+            // If we're in round-end state, schedule the next round transition
+            if (this.gameState.status === 'round-end') {
+              this.gameState = {
+                ...this.gameState,
+                nextTransitionAt: Date.now() + ROUND_END_TRANSITION_DELAY,
+              } as RoundEndState
+              this.ctx.waitUntil(
+                this.persistGameState().catch((e) =>
+                  console.error('Failed to persist game state after gameEndTimer cancel:', e)
+                )
+              )
+              this.roundEndTimer = setTimeout(() => {
+                if (this.gameState.status === 'round-end') {
+                  this.startRound()
+                }
+              }, ROUND_END_TRANSITION_DELAY)
+            }
+          }
+
           this.ctx.waitUntil(
             this.persistGameState().catch((e) =>
               console.error('Failed to persist game state after drawerOrder restore:', e)

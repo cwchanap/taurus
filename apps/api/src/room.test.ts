@@ -5269,6 +5269,138 @@ describe('DrawingRoom - Player Reconnect', () => {
     expect((room as any).disconnectedDrawerStatus.has('p2')).toBe(false)
   })
 
+  test('Reconnecting player is inserted after current drawer when original index is past', async () => {
+    // Bug: If p2's original index is at or before the current drawer, inserting there
+    // shifts the current drawer without adjusting currentRound, causing the restored
+    // player to be skipped. Fix: insert after the current drawer instead.
+    // Scenario: order was [p1,p2,p3]. p2 disconnects during p1's round (round 1).
+    // drawerOrder becomes [p1,p3], totalRounds=2. p1 finishes, p3 draws round 2.
+    // p2 reconnects during p3's round — originalIndex=1 is at the current drawer (p3, idx 1).
+    // Should insert after p3, not at p3's position, so p2 still gets a turn.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 2, // p3 is drawing (index 1 in [p1,p3])
+      totalRounds: 2,
+      currentDrawerId: 'p3',
+      currentWord: 'dog',
+      wordLength: 3,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p1', 'p3'], // p2 was pruned on disconnect
+      scores: new Map([
+        ['p1', { score: 10, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+        ['p3', { score: 5, name: 'Charlie', color: '#45B7D1' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p1']),
+      roundStartGuesserIds: new Set(['p1']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['cat']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+    // p2's originalIndex=1 was at or before current drawer p3 (now at index 1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedDrawerStatus = new Map([
+      ['p2', { hadDrawn: false, originalIndex: 1 }],
+    ])
+
+    mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gs = (room as any).gameState
+    // p2 should be inserted AFTER current drawer p3, not at original index 1
+    // (which would shift p3 and cause findNextDrawer to skip p2).
+    // currentDrawerIdx = currentRound(2) - 1 = 1, so insertAt = 2 → [p1, p3, p2]
+    expect(gs.drawerOrder).toEqual(['p1', 'p3', 'p2'])
+    expect(gs.totalRounds).toBe(3)
+  })
+
+  test('Reconnecting player during round-end cancels gameEndTimer and continues game', async () => {
+    // Bug: If a disconnected player reconnects during round-end after gameEndTimer was
+    // scheduled (because totalRounds dropped to currentRound), increasing totalRounds
+    // doesn't cancel the timer. Fix: cancel gameEndTimer and schedule next round.
+    const p1Ws = createMockWs('p1', 'Alice')
+    const p2NewWs = createMockWs('', '')
+    p2NewWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p2', 'token-p2']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameEndTimer = setTimeout(() => {}, 99999) // simulate pending game-end
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'round-end',
+      currentRound: 2, // just finished round 2 (= totalRounds)
+      totalRounds: 2, // game should end because p2 is missing
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: Date.now() - 60_000,
+      roundEndTime: Date.now(),
+      drawerOrder: ['p1', 'p3'], // p2 was pruned
+      scores: new Map([
+        ['p1', { score: 10, name: 'Alice', color: '#FF6B6B' }],
+        ['p2', { score: 0, name: 'Bob', color: '#4ECDC4' }],
+        ['p3', { score: 5, name: 'Charlie', color: '#45B7D1' }],
+      ]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(['p1']),
+      roundStartGuesserIds: new Set(['p1']),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['cat', 'dog']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: true,
+      nextTransitionAt: Date.now() + 2000,
+    }
+    // p2 hadn't drawn, original index 1 (≤ currentDrawerIdx=1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).disconnectedDrawerStatus = new Map([
+      ['p2', { hadDrawn: false, originalIndex: 1 }],
+    ])
+
+    mockGetWebSockets.mockReturnValue([p1Ws, p2NewWs])
+
+    await room.webSocketMessage(
+      p2NewWs as unknown as WebSocket,
+      JSON.stringify({ type: 'join', name: 'Bob', playerId: 'p2', reconnectToken: 'token-p2' })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gs = (room as any).gameState
+    // p2 reinserted after current drawer → [p1, p3, p2]
+    expect(gs.drawerOrder).toEqual(['p1', 'p3', 'p2'])
+    expect(gs.totalRounds).toBe(3)
+    // gameEndTimer should have been cancelled
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).gameEndTimer).toBeNull()
+    // Game should continue: currentRound(2) < totalRounds(3)
+    expect(gs.endGameAfterCurrentRound).toBe(false)
+    // A roundEndTimer should have been scheduled for the next round
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((room as any).roundEndTimer).not.toBeNull()
+  })
+
   test('Reconnecting player who already drew is NOT restored to drawerOrder', async () => {
     // Scenario: p1 drew round 1, p2 drew round 2. p2 disconnects.
     // p2 reconnects — should NOT be re-added since they already drew.
