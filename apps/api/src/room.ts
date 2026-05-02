@@ -2080,8 +2080,18 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
     // Reset to lobby state
     this.gameState = createInitialGameState()
 
+    // Clear stale host-reclaim state — after reset, the current host (caller)
+    // is the legitimate host for the new lobby; any prior host reclaim marker
+    // is stale and would incorrectly transfer host on reconnect.
+    this.disconnectedHostId = null
+
     // Persist reset game state
     await this.persistGameState()
+    this.ctx.waitUntil(
+      this.persistDisconnectedHost().catch((e) =>
+        console.error('Failed to persist disconnected host clear on reset:', e)
+      )
+    )
 
     // Clear strokes/fills and storage to prevent stale canvas on next game
     // Clear in-memory arrays immediately before async storage deletion to prevent
