@@ -1087,7 +1087,7 @@ describe('Draw page - WebSocket drawing event handlers', () => {
     })
   })
 
-  it('onConnectionFailed clears stale sessionStorage credentials', async () => {
+  it('onConnectionFailed preserves sessionStorage credentials for manual refresh', async () => {
     await simulateJoinGame('Alice')
 
     // Verify credentials were stored during init
@@ -1097,9 +1097,10 @@ describe('Draw page - WebSocket drawing event handlers', () => {
     const handlers = getWsHandlers()
     handlers.onConnectionFailed?.('Failed to reconnect after 5 attempts')
     await waitFor(() => {
-      // Credentials should be cleared after permanent connection failure
-      expect(sessionStorage.getItem('taurus-player-TEST-ROOM')).toBeNull()
-      expect(sessionStorage.getItem('taurus-token-TEST-ROOM')).toBeNull()
+      // Credentials should be PRESERVED so a page refresh can still
+      // attempt reconnect — the server retains playerTokens indefinitely.
+      expect(sessionStorage.getItem('taurus-player-TEST-ROOM')).toBe('player-123')
+      expect(sessionStorage.getItem('taurus-token-TEST-ROOM')).toBe(TEST_RECONNECT_TOKEN)
     })
   })
 })
