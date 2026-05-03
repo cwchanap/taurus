@@ -1027,6 +1027,31 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
           )
         }
 
+        // --- Fix: Initialize scores for token reconnects during active games ---
+        // When a player joined in the lobby (got a token) but left before the game
+        // started, their scores entry was never created. If they reconnect during an
+        // active game, we need to seed the entry so they appear in final results.
+        if (reconnectViaTokens) {
+          const isActiveGame = ['starting', 'word-choice', 'playing', 'round-end'].includes(
+            this.gameState.status
+          )
+          if (isActiveGame && !this.gameState.scores.has(rid)) {
+            this.gameState.scores.set(rid, {
+              score: 0,
+              name: player.name,
+              color: player.color,
+            })
+            // Persist score entry; the 'playing' branch below also persists.
+            if (this.gameState.status !== 'playing') {
+              this.ctx.waitUntil(
+                this.persistGameState().catch((e) =>
+                  console.error('Failed to persist reconnect score init:', e)
+                )
+              )
+            }
+          }
+        }
+
         // --- Fix: Restore player to round guesser sets if game is in progress ---
         if (this.gameState.status === 'playing' && rid !== this.gameState.currentDrawerId) {
           this.gameState.roundGuessers.add(rid)
