@@ -5014,6 +5014,231 @@ describe('DrawingRoom - Player Reconnect', () => {
     expect(initMsg.player.color).toBe(paletteColors[paletteColors.length - 1])
   })
 
+  test('Token reconnect during active game initializes scores entry', async () => {
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p2'
+    // Player was in lobby (got a token) but left before the game started,
+    // so no scores entry exists. Game is now in 'playing' state.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([
+      ['p1', 'lobby-token'],
+      ['p2', 'token-p2'],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([
+      ['p1', { name: 'Alice', color: '#FF6B6B' }],
+      ['p2', { name: 'Drawer', color: '#4ECDC4' }],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'playing',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p2',
+      currentWord: 'apple',
+      wordLength: 5,
+      roundStartTime: Date.now(),
+      roundEndTime: Date.now() + 60_000,
+      drawerOrder: ['p2'],
+      scores: new Map([['p2', { score: 50, name: 'Drawer', color: '#4ECDC4' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['apple']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      revealedPositions: [],
+    }
+
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'lobby-token',
+      })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scores = (room as any).gameState.scores as Map<
+      string,
+      { score: number; name: string; color: string }
+    >
+    // The reconnecting player should now have a scores entry initialized to 0
+    expect(scores.has('p1')).toBe(true)
+    expect(scores.get('p1')).toEqual({ score: 0, name: 'Alice', color: '#FF6B6B' })
+
+    // Should also be added to roundGuessers since game is in 'playing' state and they're not the drawer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roundGuessers = (room as any).gameState.roundGuessers as Set<string>
+    expect(roundGuessers.has('p1')).toBe(true)
+  })
+
+  test('Token reconnect during word-choice initializes scores entry', async () => {
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p2'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([
+      ['p1', 'lobby-token'],
+      ['p2', 'token-p2'],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([
+      ['p1', { name: 'Alice', color: '#FF6B6B' }],
+      ['p2', { name: 'Drawer', color: '#4ECDC4' }],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'word-choice',
+      currentRound: 1,
+      totalRounds: 2,
+      currentDrawerId: 'p2',
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p2'],
+      scores: new Map([['p2', { score: 50, name: 'Drawer', color: '#4ECDC4' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['apple']),
+      consecutiveMissedRounds: new Map(),
+      endGameAfterCurrentRound: false,
+      offeredWords: new Set(['banana', 'cherry', 'date']),
+      choiceDeadline: Date.now() + 15_000,
+    }
+
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'lobby-token',
+      })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scores = (room as any).gameState.scores as Map<
+      string,
+      { score: number; name: string; color: string }
+    >
+    expect(scores.has('p1')).toBe(true)
+    expect(scores.get('p1')).toEqual({ score: 0, name: 'Alice', color: '#FF6B6B' })
+  })
+
+  test('Token reconnect during lobby does NOT create scores entry', async () => {
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p1'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([['p1', 'lobby-token']])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([['p1', { name: 'Alice', color: '#FF6B6B' }]])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'lobby',
+      currentRound: 0,
+      totalRounds: 0,
+      currentDrawerId: null,
+      drawerOrder: [],
+      scores: new Map(),
+      usedWords: new Set(),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'lobby-token',
+      })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scores = (room as any).gameState.scores as Map<string, unknown>
+    // No scores entry should be created for lobby-phase reconnects
+    expect(scores.has('p1')).toBe(false)
+  })
+
+  test('Token reconnect during game-over does NOT create scores entry', async () => {
+    const newWs = createMockWs('', '')
+    newWs.deserializeAttachment = () => null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).hostPlayerId = 'p2'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerTokens = new Map([
+      ['p1', 'lobby-token'],
+      ['p2', 'token-p2'],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).playerInfo = new Map([
+      ['p1', { name: 'Alice', color: '#FF6B6B' }],
+      ['p2', { name: 'Drawer', color: '#4ECDC4' }],
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(room as any).gameState = {
+      status: 'game-over',
+      currentRound: 2,
+      totalRounds: 2,
+      currentDrawerId: null,
+      currentWord: null,
+      wordLength: null,
+      roundStartTime: null,
+      roundEndTime: null,
+      drawerOrder: ['p2'],
+      scores: new Map([['p2', { score: 100, name: 'Drawer', color: '#4ECDC4' }]]),
+      correctGuessers: new Set(),
+      roundGuessers: new Set(),
+      roundStartGuesserIds: new Set(),
+      roundGuesserScores: new Map(),
+      usedWords: new Set(['apple', 'banana']),
+      consecutiveMissedRounds: new Map(),
+    }
+
+    mockGetWebSockets.mockReturnValue([newWs])
+
+    await room.webSocketMessage(
+      newWs as unknown as WebSocket,
+      JSON.stringify({
+        type: 'join',
+        name: 'Alice',
+        playerId: 'p1',
+        reconnectToken: 'lobby-token',
+      })
+    )
+    await flushPromises()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scores = (room as any).gameState.scores as Map<string, unknown>
+    // game-over is not an active game state — no scores entry should be created
+    expect(scores.has('p1')).toBe(false)
+  })
+
   test('Host leave sets disconnectedHostId for reconnect reclaim', async () => {
     const hostWs = createMockWs('p1', 'Alice')
     const otherWs = createMockWs('p2', 'Bob')
