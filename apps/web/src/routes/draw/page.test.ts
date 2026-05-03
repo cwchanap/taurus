@@ -1356,7 +1356,9 @@ describe('Draw page - handleUndo and handleClear interactions', () => {
     await waitFor(() => {
       // The word-choice overlay should show a non-zero countdown
       // (timer started from deadlineTime in init payload)
-      expect(screen.queryByText('0s')).toBeNull()
+      const countdownEl = screen.queryByText(/\d+s/)
+      expect(countdownEl).toBeTruthy()
+      expect(countdownEl?.textContent).not.toBe('0s')
     })
 
     // The word-choice overlay should be visible
