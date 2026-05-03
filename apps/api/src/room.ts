@@ -1114,6 +1114,9 @@ export class DrawingRoom extends DurableObject<CloudflareBindings> implements Ti
                   console.error('Failed to persist game state after gameEndTimer cancel:', e)
                 )
               )
+              if (this.roundEndTimer) {
+                clearTimeout(this.roundEndTimer)
+              }
               this.roundEndTimer = setTimeout(() => {
                 if (this.gameState.status === 'round-end') {
                   this.startRound()
